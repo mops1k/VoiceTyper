@@ -53,14 +53,24 @@ public partial class MainWindow : Window
         ThemeManager.ThemeApplied += ApplyThemeIcon;
     }
 
-    /// <summary>Иконка окна (в панели задач) — по теме системы: тёмная система → светлая, светлая → тёмная.</summary>
+    /// <summary>
+    /// Иконка окна (в панели задач). Берём самый крупный кадр .ico (256×256), чтобы Windows
+    /// отображал иконку крупно и чётко, а не уменьшенной до мелкого кадра.
+    /// </summary>
     private void ApplyThemeIcon()
     {
-        var file = ThemeManager.IsSystemDark ? "voiceTyper_light.ico" : "voiceTyper_dark.ico";
-        var path = Path.Combine(AppContext.BaseDirectory, "Assets", file);
-        if (File.Exists(path))
+        var path = Path.Combine(AppContext.BaseDirectory, "Assets", "voiceTyper.ico");
+        if (!File.Exists(path))
         {
-            Icon = new BitmapImage(new Uri(path));
+            return;
+        }
+
+        using var fs = File.OpenRead(path);
+        var decoder = new IconBitmapDecoder(fs, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
+        var largest = decoder.Frames.OrderByDescending(f => f.PixelWidth).FirstOrDefault();
+        if (largest is not null)
+        {
+            Icon = largest;
         }
     }
 

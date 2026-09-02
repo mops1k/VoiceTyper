@@ -9,8 +9,7 @@ namespace VoiceTyper.App.Tray;
 public sealed class TrayIcon : IDisposable
 {
     private readonly NotifyIcon _notifyIcon;
-    private readonly Icon _darkIcon;
-    private readonly Icon _lightIcon;
+    private readonly Icon _icon;
     private readonly ToolStripMenuItem _openSettingsItem;
     private readonly ToolStripMenuItem _recordItem;
     private readonly ToolStripMenuItem _quitItem;
@@ -24,11 +23,9 @@ public sealed class TrayIcon : IDisposable
     public TrayIcon()
     {
         var assetDir = Path.Combine(AppContext.BaseDirectory, "Assets");
-        var darkPath = Path.Combine(assetDir, "voiceTyper_dark.ico");
-        var lightPath = Path.Combine(assetDir, "voiceTyper_light.ico");
+        var iconPath = Path.Combine(assetDir, "voiceTyper.ico");
 
-        _darkIcon = File.Exists(darkPath) ? new Icon(darkPath) : SystemIcons.Application;
-        _lightIcon = File.Exists(lightPath) ? new Icon(lightPath) : SystemIcons.Application;
+        _icon = File.Exists(iconPath) ? new Icon(iconPath) : SystemIcons.Application;
 
         var menu = new ContextMenuStrip();
         _openSettingsItem = new ToolStripMenuItem(Loc.T("App_TrayOpenSettings"));
@@ -47,7 +44,7 @@ public sealed class TrayIcon : IDisposable
 
         _notifyIcon = new NotifyIcon
         {
-            Icon = _darkIcon,
+            Icon = _icon,
             Text = Loc.T("App_TrayTooltip"),
             ContextMenuStrip = menu,
             Visible = true,
@@ -55,13 +52,11 @@ public sealed class TrayIcon : IDisposable
         _notifyIcon.DoubleClick += (_, _) => OpenSettingsRequested?.Invoke();
     }
 
-    /// <summary>
-    /// Применяет вариант иконки по теме системы: тёмная система → светлая иконка,
-    /// светлая система → тёмная (контраст с панелью задач).
-    /// </summary>
+    /// <summary>Иконка единая (не зависит от темы системы).</summary>
     public void ApplyTheme(bool systemDark)
     {
-        _notifyIcon.Icon = systemDark ? _lightIcon : _darkIcon;
+        _ = systemDark;
+        _notifyIcon.Icon = _icon;
     }
 
     /// <summary>Перезаписывает тексты пунктов меню и подсказку текущим языком.</summary>
@@ -100,7 +95,6 @@ public sealed class TrayIcon : IDisposable
         _disposed = true;
         _notifyIcon.Visible = false;
         _notifyIcon.Dispose();
-        _darkIcon.Dispose();
-        _lightIcon.Dispose();
+        _icon.Dispose();
     }
 }

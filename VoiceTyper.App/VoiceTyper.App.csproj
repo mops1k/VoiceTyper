@@ -31,10 +31,6 @@
     <ItemGroup>
       <Content Include="Assets\voiceTyper.ico" CopyToOutputDirectory="PreserveNewest" />
       <Content Include="Assets\voiceTyper.png" CopyToOutputDirectory="PreserveNewest" />
-      <Content Include="Assets\voiceTyper_dark.ico" CopyToOutputDirectory="PreserveNewest" />
-      <Content Include="Assets\voiceTyper_dark.png" CopyToOutputDirectory="PreserveNewest" />
-      <Content Include="Assets\voiceTyper_light.ico" CopyToOutputDirectory="PreserveNewest" />
-      <Content Include="Assets\voiceTyper_light.png" CopyToOutputDirectory="PreserveNewest" />
     </ItemGroup>
 
     <ItemGroup>

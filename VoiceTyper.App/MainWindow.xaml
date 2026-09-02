@@ -561,7 +561,7 @@
                                         <TextBlock Text="Версия" Style="{StaticResource RowLabel}" />
                                         <TextBlock Text="&#xE946;" Style="{StaticResource InfoGlyph}" ToolTip="Текущая версия приложения." />
                                     </StackPanel>
-                                    <TextBlock Grid.Column="1" Text="1.0.0" VerticalAlignment="Center"
+                                    <TextBlock Grid.Column="1" Text="{Binding AppVersion}" VerticalAlignment="Center"
                                                Foreground="{DynamicResource Fg.Muted}" />
                                 </Grid>
                             </Border>

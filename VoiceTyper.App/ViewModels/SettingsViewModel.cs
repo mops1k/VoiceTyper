@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using System.Reflection;
 using System.Windows;
 using System.Windows.Threading;
 using VoiceTyper.App.Models;
@@ -113,6 +114,9 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private string _downloadInfo = string.Empty;
 
+    /// <summary>Текущая версия приложения (чистый semver, без git-суффикса "+sha").</summary>
+    public string AppVersion { get; } = ResolveAppVersion();
+
     public IReadOnlyList<AppTheme> Themes { get; } = Enum.GetValues<AppTheme>();
 
     public IReadOnlyList<double> Temperatures { get; } = new[] { 0.0, 0.2, 0.4, 0.6, 0.8 };
@@ -216,6 +220,18 @@ public sealed partial class SettingsViewModel : ObservableObject
             RefreshModelItems();
             ErrorMessage = $"Модель «{item.Name}» удалена с диска.";
         }
+    }
+
+    /// <summary>Извлекает версию приложения из сборки: InformationalVersion (обрезая "+sha") или AssemblyVersion.</summary>
+    private static string ResolveAppVersion()
+    {
+        var asm = typeof(SettingsViewModel).Assembly;
+        var info = asm.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+        if (!string.IsNullOrEmpty(info))
+        {
+            return info.Split('+')[0];
+        }
+        return asm.GetName().Version?.ToString(3) ?? "1.0.0";
     }
 
     public IReadOnlyList<RecordingMode> RecordingModes { get; } = Enum.GetValues<RecordingMode>();

@@ -1,0 +1,23 @@
+## .NET build outputs
+bin/
+obj/
+*.user
+*.suo
+
+## IDE
+.vs/
+.idea/
+.kilo/
+
+## Test results
+TestResults/
+*.trx
+
+## Publish output
+publish/
+artifacts/
+dist/
+
+## Local models and runtime data
+*.bin
+*.ggml

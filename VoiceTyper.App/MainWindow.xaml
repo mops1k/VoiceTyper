@@ -565,14 +565,14 @@
                             <Border Style="{StaticResource Row}">
                                 <StackPanel>
                                     <TextBlock TextWrapping="Wrap" LineHeight="22" TextAlignment="Justify">
-                                        <Run Text="{Binding [About_Description1], Source={x:Static loc:Loc.Instance}}" />
+                                        <Run Text="{Binding [About_Description1], Source={x:Static loc:Loc.Instance}, Mode=OneWay}" />
                                     </TextBlock>
                                 </StackPanel>
                             </Border>
                             <Border Style="{StaticResource Row}">
                                 <StackPanel>
                                     <TextBlock TextWrapping="Wrap" LineHeight="22" TextAlignment="Justify">
-                                        <Run Text="{Binding [About_Description2], Source={x:Static loc:Loc.Instance}}" />
+                                        <Run Text="{Binding [About_Description2], Source={x:Static loc:Loc.Instance}, Mode=OneWay}" />
                                     </TextBlock>
                                 </StackPanel>
                             </Border>

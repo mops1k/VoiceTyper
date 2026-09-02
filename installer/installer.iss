@@ -20,7 +20,7 @@ AppName=VoiceTyper
 AppVersion={#AppVersion}
 AppVerName=VoiceTyper {#AppVersion}
 AppPublisher=VoiceTyper
-AppPublisherURL=https://github.com/voiceTyper/voiceTyper
+AppPublisherURL=https://github.com/mops1k/VoiceTyper
 VersionInfoVersion={#AppVersion}
 DefaultDirName={localappdata}\Programs\VoiceTyper
 DefaultGroupName=VoiceTyper
@@ -57,4 +57,4 @@ Name: "{group}\VoiceTyper"; Filename: "{app}\VoiceTyper.exe"
 Name: "{autodesktop}\VoiceTyper"; Filename: "{app}\VoiceTyper.exe"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\VoiceTyper.exe"; Description: "Запустить VoiceTyper"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\VoiceTyper.exe"; Description: "Запустить VoiceTyper"; Flags: nowait postinstall

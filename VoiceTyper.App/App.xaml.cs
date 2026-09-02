@@ -30,6 +30,7 @@ public partial class App : Application
     private ISettingsService? _settingsService;
     private IModelManager? _modelManager;
     private IMicrophoneService? _microphoneService;
+    private GithubUpdateService? _updateService;
     private SettingsViewModel? _settingsViewModel;
     private MainWindow? _mainWindow;
     private StatusOverlayWindow? _statusOverlay;
@@ -105,6 +106,7 @@ public partial class App : Application
 
         _modelManager = new ModelManager();
         _microphoneService = new MicrophoneService();
+        _updateService = new GithubUpdateService();
         ThemeManager.Apply(_currentSettings.Theme);
         _lastAppliedTheme = _currentSettings.Theme;
         _logger.Info(Loc.Format("Log_SettingsPath", _settingsService.SettingsFilePath));
@@ -132,12 +134,15 @@ public partial class App : Application
             ? Loc.T("Log_MicNone")
             : Loc.Format("Log_MicList", string.Join(" | ", microphones.Select(m => m.Name))));
 
-        _settingsViewModel = new SettingsViewModel(_settingsService, _hotkeys, _microphoneService, _modelManager);
+        _settingsViewModel = new SettingsViewModel(_settingsService, _hotkeys, _microphoneService, _modelManager, _updateService);
         _settingsViewModel.SettingsApplied += OnSettingsApplied;
         _settingsViewModel.DownloadCancelRequested += CancelModelDownload;
+        _settingsViewModel.UpdateAvailable += v => _tray?.ShowBalloon(Loc.T("App_MessageBoxTitle"), Loc.Format("Update_AvailableBalloon", v));
+        _settingsViewModel.UpdateInstallStarted += () => _mainWindow?.Hide();
         _settingsViewModel.SetStatus(Loc.T("Status_Ready"));
         ThemeManager.ThemeApplied += () => _tray?.ApplyTheme(ThemeManager.IsSystemDark);
 
+        _ = _settingsViewModel.CheckForUpdatesAsync(auto: true);
         _ = InitializeEngineAsync();
         _ = TestMicrophoneAsync();
 

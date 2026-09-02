@@ -490,4 +490,58 @@
   <data name="RSM_MicOpenFailed" xml:space="preserve">
     <value>Не удалось открыть микрофон: {0}. Убедитесь, что устройство активно и не занято другим приложением.</value>
   </data>
+  <data name="Update_Title" xml:space="preserve">
+    <value>Обновление</value>
+  </data>
+  <data name="Update_Tooltip" xml:space="preserve">
+    <value>Проверка наличия новых версий VoiceTyper (GitHub Releases).</value>
+  </data>
+  <data name="Update_Check" xml:space="preserve">
+    <value>Проверить обновления</value>
+  </data>
+  <data name="Update_Checking" xml:space="preserve">
+    <value>Проверка обновлений...</value>
+  </data>
+  <data name="Update_UpToDate" xml:space="preserve">
+    <value>Обновлений нет</value>
+  </data>
+  <data name="Update_AvailableInfo" xml:space="preserve">
+    <value>Доступна версия {0}</value>
+  </data>
+  <data name="Update_NewAvailable" xml:space="preserve">
+    <value>Доступна новая версия VoiceTyper.</value>
+  </data>
+  <data name="Update_CheckFailed" xml:space="preserve">
+    <value>Не удалось проверить обновления</value>
+  </data>
+  <data name="Update_CheckFailedDetail" xml:space="preserve">
+    <value>Не удалось проверить: {0}</value>
+  </data>
+  <data name="Update_CheckCancelled" xml:space="preserve">
+    <value>Проверка обновлений отменена</value>
+  </data>
+  <data name="Update_Confirm" xml:space="preserve">
+    <value>Обновить VoiceTyper до версии {0}?</value>
+  </data>
+  <data name="Update_Downloading" xml:space="preserve">
+    <value>Скачивание установщика...</value>
+  </data>
+  <data name="Update_StartingInstall" xml:space="preserve">
+    <value>Запуск установки...</value>
+  </data>
+  <data name="Update_InstallRunning" xml:space="preserve">
+    <value>Обновление устанавливается. VoiceTyper будет перезапущен.</value>
+  </data>
+  <data name="Update_InstallCancelled" xml:space="preserve">
+    <value>Обновление отменено</value>
+  </data>
+  <data name="Update_InstallFailed" xml:space="preserve">
+    <value>Не удалось установить: {0}</value>
+  </data>
+  <data name="Update_Install" xml:space="preserve">
+    <value>Скачать и установить</value>
+  </data>
+  <data name="Update_AvailableBalloon" xml:space="preserve">
+    <value>Доступно обновление {0}</value>
+  </data>
 </root>

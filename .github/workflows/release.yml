@@ -65,8 +65,9 @@ jobs:
 
       - name: Append SHA-256 to release body
         shell: pwsh
+        run: |
+          $notes = (gh release view ${{ github.ref_name }} --json body --jq '.body') -join [Environment]::NewLine
+          $newBody = $notes + "`n`nSHA256: ${{ env.SHA256 }}"
+          gh release edit ${{ github.ref_name }} --notes "$newBody"
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          $notes = gh release view ${{ github.ref_name }} --json body --jq '.body'
-          gh release edit ${{ github.ref_name }} --notes ($notes + "`n`nSHA256: ${{ env.SHA256 }}")

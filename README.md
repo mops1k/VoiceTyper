@@ -1,183 +1,184 @@
 # VoiceTyper
 
-Локальный speech-to-text на горячих клавишах. Нажал хоткей — сказал — текст появился в буфере
-обмена и (опционально) автоматически вставился в активное поле.
+Local speech-to-text on hotkeys. Press a hotkey — speak — the text appears in the clipboard
+and (optionally) is auto-pasted into the active field.
 
-Работает **полностью офлайн** на CPU (whisper.cpp), без GPU и без отправки аудио/текста
-куда-либо — всё распознаётся локально.
-
----
-
-## Возможности
-
-### Запись и распознавание
-- **Глобальные горячие клавиши** — работают в любом приложении, даже без фокуса окна.
-- **Три режима записи**:
-  - *Удержание (Push-to-Talk)* — запись пока зажата клавиша;
-  - *Переключатель (Toggle)* — нажал/нажал;
-  - *Авто (VAD)* — автоматическая остановка по тишине (Silero VAD) + настраиваемый порог тишины.
-- **Горячие клавиши по клику** — кликните мышкой по полю «Запись»/«Отмена» и нажмите нужное
-  сочетание; оно подхватится автоматически (Escape — отмена).
-- **Захват микрофона** через нативный WASAPI-бэкенд — поддерживает встроенные массивы
-  (например Intel Smart Sound: режим **EXCLUSIVE + PCM16 48 кГц стерео**), с фолбэком на
-  NAudio WASAPI и MME.
-- **Подавление фонового шума** (вкл/выкл) — лёгкий локальный фильтр (ВЧ + адаптивный
-  подавитель фонового шума) без внешних моделей.
-- **Автовставка** (Ctrl+V) в активное поле — включается/выключается настройкой.
-
-### Распознавание (Whisper)
-- **Русский + английский** (мультиязычная модель), автоопределение языка.
-- **Выбор модели** в отдельном разделе — список моделей с описанием, скоростью, качеством,
-  размером, кнопками «Скачать» / «Удалить с диска» и взаимоисключающим переключателем.
-- **Словарь технических терминов** — подмешивается в initial prompt модели, улучшает
-  распознавание «API», «CPU», «JSON» и т.п.
-- **Температура** (0 — строго/детерминированно … 0.8 — мягче) — влияет на «строгость»
-  распознавания.
-- **Учитывать контекст** (для длинной речи) — использовать текст предыдущего сегмента.
-- **Прогресс и отмена загрузки модели** — в статус-баре: прогресс-бар, объём/скорость/время
-  и кнопка «Отмена»; частично скачанный файл подчищается.
-- **Захват блокируется**, пока выбранная модель не скачана/не загружена (чтобы не зависало).
-
-### Интерфейс и настройки
-- **Окно настроек с меню слева**: Основные · Внешний вид · Модели · Горячие клавиши ·
-  Микрофон · Запуск · О программе.
-- **Автосохранение** — любое изменение применяется сразу (кнопка «Сохранить» не нужна).
-- **Тема оформления**: Светлая / Тёмная / **Авто** (следовать теме Windows), включая заголовок
-  окна (свой современный тайтлбар) и соответствующий вид полей/кнопок/переключателей.
-- **Тумблеры-переключатели** в современном стиле.
-- **Всплывающие подсказки (ⓘ)** у каждой настройки с пояснением.
-- **Оверлей статуса** — индикатор «Захват»/«Распознавание» внизу экрана поверх окон.
-- **Настройка «Сворачивать окно при потере фокуса»** (по умолчанию выключена).
-- **Трей**: сворачивается в фоне, настройки по двойному клику на иконку; контекстное меню.
-- **Иконка в трее и панели задач** меняется по теме Windows (светлый/тёмный глиф).
-- **Автозапуск** с Windows (опционально).
+Works **fully offline** on CPU (whisper.cpp), no GPU, and no audio/text is sent anywhere —
+everything is recognized locally.
 
 ---
 
-## Требования
+## Features
 
-- Windows 10/11 (рекомендуется 11).
-- CPU с поддержкой **AVX/AVX2/FMA/F16C** (иначе используйте рантайм `Whisper.net.Runtime.NoAvx`).
-- **Microsoft Visual C++ Redistributable 2015–2022 (x64)** — требуется whisper.cpp.
-- Микрофон и разрешение на его использование в настройках приватности Windows.
-- Интернет при первом запуске (скачивание модели).
+### Recording and recognition
+- **Global hotkeys** — work in any application, even without window focus.
+- **Three recording modes**:
+  - *Hold (Push-to-Talk)* — records while the key is held;
+  - *Toggle* — press to start, press again to stop;
+  - *Auto (VAD)* — automatic stop on silence (Silero VAD) + configurable silence threshold.
+- **Hotkeys by click** — click the "Record"/"Cancel" field and press the desired combination; it
+  is captured automatically (Escape — cancel).
+- **Microphone capture** via a native WASAPI backend — supports built-in microphone arrays
+  (e.g. Intel Smart Sound: **EXCLUSIVE + PCM16 48 kHz stereo**), with a fallback to NAudio
+  WASAPI and MME.
+- **Background noise suppression** (on/off) — a lightweight local filter (high-pass + adaptive
+  noise floor) with no external models.
+- **Auto-paste** (Ctrl+V) into the active field — toggled by a setting.
+
+### Recognition (Whisper)
+- **Russian + English** (multilingual model), automatic language detection.
+- **Model selection** in a dedicated section — a list of models with description, speed, quality,
+  size, "Download" / "Delete from disk" buttons and a mutually exclusive selector.
+- **Technical terms dictionary** — mixed into the model's initial prompt, improving recognition of
+  "API", "CPU", "JSON", etc.
+- **Temperature** (0 — strict/deterministic … 0.8 — softer) — affects the "strictness" of
+  recognition.
+- **Use context** (for long speech) — use the text of the previous segment.
+- **Model download progress and cancel** — in the status bar: progress bar, size/speed/time and a
+  "Cancel" button; a partially downloaded file is cleaned up.
+- **Capture is blocked** until the selected model is downloaded/loaded (to avoid freezes).
+
+### Interface and settings
+- **Settings window with a left menu**: General · Appearance · Models · Hotkeys ·
+  Microphone · Startup · About.
+- **Auto-save** — every change applies immediately (no "Save" button needed).
+- **Theme**: Light / Dark / **Auto** (follows the Windows theme), including the window title bar
+  (custom modern titlebar) and matching look of fields/buttons/toggles.
+- **Modern toggle switches**.
+- **Tooltips (ⓘ)** next to every setting with an explanation.
+- **Status overlay** — a "Capturing"/"Recognizing" indicator at the bottom of the screen, above
+  windows.
+- **"Hide window on focus loss"** setting (disabled by default).
+- **Tray**: minimizes into the background, opens settings on double-click of the icon; context menu.
+- **Tray and taskbar icon** changes with the Windows theme (light/dark glyph).
+- **Autostart** with Windows (optional).
 
 ---
 
-## Модели
+## Requirements
 
-| Размер | Файл на диске | Скорость | Качество | Комментарий |
+- Windows 10/11 (11 recommended).
+- CPU with **AVX/AVX2/FMA/F16C** support (otherwise use the `Whisper.net.Runtime.NoAvx` runtime).
+- **Microsoft Visual C++ Redistributable 2015–2022 (x64)** — required by whisper.cpp.
+- A microphone and permission to use it in Windows privacy settings.
+- Internet on first launch (model download).
+
+---
+
+## Models
+
+| Size | File on disk | Speed | Quality | Comment |
 |---|---|---|---|---|
-| Tiny | ~75 МБ | очень быстро | низкое | для простых задач |
-| Base | ~142 МБ | быстро | среднее | компромисс |
-| **Small (по умолчанию)** | ~466 МБ | средне | высокое | хорошее качество RU/EN |
-| Medium | ~1.5 ГБ | медленно | очень высокое | точнее, медленнее |
-| Large (turbo) | ~1.6 ГБ | очень медленно | максимальное | для мощных CPU |
+| Tiny | ~75 MB | very fast | low | for simple tasks |
+| Base | ~142 MB | fast | medium | a compromise |
+| **Small (default)** | ~466 MB | medium | high | good RU/EN quality |
+| Medium | ~1.5 GB | slow | very high | more accurate, slower |
+| Large (turbo) | ~1.6 GB | very slow | maximum | for powerful CPUs |
 
-Модели хранятся в `%LOCALAPPDATA%\VoiceTyper\models`, скачиваются один раз.
-В разделе «Модели» их можно предварительно скачать и удалить с диска (для освобождения места).
+Models are stored in `%LOCALAPPDATA%\VoiceTyper\models` and are downloaded once.
+In the "Models" section they can be pre-downloaded and deleted from disk (to free up space).
 
 ---
 
-## Сборка (вручную)
+## Build (manual)
 
-Требуется **.NET 10 SDK** ([скачать](https://dotnet.microsoft.com/download/dotnet/10.0)).
+Requires the **.NET 10 SDK** ([download](https://dotnet.microsoft.com/download/dotnet/10.0)).
 
 ```powershell
-# 1) Собрать решение (Release)
+# 1) Build the solution (Release)
 dotnet build VoiceTyper.slnx -c Release
 
-# 2) Прогнать тесты
+# 2) Run the tests
 dotnet test VoiceTyper.Tests -c Release
 ```
 
-### Запуск
+### Run
 ```powershell
 dotnet run --project VoiceTyper.App
 ```
-или собранный exe:
+or the built exe:
 ```powershell
 VoiceTyper.App\bin\Release\net10.0-windows\VoiceTyper.exe
 ```
 
-### Нативная библиотека захвата (mc_wasapi.dll)
-В репозитории уже лежит собранный `VoiceTyper.App\Native\mc_wasapi.dll` (WASAPI-захват для
-Intel Smart Sound, собран MinGW, статически слинкован — зависит только от системных
-`KERNEL32/ole32/UCRT`). Он копируется в output автоматически.
+### Native capture library (mc_wasapi.dll)
+The repository already contains a built `VoiceTyper.App\Native\mc_wasapi.dll` (WASAPI capture for
+Intel Smart Sound, built with MinGW, statically linked — depends only on system
+`KERNEL32/ole32/UCRT`). It is copied to the output automatically.
 
-Если этот файл отсутствует — приложение всё равно соберётся, но нативный бэкенд будет
-пропущен, и захват пойдёт через NAudio WASAPI/MME (для обычных микрофонов этого достаточно).
+If this file is missing — the application still builds, but the native backend is skipped and
+capture goes through NAudio WASAPI/MME (sufficient for ordinary microphones).
 
-Пересобрать `mc_wasapi.dll` из исходника `mc_wasapi.cpp` (по желанию, нужен MinGW-w64):
+To rebuild `mc_wasapi.dll` from the `mc_wasapi.cpp` source (optional, requires MinGW-w64):
 ```powershell
 g++ -std=c++17 -O2 -shared -static-libgcc -static-libstdc++ -DUNICODE -D_UNICODE `
     -I <mingw>\x86_64-w64-mingw32\include mc_wasapi.cpp -o mc_wasapi.dll -lole32 -luuid
 ```
 
-### Публикация (self-contained, без установленного .NET)
+### Publish (self-contained, without installed .NET)
 ```powershell
 dotnet publish VoiceTyper.App -c Release -r win-x64 --self-contained true -o publish
 ```
-Запускать `publish\VoiceTyper.exe`. Требуется VC++ Redistributable.
+Run `publish\VoiceTyper.exe`. Requires the VC++ Redistributable.
 
 ---
 
-## Использование
+## Usage
 
-1. Запустите VoiceTyper. Окно настроек откроется по умолчанию; приложение также работает в трее.
-2. Настройки: двойной клик по иконке в трее (или меню → «Открыть настройки»).
-3. По умолчанию:
-   - **Запись/остановка:** `Ctrl+Alt+Space`
-   - **Отмена:** `Ctrl+Alt+Escape`
-4. Переведите фокус в нужное поле, нажмите хоткей записи, проговорите текст, отпустите/нажмите ещё раз.
-5. Текст появится в буфере обмена; при включённой автовставке — сразу в поле ввода.
-6. Все настройки сохраняются автоматически.
-
----
-
-## Диагностика
-
-Приложение пишет подробный лог в **`%LOCALAPPDATA%\VoiceTyper\logs\voiceTyper.log`**
-(формат `yyyy-MM-dd HH:mm:ss.fff [Уровень] сообщение`, у ошибок — стек-трейс).
-Лог очищается при каждом запуске; при ~1 МБ файл ротируется (до 5 архивов `voiceTyper.N.log`).
-Логируются: запуск, настройки, микрофоны, хоткеи, загрузка моделей, состояния записи,
-распознанный текст и все ошибки.
+1. Launch VoiceTyper. The settings window opens by default; the application also runs in the tray.
+2. Settings: double-click the tray icon (or menu → "Open settings").
+3. Defaults:
+   - **Record/stop:** `Ctrl+Alt+Space`
+   - **Cancel:** `Ctrl+Alt+Escape`
+4. Focus the target field, press the record hotkey, speak, release/press again.
+5. The text appears in the clipboard; with auto-paste enabled — directly in the input field.
+6. All settings are saved automatically.
 
 ---
 
-## Известные ограничения
+## Diagnostics
 
-- **Автовставка не работает в окнах с повышенными правами (UAC)**, если VoiceTyper запущен
-  без прав администратора. Решение: запускать оба с одинаковым уровнем прав.
-- Качество зависит от размера модели и микрофона. Для русского «Small» даёт приемлемый
-  результат; для требовательных сценариев — «Medium».
-- Горячая клавиша может конфликтовать с системными сочетаниями — приложение покажет
-  уведомление, поменяйте сочетание в настройках.
-- Подавление шума — лёгкий фильтр (ВЧ + адаптивный подавитель). Для более сильного
-  подавления можно расширить до RNNoise (отдельно).
+The application writes a detailed log to **`%LOCALAPPDATA%\VoiceTyper\logs\voiceTyper.log`**
+(format `yyyy-MM-dd HH:mm:ss.fff [Level] message`, errors include a stack trace).
+The log is cleared on each launch; at ~1 MB the file is rotated (up to 5 archives `voiceTyper.N.log`).
+Logged: startup, settings, microphones, hotkeys, model downloads, recording states,
+recognized text and all errors.
 
 ---
 
-## Структура решения
+## Known limitations
+
+- **Auto-paste does not work in windows with elevated privileges (UAC)** if VoiceTyper is launched
+  without administrator rights. Fix: run both with the same privilege level.
+- Quality depends on the model size and the microphone. For Russian, "Small" gives an acceptable
+  result; for demanding scenarios use "Medium".
+- A hotkey may conflict with system shortcuts — the application will show a notification;
+  change the combination in settings.
+- Noise suppression is a light filter (high-pass + adaptive noise floor). For stronger suppression
+  it can be extended to RNNoise (separately).
+
+---
+
+## Solution structure
 
 ```
 VoiceTyper.slnx
-├── VoiceTyper.Core/     # логика без UI: настройки, аудио (NAudio + нативный WASAPI),
-│                        # Whisper (Whisper.net), VAD, шумоподавление, конечный автомат записи
-├── VoiceTyper.App/      # WPF: окно настроек (MVVM, меню разделов), трей, оверлей статуса,
-│                        # темы, глобальные хоткеи (NHotkey.Wpf), Native/mc_wasapi.dll
-└── VoiceTyper.Tests/    # xUnit-тесты
+├── VoiceTyper.Core/     # logic without UI: settings, audio (NAudio + native WASAPI),
+│                        # Whisper (Whisper.net), VAD, noise suppression, recording state machine
+├── VoiceTyper.App/      # WPF: settings window (MVVM, section menu), tray, status overlay,
+│                        # themes, global hotkeys (NHotkey.Wpf), Native/mc_wasapi.dll
+└── VoiceTyper.Tests/    # xUnit tests
 ```
 
-Настройки: `%APPDATA%\VoiceTyper\settings.json`
-Модели: `%LOCALAPPDATA%\VoiceTyper\models`
+Settings: `%APPDATA%\VoiceTyper\settings.json`
+Models: `%LOCALAPPDATA%\VoiceTyper\models`
 
 ---
 
-## Основные библиотеки
+## Main libraries
 
-- [Whisper.net](https://github.com/sandrohanea/whisper.net) + [whisper.cpp](https://github.com/ggml-org/whisper.cpp) — распознавание на CPU
-- [NAudio](https://github.com/naudio/NAudio) — захват звука
-- [NHotkey.Wpf](https://github.com/thomaslevesque/NHotkey) — глобальные хоткеи
-- [WindowsInput](https://github.com/michaelnoonan/inputsimulator) — симуляция Ctrl+V
+- [Whisper.net](https://github.com/sandrohanea/whisper.net) + [whisper.cpp](https://github.com/ggml-org/whisper.cpp) — CPU recognition
+- [NAudio](https://github.com/naudio/NAudio) — audio capture
+- [NHotkey.Wpf](https://github.com/thomaslevesque/NHotkey) — global hotkeys
+- [WindowsInput](https://github.com/michaelnoonan/inputsimulator) — Ctrl+V simulation
 - [CommunityToolkit.Mvvm](https://github.com/CommunityToolkit/dotnet) — MVVM

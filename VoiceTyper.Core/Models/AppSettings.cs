@@ -46,6 +46,13 @@ public enum RecognitionLanguage
     En,
 }
 
+/// <summary>Язык интерфейса приложения.</summary>
+public enum AppLanguage
+{
+    Ru,
+    En,
+}
+
 /// <summary>
 /// Модель настроек приложения. Сериализуется в <c>%APPDATA%\VoiceTyper\settings.json</c>.
 /// Enum'ы сериализуются в camelCase: <c>pushToTalk</c>, <c>ru</c>, <c>small</c>.
@@ -84,6 +91,9 @@ public sealed class AppSettings
 
     /// <summary>Сворачивать окно настроек в трей при потере фокуса (по умолчанию — выкл).</summary>
     public bool HideOnFocusLoss { get; set; }
+
+    /// <summary>Язык интерфейса приложения (по умолчанию — русский).</summary>
+    public AppLanguage AppLanguage { get; set; } = AppLanguage.Ru;
 
     /// <summary>Включать подавление фонового шума при записи.</summary>
     public bool NoiseReductionEnabled { get; set; }

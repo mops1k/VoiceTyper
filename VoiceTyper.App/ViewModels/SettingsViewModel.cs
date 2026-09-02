@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Threading;
 using VoiceTyper.App.Models;
 using VoiceTyper.App.Services;
+using VoiceTyper.Core.Localization;
 using VoiceTyper.Core.Models;
 using VoiceTyper.Core.Services;
 
@@ -70,7 +71,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     private bool _startMinimized = true;
 
     [ObservableProperty]
-    private string _statusText = "Загрузка...";
+    private string _statusText = Loc.T("Status_Loading");
 
     [ObservableProperty]
     private string _lastText = string.Empty;
@@ -88,7 +89,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     private string _microphoneStatus = string.Empty;
 
     [ObservableProperty]
-    private string _selectedNavItem = "Основные";
+    private string _selectedNavItem = "Main";
 
     [ObservableProperty]
     private AppTheme _theme = AppTheme.System;
@@ -114,30 +115,82 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private string _downloadInfo = string.Empty;
 
+    [ObservableProperty]
+    private AppLanguage _appLanguage = AppLanguage.Ru;
+
     /// <summary>Текущая версия приложения (чистый semver, без git-суффикса "+sha").</summary>
     public string AppVersion { get; } = ResolveAppVersion();
 
-    public IReadOnlyList<AppTheme> Themes { get; } = Enum.GetValues<AppTheme>();
+    public IReadOnlyList<LocalizedOption<AppTheme>> Themes { get; private set; } = Array.Empty<LocalizedOption<AppTheme>>();
 
     public IReadOnlyList<double> Temperatures { get; } = new[] { 0.0, 0.2, 0.4, 0.6, 0.8 };
 
     public IReadOnlyList<ModelListItem> ModelItems { get; private set; } = Array.Empty<ModelListItem>();
 
-    public IReadOnlyList<string> NavItems { get; } =
-        new[] { "Основные", "Внешний вид", "Модели", "Горячие клавиши", "Микрофон", "Запуск", "О программе" };
+    public IReadOnlyList<LocalizedNavItem> NavItems { get; private set; } = Array.Empty<LocalizedNavItem>();
+
+    public IReadOnlyList<LocalizedOption<RecordingMode>> RecordingModes { get; private set; } = Array.Empty<LocalizedOption<RecordingMode>>();
+
+    public IReadOnlyList<LocalizedOption<RecognitionLanguage>> Languages { get; private set; } = Array.Empty<LocalizedOption<RecognitionLanguage>>();
+
+    public IReadOnlyList<LocalizedOption<AppLanguage>> UiLanguages { get; private set; } = Array.Empty<LocalizedOption<AppLanguage>>();
+
+    public IReadOnlyList<ModelSize> ModelSizes { get; } = Enum.GetValues<ModelSize>();
+
+    private static IReadOnlyList<LocalizedNavItem> BuildNavItems() => new[]
+    {
+        new LocalizedNavItem("Main", "\uE80F"),
+        new LocalizedNavItem("Appearance", "\uE90F"),
+        new LocalizedNavItem("Models", "\uE7B8"),
+        new LocalizedNavItem("Hotkeys", "\uE765"),
+        new LocalizedNavItem("Microphone", "\uE720"),
+        new LocalizedNavItem("Startup", "\uE768"),
+        new LocalizedNavItem("About", "\uE946"),
+    };
+
+    private static IReadOnlyList<LocalizedOption<RecordingMode>> BuildRecordingModes() => new[]
+    {
+        new LocalizedOption<RecordingMode>(RecordingMode.PushToTalk, "Enum_RecordingMode_PushToTalk"),
+        new LocalizedOption<RecordingMode>(RecordingMode.Toggle, "Enum_RecordingMode_Toggle"),
+        new LocalizedOption<RecordingMode>(RecordingMode.Vad, "Enum_RecordingMode_Vad"),
+    };
+
+    private static IReadOnlyList<LocalizedOption<RecognitionLanguage>> BuildLanguages() => new[]
+    {
+        new LocalizedOption<RecognitionLanguage>(RecognitionLanguage.Auto, "Enum_RecognitionLanguage_Auto"),
+        new LocalizedOption<RecognitionLanguage>(RecognitionLanguage.Ru, "Enum_RecognitionLanguage_Ru"),
+        new LocalizedOption<RecognitionLanguage>(RecognitionLanguage.En, "Enum_RecognitionLanguage_En"),
+    };
+
+    private static IReadOnlyList<LocalizedOption<AppTheme>> BuildThemes() => new[]
+    {
+        new LocalizedOption<AppTheme>(AppTheme.System, "Enum_AppTheme_System"),
+        new LocalizedOption<AppTheme>(AppTheme.Light, "Enum_AppTheme_Light"),
+        new LocalizedOption<AppTheme>(AppTheme.Dark, "Enum_AppTheme_Dark"),
+    };
+
+    private static IReadOnlyList<LocalizedOption<AppLanguage>> BuildUiLanguages() => new[]
+    {
+        new LocalizedOption<AppLanguage>(AppLanguage.Ru, "Enum_AppLanguage_Ru"),
+        new LocalizedOption<AppLanguage>(AppLanguage.En, "Enum_AppLanguage_En"),
+    };
 
     private void BuildModelItems()
     {
         ModelItems = new[]
         {
-            new ModelListItem(ModelSize.Tiny, "Tiny", "Минимальная модель. Быстро распознаёт, подходит для простых задач.", "Очень быстро", "Низкое", "≈ 75 МБ"),
-            new ModelListItem(ModelSize.Base, "Base", "Базовая модель. Хороший баланс скорости и качества на CPU.", "Быстро", "Среднее", "≈ 142 МБ"),
-            new ModelListItem(ModelSize.Small, "Small", "Рекомендуемая модель. Точное распознавание, умеренная нагрузка.", "Средне", "Высокое", "≈ 466 МБ"),
-            new ModelListItem(ModelSize.Medium, "Medium", "Качественное распознавание, заметно медленнее на CPU.", "Медленно", "Очень высокое", "≈ 1,5 ГБ"),
-            new ModelListItem(ModelSize.Large, "Large (turbo)", "Максимальное качество. Для мощных процессоров.", "Очень медленно", "Максимальное", "≈ 1,6 ГБ"),
+            new ModelListItem(ModelSize.Tiny, "Tiny", Loc.T("Models_Tiny_Description"), Loc.T("Models_SpeedVeryFast"), Loc.T("Models_QualityLow"), FormatModelSize(75)),
+            new ModelListItem(ModelSize.Base, "Base", Loc.T("Models_Base_Description"), Loc.T("Models_SpeedFast"), Loc.T("Models_QualityMedium"), FormatModelSize(142)),
+            new ModelListItem(ModelSize.Small, "Small", Loc.T("Models_Small_Description"), Loc.T("Models_SpeedMedium"), Loc.T("Models_QualityHigh"), FormatModelSize(466)),
+            new ModelListItem(ModelSize.Medium, "Medium", Loc.T("Models_Medium_Description"), Loc.T("Models_SpeedSlow"), Loc.T("Models_QualityVeryHigh"), FormatModelSizeGb(1.5)),
+            new ModelListItem(ModelSize.Large, "Large (turbo)", Loc.T("Models_Large_Description"), Loc.T("Models_SpeedVerySlow"), Loc.T("Models_QualityMax"), FormatModelSizeGb(1.6)),
         };
         RefreshModelItems();
     }
+
+    private static string FormatModelSize(int mb) => "≈ " + Loc.Format("Models_SizeMb", mb);
+
+    private static string FormatModelSizeGb(double gb) => "≈ " + Loc.Format("Models_SizeGb", gb);
 
     partial void OnModelSizeChanged(ModelSize value)
     {
@@ -192,7 +245,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         catch (Exception ex)
         {
             await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
-                ErrorMessage = $"Не удалось скачать модель «{item.Name}»: {ex.Message}");
+                ErrorMessage = Loc.Format("Models_DownloadError", item.Name, ex.Message));
         }
         finally
         {
@@ -218,7 +271,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         {
             item.IsDownloaded = false;
             RefreshModelItems();
-            ErrorMessage = $"Модель «{item.Name}» удалена с диска.";
+            ErrorMessage = Loc.Format("Models_DeleteSuccess", item.Name);
         }
     }
 
@@ -234,10 +287,6 @@ public sealed partial class SettingsViewModel : ObservableObject
         return asm.GetName().Version?.ToString(3) ?? "1.0.0";
     }
 
-    public IReadOnlyList<RecordingMode> RecordingModes { get; } = Enum.GetValues<RecordingMode>();
-    public IReadOnlyList<RecognitionLanguage> Languages { get; } = Enum.GetValues<RecognitionLanguage>();
-    public IReadOnlyList<ModelSize> ModelSizes { get; } = Enum.GetValues<ModelSize>();
-
     public SettingsViewModel(ISettingsService settingsService, HotkeyService hotkeyService, IMicrophoneService microphoneService, IModelManager modelManager)
     {
         _settingsService = settingsService;
@@ -247,6 +296,11 @@ public sealed partial class SettingsViewModel : ObservableObject
         _isInitializing = true;
         try
         {
+            NavItems = BuildNavItems();
+            RecordingModes = BuildRecordingModes();
+            Languages = BuildLanguages();
+            Themes = BuildThemes();
+            UiLanguages = BuildUiLanguages();
             LoadFromSettings();
             BuildModelItems();
             RefreshMicrophones();
@@ -255,6 +309,8 @@ public sealed partial class SettingsViewModel : ObservableObject
         {
             _isInitializing = false;
         }
+
+        Loc.Instance.PropertyChanged += OnLocLanguageChanged;
     }
 
     /// <summary>Отложенное автосохранение (дебаунс), чтобы текст не сохранялся на каждую клавишу.</summary>
@@ -281,15 +337,34 @@ public sealed partial class SettingsViewModel : ObservableObject
         Save();
     }
 
+    /// <summary>Язык интерфейса сменился — пересобираем списки и переопределяем временные строки.</summary>
+    private void OnLocLanguageChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        NavItems = BuildNavItems();
+        RecordingModes = BuildRecordingModes();
+        Languages = BuildLanguages();
+        Themes = BuildThemes();
+        UiLanguages = BuildUiLanguages();
+        OnPropertyChanged(nameof(NavItems));
+        OnPropertyChanged(nameof(RecordingModes));
+        OnPropertyChanged(nameof(Languages));
+        OnPropertyChanged(nameof(Themes));
+        OnPropertyChanged(nameof(UiLanguages));
+        BuildModelItems();
+        OnPropertyChanged(nameof(ModelItems));
+        RefreshMicrophoneStatus();
+        RecordHotkeyHint = RecordHotkey;
+        CancelHotkeyHint = CancelHotkey;
+        ErrorMessage = string.Empty;
+    }
+
     [RelayCommand]
     private void RefreshMicrophones()
     {
         var previousId = SelectedMicrophone?.Id;
         var devices = _microphoneService.GetMicrophones();
         Microphones = devices;
-        MicrophoneStatus = devices.Count == 0
-            ? "Активные микрофоны не найдены."
-            : $"Найдено устройств: {devices.Count}";
+        RefreshMicrophoneStatus();
 
         if (previousId is not null && devices.Any(m => m.Id == previousId))
         {
@@ -300,6 +375,11 @@ public sealed partial class SettingsViewModel : ObservableObject
             SelectedMicrophone = devices.FirstOrDefault();
         }
     }
+
+    private void RefreshMicrophoneStatus() =>
+        MicrophoneStatus = Microphones.Count == 0
+            ? Loc.T("Mic_NoneFound")
+            : Loc.Format("Mic_DevicesFound", Microphones.Count);
 
     public void SetStatus(string text) => StatusText = text;
 
@@ -315,8 +395,8 @@ public sealed partial class SettingsViewModel : ObservableObject
         var speed = FormatSize((long)p.BytesPerSecond);
         var downloaded = FormatSize(p.BytesDownloaded);
         var total = FormatSize(p.TotalBytes);
-        var eta = p.Remaining is { } r ? $" · осталось ~{FormatSeconds(r)}" : string.Empty;
-        DownloadInfo = $"{name}: {downloaded} из {total} · {speed}/с{eta}";
+        var eta = p.Remaining is { } r ? Loc.Format("Models_RemainingEta", FormatSeconds(r)) : string.Empty;
+        DownloadInfo = Loc.Format("Models_DownloadInfoFmt", name, downloaded, total, speed, eta);
     }
 
     /// <summary>Скрывает индикатор загрузки.</summary>
@@ -334,11 +414,17 @@ public sealed partial class SettingsViewModel : ObservableObject
     {
         const double mb = 1024.0 * 1024.0;
         const double gb = mb * 1024.0;
-        return bytes >= gb ? $"{bytes / gb:F1} ГБ" : bytes >= mb ? $"{bytes / mb:F0} МБ" : $"{bytes / 1024.0:F0} КБ";
+        return bytes >= gb
+            ? Loc.Format("Models_SizeGb", (bytes / gb).ToString("0.0"))
+            : bytes >= mb
+                ? Loc.Format("Models_SizeMb", (bytes / mb).ToString("0"))
+                : Loc.Format("Models_SizeKb", (bytes / 1024.0).ToString("0"));
     }
 
     private static string FormatSeconds(TimeSpan t) =>
-        t.TotalMinutes >= 1 ? $"{(int)t.TotalMinutes} мин {t.Seconds}с" : $"{Math.Max(1, (int)t.TotalSeconds)}с";
+        t.TotalMinutes >= 1
+            ? Loc.Format("Models_MinSecFmt", (int)t.TotalMinutes, t.Seconds)
+            : Loc.Format("Models_SecFmt", Math.Max(1, (int)t.TotalSeconds));
 
     [RelayCommand]
     private void CaptureRecordHotkey() => BeginCapture("record");
@@ -361,11 +447,11 @@ public sealed partial class SettingsViewModel : ObservableObject
 
         if (target == "record")
         {
-            RecordHotkeyHint = "Нажмите сочетание...";
+            RecordHotkeyHint = Loc.T("Hotkeys_CaptureHint");
         }
         else
         {
-            CancelHotkeyHint = "Нажмите сочетание...";
+            CancelHotkeyHint = Loc.T("Hotkeys_CaptureHint");
         }
     }
 
@@ -382,8 +468,8 @@ public sealed partial class SettingsViewModel : ObservableObject
 
         IsModalDialogOpen = true;
         var result = System.Windows.MessageBox.Show(
-            $"Новое сочетание клавиш: {combo}\n\nПрименить?",
-            "VoiceTyper",
+            Loc.Format("Hotkeys_ConfirmDialog", combo),
+            Loc.T("App_MessageBoxTitle"),
             MessageBoxButton.YesNo,
             MessageBoxImage.Question);
         IsModalDialogOpen = false;
@@ -421,7 +507,7 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     /// <summary>Подсказка, что для глобального хоткея нужен модификатор или F-клавиша.</summary>
     public void NotifyHotkeyNeedsModifier() =>
-        ErrorMessage = "Для глобальной горячей клавиши нужен модификатор (Ctrl/Alt/Shift/Win) или F-клавиша.";
+        ErrorMessage = Loc.T("Hotkeys_NeedsModifier");
 
     private void EndCapture()
     {
@@ -464,6 +550,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     partial void OnNoiseReductionEnabledChanged(bool value) => ScheduleAutoSave();
     partial void OnTemperatureChanged(double value) => ScheduleAutoSave();
     partial void OnConditionOnPreviousTextChanged(bool value) => ScheduleAutoSave();
+    partial void OnAppLanguageChanged(AppLanguage value) => ScheduleAutoSave();
 
     private void LoadFromSettings()
     {
@@ -483,6 +570,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         NoiseReductionEnabled = s.NoiseReductionEnabled;
         Temperature = s.Temperature;
         ConditionOnPreviousText = s.ConditionOnPreviousText;
+        AppLanguage = s.AppLanguage;
     }
 
     [RelayCommand]
@@ -492,13 +580,13 @@ public sealed partial class SettingsViewModel : ObservableObject
 
         if (!HotkeyParser.TryParse(RecordHotkey, out _))
         {
-            ErrorMessage = "Неверный хоткей записи.";
+            ErrorMessage = Loc.T("Hotkeys_InvalidRecord");
             return;
         }
 
         if (!HotkeyParser.TryParse(CancelHotkey, out _))
         {
-            ErrorMessage = "Неверный хоткей отмены.";
+            ErrorMessage = Loc.T("Hotkeys_InvalidCancel");
             return;
         }
 
@@ -520,6 +608,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             Temperature = Temperature,
             ConditionOnPreviousText = ConditionOnPreviousText,
             MicrophoneDeviceId = SelectedMicrophone?.Id,
+            AppLanguage = AppLanguage,
         };
 
         var errors = _hotkeyService.ApplySettings(settings);
@@ -531,7 +620,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             ErrorMessage = string.Join(" ", errors);
         }
 
-        StatusText = "Сохранено";
+        StatusText = Loc.T("Status_Saved");
         SettingsApplied?.Invoke();
     }
 
@@ -554,7 +643,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         NoiseReductionEnabled = defaults.NoiseReductionEnabled;
         Temperature = defaults.Temperature;
         ConditionOnPreviousText = defaults.ConditionOnPreviousText;
+        AppLanguage = defaults.AppLanguage;
         ErrorMessage = string.Empty;
     }
 }
-

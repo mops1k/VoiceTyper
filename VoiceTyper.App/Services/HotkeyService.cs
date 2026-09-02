@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Windows.Input;
 using System.Windows.Threading;
+using VoiceTyper.Core.Localization;
 using VoiceTyper.Core.Models;
 using VoiceTyper.Core.Services;
 
@@ -57,7 +58,7 @@ public sealed class HotkeyService
         }
         else
         {
-            errors.Add($"Не удалось зарегистрировать хоткей записи '{settings.RecordHotkey}' — возможно, он уже занят.");
+            errors.Add(Loc.Format("Hotkeys_RegistrationErrorRecord", settings.RecordHotkey));
         }
 
         var cancel = Register("Cancel", settings.CancelHotkey, CancelPressed);
@@ -67,7 +68,7 @@ public sealed class HotkeyService
         }
         else
         {
-            errors.Add($"Не удалось зарегистрировать хоткей отмены '{settings.CancelHotkey}'.");
+            errors.Add(Loc.Format("Hotkeys_RegistrationErrorCancel", settings.CancelHotkey));
         }
 
         return errors;

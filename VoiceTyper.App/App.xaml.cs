@@ -1,4 +1,6 @@
 ﻿using System.ComponentModel;
+using System.Globalization;
+using System.IO;
 using System.Windows;
 using Application = System.Windows.Application;
 using MessageBox = System.Windows.MessageBox;
@@ -8,6 +10,7 @@ using VoiceTyper.App.Overlay;
 using VoiceTyper.App.ViewModels;
 using VoiceTyper.Core.Abstractions;
 using VoiceTyper.Core.Audio;
+using VoiceTyper.Core.Localization;
 using VoiceTyper.Core.Models;
 using VoiceTyper.Core.Services;
 
@@ -42,6 +45,7 @@ public partial class App : Application
     private RecordingMode _lastRecordingMode;
     private int _lastSilenceThresholdMs;
     private AppTheme _lastAppliedTheme = AppTheme.System;
+    private AppLanguage _lastAppliedLanguage = AppLanguage.Ru;
     private CancellationTokenSource? _downloadCts;
     private bool _engineInitializing;
     private readonly SemaphoreSlim _engineInitLock = new(1, 1);
@@ -58,44 +62,56 @@ public partial class App : Application
         // Каждый запуск начинаем с чистого лога.
         _logger.Clear();
 
+        _settingsService = new SettingsService();
+        _currentSettings = _settingsService.Load();
+
+        // Язык применяем сразу после загрузки настроек, но до первого лога/UI,
+        // чтобы логи и сообщения были на нужном языке. При первом запуске — по ОС.
+        var effectiveLanguage = ResolveEffectiveLanguage();
+        Loc.Instance.Apply(effectiveLanguage);
+        _lastAppliedLanguage = effectiveLanguage;
+        if (effectiveLanguage != _currentSettings.AppLanguage)
+        {
+            _currentSettings.AppLanguage = effectiveLanguage;
+            _settingsService.Save(_currentSettings);
+        }
+
         AppDomain.CurrentDomain.UnhandledException += (_, args) =>
-            _logger.Error("Необработанное исключение (AppDomain).", args.ExceptionObject as Exception);
+            _logger.Error(Loc.T("Log_UnhandledAppDomain"), args.ExceptionObject as Exception);
         TaskScheduler.UnobservedTaskException += (_, args) =>
         {
-            _logger.Error("Необработанное исключение задачи (Task).", args.Exception);
+            _logger.Error(Loc.T("Log_UnhandledTask"), args.Exception);
             args.SetObserved();
         };
 
         DispatcherUnhandledException += (_, args) =>
         {
-            _logger.Error("Необработанное исключение (UI-поток).", args.Exception);
-            MessageBox.Show($"Необработанная ошибка: {args.Exception.Message}", "VoiceTyper", MessageBoxButton.OK, MessageBoxImage.Error);
+            _logger.Error(Loc.T("Log_UnhandledUi"), args.Exception);
+            MessageBox.Show(Loc.Format("Log_UnhandledErrorMsg", args.Exception.Message), Loc.T("App_MessageBoxTitle"), MessageBoxButton.OK, MessageBoxImage.Error);
             args.Handled = true;
         };
 
-        _logger.Info($"=== VoiceTyper запуск (PID {Environment.ProcessId}) ===");
-        _logger.Info($"Версия: {Environment.Version}, ОС: {Environment.OSVersion}, процессор: {Environment.ProcessorCount} ядер");
-        _logger.Info($"Логи: {_logger.LogDirectory}");
+        _logger.Info(Loc.Format("Log_Startup", Environment.ProcessId));
+        _logger.Info(Loc.Format("Log_System", Environment.Version, Environment.OSVersion, Environment.ProcessorCount));
+        _logger.Info(Loc.Format("Log_LogDirectory", _logger.LogDirectory));
         _mutex = new Mutex(initiallyOwned: true, MutexName, out var createdNew);
         if (!createdNew)
         {
-            _logger.Warn("Обнаружен второй экземпляр — завершение.");
-            MessageBox.Show("VoiceTyper уже запущен.", "VoiceTyper", MessageBoxButton.OK, MessageBoxImage.Information);
+            _logger.Warn(Loc.T("Log_SecondInstance"));
+            MessageBox.Show(Loc.T("App_AlreadyRunning"), Loc.T("App_MessageBoxTitle"), MessageBoxButton.OK, MessageBoxImage.Information);
             Shutdown();
             return;
         }
 
-        _settingsService = new SettingsService();
         _modelManager = new ModelManager();
         _microphoneService = new MicrophoneService();
-        _currentSettings = _settingsService.Load();
         ThemeManager.Apply(_currentSettings.Theme);
         _lastAppliedTheme = _currentSettings.Theme;
-        _logger.Info($"Настройки: {_settingsService.SettingsFilePath}");
-        _logger.Info($"Настройки: режим={_currentSettings.RecordingMode}, язык={_currentSettings.Language}, " +
-                     $"модель={_currentSettings.ModelSize}, автовставка={_currentSettings.AutoPasteEnabled}, " +
-                     $"микрофон={_currentSettings.MicrophoneDeviceId ?? "(по умолчанию)"}");
-        _logger.Info($"Хоткеи: запись='{_currentSettings.RecordHotkey}', отмена='{_currentSettings.CancelHotkey}'");
+        _logger.Info(Loc.Format("Log_SettingsPath", _settingsService.SettingsFilePath));
+        _logger.Info(Loc.Format("Log_SettingsSummary", _currentSettings.RecordingMode, _currentSettings.Language,
+                     _currentSettings.ModelSize, _currentSettings.AutoPasteEnabled,
+                     _currentSettings.MicrophoneDeviceId ?? Loc.T("Log_DefaultMic")));
+        _logger.Info(Loc.Format("Log_Hotkeys", _currentSettings.RecordHotkey, _currentSettings.CancelHotkey));
 
         _tray = new TrayIcon();
         _tray.ApplyTheme(ThemeManager.IsSystemDark);
@@ -107,19 +123,19 @@ public partial class App : Application
         _hotkeys.CancelPressed += OnCancelPressed;
         foreach (var error in _hotkeys.ApplySettings(_currentSettings))
         {
-            _logger.Warn("Регистрация хоткея: " + error);
-            _tray.ShowBalloon("VoiceTyper", error);
+            _logger.Warn(Loc.Format("Log_HotkeyRegistration", error));
+            _tray.ShowBalloon(Loc.T("App_MessageBoxTitle"), error);
         }
 
         var microphones = _microphoneService.GetMicrophones();
         _logger.Info(microphones.Count == 0
-            ? "Микрофоны: активные устройства не найдены."
-            : "Микрофоны: " + string.Join(" | ", microphones.Select(m => m.Name)));
+            ? Loc.T("Log_MicNone")
+            : Loc.Format("Log_MicList", string.Join(" | ", microphones.Select(m => m.Name))));
 
         _settingsViewModel = new SettingsViewModel(_settingsService, _hotkeys, _microphoneService, _modelManager);
         _settingsViewModel.SettingsApplied += OnSettingsApplied;
         _settingsViewModel.DownloadCancelRequested += CancelModelDownload;
-        _settingsViewModel.SetStatus("Готов");
+        _settingsViewModel.SetStatus(Loc.T("Status_Ready"));
         ThemeManager.ThemeApplied += () => _tray?.ApplyTheme(ThemeManager.IsSystemDark);
 
         _ = InitializeEngineAsync();
@@ -131,9 +147,24 @@ public partial class App : Application
         }
     }
 
+    /// <summary>
+    /// Определяет эффективный язык интерфейса: при первом запуске (нет файла настроек) —
+    /// по языку операционной системы, иначе — из сохранённых настроек.
+    /// </summary>
+    private AppLanguage ResolveEffectiveLanguage()
+    {
+        if (!File.Exists(_settingsService!.SettingsFilePath))
+        {
+            var ui = CultureInfo.InstalledUICulture ?? CultureInfo.CurrentUICulture;
+            return ui.Name.StartsWith("en", StringComparison.OrdinalIgnoreCase) ? AppLanguage.En : AppLanguage.Ru;
+        }
+
+        return _currentSettings.AppLanguage;
+    }
+
     protected override void OnExit(ExitEventArgs e)
     {
-        _logger.Info("=== VoiceTyper завершение ===");
+        _logger.Info(Loc.T("Log_Quit"));
         _hotkeys?.UnregisterAll();
         _tray?.Dispose();
         _statusOverlay?.Close();
@@ -157,25 +188,25 @@ public partial class App : Application
                 // При смене РЕЖИМА/ПОРОГА пересоздаём только конечный автомат — модель остаётся в памяти.
                 if (_transcription is null || _loadedModelSize != _currentSettings.ModelSize)
                 {
-                    _logger.Info("Инициализация движка: подготовка модели...");
+                    _logger.Info(Loc.T("Log_EngineInitModel"));
                     _downloadCts = new CancellationTokenSource();
                     try
                     {
-                        var modelPath = await _modelManager!.EnsureModelAsync(_currentSettings.ModelSize, ModelDownloadProgress("Модель Whisper"), _downloadCts.Token);
-                        _vadPath = await _modelManager.EnsureVadModelAsync(ModelDownloadProgress("VAD"), _downloadCts.Token);
+                        var modelPath = await _modelManager!.EnsureModelAsync(_currentSettings.ModelSize, ModelDownloadProgress(Loc.T("Models_WhisperLabel")), _downloadCts.Token);
+                        _vadPath = await _modelManager.EnsureVadModelAsync(ModelDownloadProgress(Loc.T("Models_VadLabel")), _downloadCts.Token);
                         _loadedModelSize = _currentSettings.ModelSize;
 
                         var oldTranscription = _transcription;
                         _transcription = new WhisperTranscriptionService(modelPath);
                         await (oldTranscription?.DisposeAsync() ?? ValueTask.CompletedTask);
 
-                        _logger.Info($"Модель Whisper: {modelPath}");
-                        _logger.Info($"Модель VAD: {_vadPath}");
+                        _logger.Info(Loc.Format("Log_ModelWhisper", modelPath));
+                        _logger.Info(Loc.Format("Log_ModelVad", _vadPath));
                     }
                     catch (OperationCanceledException)
                     {
-                        _logger.Warn("Загрузка модели отменена пользователем.");
-                        _settingsViewModel?.SetStatus("Скачивание отменено");
+                        _logger.Warn(Loc.T("Log_DownloadCancelled"));
+                        _settingsViewModel?.SetStatus(Loc.T("Status_DownloadCancelled"));
                         _settingsViewModel?.ClearModelDownload();
                         return;
                     }
@@ -189,7 +220,7 @@ public partial class App : Application
                 _loadedMicrophoneId = _currentSettings.MicrophoneDeviceId;
                 _lastRecordingMode = _currentSettings.RecordingMode;
                 _lastSilenceThresholdMs = _currentSettings.SilenceThresholdMs;
-                _logger.Info($"Микрофон (устройство): {_currentSettings.MicrophoneDeviceId ?? "(по умолчанию)"}");
+                _logger.Info(Loc.Format("Log_MicDevice", _currentSettings.MicrophoneDeviceId ?? Loc.T("Log_DefaultMic")));
 
                 if (oldMachine is not null)
                 {
@@ -217,16 +248,16 @@ public partial class App : Application
 
                 _stateMachine = machine;
 
-                _logger.Info("Движок инициализирован успешно.");
-                _tray?.SetTooltip("VoiceTyper — готов");
-                _settingsViewModel?.SetStatus("Модель загружена");
+                _logger.Info(Loc.T("Log_EngineReady"));
+                _tray?.SetTooltip(Loc.T("App_TrayTooltipReady"));
+                _settingsViewModel?.SetStatus(Loc.T("Status_ModelLoaded"));
                 _settingsViewModel?.ClearModelDownload();
             }
             catch (Exception ex)
             {
-                _logger.Error("Не удалось подготовить движок/модель.", ex);
-                _tray?.ShowBalloon("VoiceTyper", $"Ошибка подготовки модели: {ex.Message}");
-                _settingsViewModel?.SetStatus("Ошибка загрузки модели");
+                _logger.Error(Loc.T("Log_EngineFail"), ex);
+                _tray?.ShowBalloon(Loc.T("App_MessageBoxTitle"), Loc.Format("Log_ModelErrorBalloon", ex.Message));
+                _settingsViewModel?.SetStatus(Loc.T("Status_EngineError"));
             }
             finally
             {
@@ -261,16 +292,16 @@ public partial class App : Application
             if (wav is not null && wav.Length > 44)
             {
                 var ms = (wav.Length - 44) * 1000.0 / (16000.0 * 2);
-                _logger.Info($"Тест микрофона: УСПЕХ. Бэкенд={backend}, считано данных ≈ {ms:F0} мс.");
+                _logger.Info(Loc.Format("Log_TestMicSuccess", backend, Math.Round(ms)));
             }
             else
             {
-                _logger.Warn("Тест микрофона: запись не дала данных (проверьте уровень микрофона).");
+                _logger.Warn(Loc.T("Log_TestMicNoData"));
             }
         }
         catch (Exception ex)
         {
-            _logger.Error("Тест микрофона: НЕ УДАЛОСЬ захватить выбранный микрофон.", ex);
+            _logger.Error(Loc.T("Log_TestMicError"), ex);
         }
     }
 
@@ -298,10 +329,18 @@ public partial class App : Application
     private void OnSettingsApplied()
     {
         _currentSettings = _settingsService!.Load();
-        _settingsViewModel?.SetStatus("Сохранено");
-        _logger.Info("Применены настройки: " +
-                     $"режим={_currentSettings.RecordingMode}, язык={_currentSettings.Language}, " +
-                     $"модель={_currentSettings.ModelSize}, микрофон={_currentSettings.MicrophoneDeviceId ?? "(по умолчанию)"}");
+
+        // Смена языка интерфейса — применяем её и обновляем элементы, созданные один раз.
+        if (_currentSettings.AppLanguage != _lastAppliedLanguage)
+        {
+            Loc.Instance.Apply(_currentSettings.AppLanguage);
+            _lastAppliedLanguage = _currentSettings.AppLanguage;
+            _tray?.ApplyLanguage();
+        }
+
+        _settingsViewModel?.SetStatus(Loc.T("Status_Saved"));
+        _logger.Info(Loc.Format("Log_SettingsApplied", _currentSettings.RecordingMode, _currentSettings.Language,
+                     _currentSettings.ModelSize, _currentSettings.MicrophoneDeviceId ?? Loc.T("Log_DefaultMic")));
 
         var modelChanged = _currentSettings.ModelSize != _loadedModelSize;
         var micChanged = _currentSettings.MicrophoneDeviceId != _loadedMicrophoneId;
@@ -316,12 +355,14 @@ public partial class App : Application
 
         if (modelChanged || micChanged || behaviorChanged)
         {
-            _settingsViewModel?.SetStatus(modelChanged ? "Перезагрузка модели..." : behaviorChanged ? "Применение режима..." : "Применение микрофона...");
+            _settingsViewModel?.SetStatus(modelChanged
+                ? Loc.T("Status_ModelReloading")
+                : behaviorChanged ? Loc.T("Status_ApplyingMode") : Loc.T("Status_ApplyingMic"));
             _ = InitializeEngineAsync();
         }
         else
         {
-            _settingsViewModel?.SetStatus("Сохранено");
+            _settingsViewModel?.SetStatus(Loc.T("Status_Saved"));
         }
     }
 
@@ -329,7 +370,7 @@ public partial class App : Application
     {
         if (_stateMachine is null || _engineInitializing || !_modelManager!.IsModelDownloaded(_currentSettings.ModelSize))
         {
-            _tray?.ShowBalloon("VoiceTyper", "Модель скачивается или ещё не загружена — запись отключена.");
+            _tray?.ShowBalloon(Loc.T("App_MessageBoxTitle"), Loc.T("Status_ModelNotReady"));
             return;
         }
 
@@ -360,7 +401,7 @@ public partial class App : Application
     {
         if (_stateMachine is null || _engineInitializing || !_modelManager!.IsModelDownloaded(_currentSettings.ModelSize))
         {
-            _tray?.ShowBalloon("VoiceTyper", "Модель скачивается или ещё не загружена — запись отключена.");
+            _tray?.ShowBalloon(Loc.T("App_MessageBoxTitle"), Loc.T("Status_ModelNotReady"));
             return;
         }
 
@@ -387,15 +428,15 @@ public partial class App : Application
     private void CancelModelDownload() => _downloadCts?.Cancel();
 
     private void OnStateChanged(RecordingState state)
-    {        _logger.Info("Состояние записи -> " + state);
+    {        _logger.Info(Loc.Format("Log_StateChange", state));
         Dispatcher.BeginInvoke(() =>
         {
             _tray?.SetRecording(state == RecordingState.Recording);
             var status = state switch
             {
-                RecordingState.Recording => "Запись...",
-                RecordingState.Processing => "Распознавание...",
-                _ => "Готов",
+                RecordingState.Recording => Loc.T("Status_Recording"),
+                RecordingState.Processing => Loc.T("Status_Processing"),
+                _ => Loc.T("Status_Ready"),
             };
             _settingsViewModel?.SetStatus(status);
             UpdateStatusOverlay(state);
@@ -410,10 +451,10 @@ public partial class App : Application
         switch (state)
         {
             case RecordingState.Recording:
-                _statusOverlay.ShowStatus("Захват", "#4C8BF5");
+                _statusOverlay.ShowStatus(Loc.T("Status_Capturing"), "#4C8BF5");
                 break;
             case RecordingState.Processing:
-                _statusOverlay.ShowStatus("Распознавание...", "#F5A623");
+                _statusOverlay.ShowStatus(Loc.T("Status_Processing"), "#F5A623");
                 break;
             default:
                 _statusOverlay.HideStatus();
@@ -423,7 +464,7 @@ public partial class App : Application
 
     private void OnTextReady(string text)
     {
-        _logger.Info($"Распознанный текст ({text.Length} симв.): {text}");
+        _logger.Info(Loc.Format("Log_TextReady", text.Length, text));
         Dispatcher.BeginInvoke(() =>
         {
             _settingsViewModel?.SetLastText(text);
@@ -434,15 +475,15 @@ public partial class App : Application
 
     private void OnEngineFailed(string message)
     {
-        _logger.Error("Ошибка записи/распознавания: " + message);
+        _logger.Error(Loc.Format("Log_EngineFailed", message));
         Dispatcher.BeginInvoke(() =>
         {
-            _settingsViewModel?.SetStatus("Ошибка");
+            _settingsViewModel?.SetStatus(Loc.T("Status_Error"));
             // Показываем уведомление один раз, чтобы не спамить при каждом нажатии.
             if (_lastMicError != message)
             {
                 _lastMicError = message;
-                _tray?.ShowBalloon("VoiceTyper — микрофон", message);
+                _tray?.ShowBalloon(Loc.T("App_BalloonMicError"), message);
             }
         });
     }

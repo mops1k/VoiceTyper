@@ -1,0 +1,493 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="App_WindowTitle" xml:space="preserve">
+    <value>VoiceTyper — settings</value>
+  </data>
+  <data name="App_TrayTooltip" xml:space="preserve">
+    <value>VoiceTyper</value>
+  </data>
+  <data name="App_TrayTooltipReady" xml:space="preserve">
+    <value>VoiceTyper — ready</value>
+  </data>
+  <data name="App_TrayOpenSettings" xml:space="preserve">
+    <value>Open settings</value>
+  </data>
+  <data name="App_TrayRecord" xml:space="preserve">
+    <value>Record</value>
+  </data>
+  <data name="App_TrayQuit" xml:space="preserve">
+    <value>Quit</value>
+  </data>
+  <data name="App_AlreadyRunning" xml:space="preserve">
+    <value>VoiceTyper is already running.</value>
+  </data>
+  <data name="App_MessageBoxTitle" xml:space="preserve">
+    <value>VoiceTyper</value>
+  </data>
+  <data name="App_BalloonMicError" xml:space="preserve">
+    <value>VoiceTyper — microphone</value>
+  </data>
+  <data name="App_Cancel" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="App_Reset" xml:space="preserve">
+    <value>Reset</value>
+  </data>
+  <data name="Nav_Main" xml:space="preserve">
+    <value>General</value>
+  </data>
+  <data name="Nav_AppTagline" xml:space="preserve">
+    <value>voice input</value>
+  </data>
+  <data name="Nav_Appearance" xml:space="preserve">
+    <value>Appearance</value>
+  </data>
+  <data name="Nav_Models" xml:space="preserve">
+    <value>Models</value>
+  </data>
+  <data name="Nav_Hotkeys" xml:space="preserve">
+    <value>Hotkeys</value>
+  </data>
+  <data name="Nav_Microphone" xml:space="preserve">
+    <value>Microphone</value>
+  </data>
+  <data name="Nav_Startup" xml:space="preserve">
+    <value>Startup</value>
+  </data>
+  <data name="Nav_About" xml:space="preserve">
+    <value>About</value>
+  </data>
+  <data name="General_Title" xml:space="preserve">
+    <value>GENERAL</value>
+  </data>
+  <data name="Look_Title" xml:space="preserve">
+    <value>APPEARANCE</value>
+  </data>
+  <data name="Models_Title" xml:space="preserve">
+    <value>MODELS</value>
+  </data>
+  <data name="Hotkeys_Title" xml:space="preserve">
+    <value>HOTKEYS</value>
+  </data>
+  <data name="Mic_Title" xml:space="preserve">
+    <value>MICROPHONE</value>
+  </data>
+  <data name="Startup_Title" xml:space="preserve">
+    <value>STARTUP</value>
+  </data>
+  <data name="About_Title" xml:space="preserve">
+    <value>ABOUT</value>
+  </data>
+  <data name="General_RecognitionLanguage" xml:space="preserve">
+    <value>Recognition language</value>
+  </data>
+  <data name="General_RecognitionLanguage_Tooltip" xml:space="preserve">
+    <value>Language used for speech recognition. 'Auto' detects it automatically.</value>
+  </data>
+  <data name="General_RecordingMode" xml:space="preserve">
+    <value>Recording mode</value>
+  </data>
+  <data name="General_RecordingMode_Tooltip" xml:space="preserve">
+    <value>'Hold' — records while the key is held. 'Toggle' — press to start/stop. 'Auto' — stops on silence.</value>
+  </data>
+  <data name="General_SilenceThreshold" xml:space="preserve">
+    <value>Silence threshold, ms</value>
+  </data>
+  <data name="General_SilenceThreshold_Tooltip" xml:space="preserve">
+    <value>Pause (ms) in 'Auto' mode after which the recording is considered finished.</value>
+  </data>
+  <data name="General_Temperature" xml:space="preserve">
+    <value>Temperature</value>
+  </data>
+  <data name="General_Temperature_Tooltip" xml:space="preserve">
+    <value>Recognition strictness: 0 — deterministic, higher — softer.</value>
+  </data>
+  <data name="General_NoiseReduction" xml:space="preserve">
+    <value>Suppress background noise</value>
+  </data>
+  <data name="General_ConditionOnPreviousText" xml:space="preserve">
+    <value>Use context (for long speech)</value>
+  </data>
+  <data name="General_AutoPaste" xml:space="preserve">
+    <value>Paste text automatically (Ctrl+V)</value>
+  </data>
+  <data name="General_Terms" xml:space="preserve">
+    <value>Technical terms</value>
+  </data>
+  <data name="General_Terms_Tooltip" xml:space="preserve">
+    <value>Words added to the model prompt for accurate recognition (e.g. API, JSON, IDE).</value>
+  </data>
+  <data name="General_Terms_Hint" xml:space="preserve">
+    <value>Words added to the model prompt for accurate recognition (e.g. API, JSON, IDE).</value>
+  </data>
+  <data name="General_InterfaceLanguage" xml:space="preserve">
+    <value>Interface language</value>
+  </data>
+  <data name="General_InterfaceLanguage_Tooltip" xml:space="preserve">
+    <value>Application interface language. Can be switched without restarting.</value>
+  </data>
+  <data name="Look_Theme" xml:space="preserve">
+    <value>Theme</value>
+  </data>
+  <data name="Look_Theme_Tooltip" xml:space="preserve">
+    <value>'Auto' follows the Windows theme. 'Light'/'Dark' — manually.</value>
+  </data>
+  <data name="Look_HideOnFocusLoss" xml:space="preserve">
+    <value>Hide settings window on focus loss</value>
+  </data>
+  <data name="Models_Download" xml:space="preserve">
+    <value>Download</value>
+  </data>
+  <data name="Models_Delete_Tooltip" xml:space="preserve">
+    <value>Delete from disk</value>
+  </data>
+  <data name="Models_Tiny_Description" xml:space="preserve">
+    <value>Tiny model. Fast recognition, suitable for simple tasks.</value>
+  </data>
+  <data name="Models_Base_Description" xml:space="preserve">
+    <value>Base model. Good balance of speed and quality on CPU.</value>
+  </data>
+  <data name="Models_Small_Description" xml:space="preserve">
+    <value>Recommended model. Accurate recognition, moderate load.</value>
+  </data>
+  <data name="Models_Medium_Description" xml:space="preserve">
+    <value>High-quality recognition, noticeably slower on CPU.</value>
+  </data>
+  <data name="Models_Large_Description" xml:space="preserve">
+    <value>Maximum quality. For powerful processors.</value>
+  </data>
+  <data name="Models_SpeedVeryFast" xml:space="preserve">
+    <value>Very fast</value>
+  </data>
+  <data name="Models_SpeedFast" xml:space="preserve">
+    <value>Fast</value>
+  </data>
+  <data name="Models_SpeedMedium" xml:space="preserve">
+    <value>Medium</value>
+  </data>
+  <data name="Models_SpeedSlow" xml:space="preserve">
+    <value>Slow</value>
+  </data>
+  <data name="Models_SpeedVerySlow" xml:space="preserve">
+    <value>Very slow</value>
+  </data>
+  <data name="Models_QualityLow" xml:space="preserve">
+    <value>Low</value>
+  </data>
+  <data name="Models_QualityMedium" xml:space="preserve">
+    <value>Medium</value>
+  </data>
+  <data name="Models_QualityHigh" xml:space="preserve">
+    <value>High</value>
+  </data>
+  <data name="Models_QualityVeryHigh" xml:space="preserve">
+    <value>Very high</value>
+  </data>
+  <data name="Models_QualityMax" xml:space="preserve">
+    <value>Maximum</value>
+  </data>
+  <data name="Models_SizeMb" xml:space="preserve">
+    <value>{0} MB</value>
+  </data>
+  <data name="Models_SizeGb" xml:space="preserve">
+    <value>{0} GB</value>
+  </data>
+  <data name="Models_SizeKb" xml:space="preserve">
+    <value>{0} KB</value>
+  </data>
+  <data name="Models_DownloadError" xml:space="preserve">
+    <value>Failed to download model '{0}': {1}</value>
+  </data>
+  <data name="Models_DeleteSuccess" xml:space="preserve">
+    <value>Model '{0}' deleted from disk.</value>
+  </data>
+  <data name="Models_DownloadInfoFmt" xml:space="preserve">
+    <value>{0}: {1} of {2} · {3}/s{4}</value>
+  </data>
+  <data name="Models_RemainingEta" xml:space="preserve">
+    <value> · ~{0} remaining</value>
+  </data>
+  <data name="Models_WhisperLabel" xml:space="preserve">
+    <value>Whisper model</value>
+  </data>
+  <data name="Models_VadLabel" xml:space="preserve">
+    <value>VAD</value>
+  </data>
+  <data name="Models_UnitGb" xml:space="preserve">
+    <value>GB</value>
+  </data>
+  <data name="Models_UnitMb" xml:space="preserve">
+    <value>MB</value>
+  </data>
+  <data name="Models_UnitKb" xml:space="preserve">
+    <value>KB</value>
+  </data>
+  <data name="Models_MinSecFmt" xml:space="preserve">
+    <value>{0}m {1}s</value>
+  </data>
+  <data name="Models_SecFmt" xml:space="preserve">
+    <value>{0}s</value>
+  </data>
+  <data name="Hotkeys_Record" xml:space="preserve">
+    <value>Record</value>
+  </data>
+  <data name="Hotkeys_Record_Tooltip" xml:space="preserve">
+    <value>Record hotkey. Click the field and press the desired combination.</value>
+  </data>
+  <data name="Hotkeys_Cancel" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="Hotkeys_Cancel_Tooltip" xml:space="preserve">
+    <value>Cancel hotkey for recording and processing.</value>
+  </data>
+  <data name="Hotkeys_FieldHint" xml:space="preserve">
+    <value>Click and press the desired combination</value>
+  </data>
+  <data name="Hotkeys_CaptureHint" xml:space="preserve">
+    <value>Press combination...</value>
+  </data>
+  <data name="Hotkeys_Hint" xml:space="preserve">
+    <value>Click the field and press the desired combination (e.g. Ctrl+Alt+Space). Escape cancels.</value>
+  </data>
+  <data name="Hotkeys_ConfirmDialog" xml:space="preserve">
+    <value>New key combination: {0}
+Apply?</value>
+  </data>
+  <data name="Hotkeys_NeedsModifier" xml:space="preserve">
+    <value>A global hotkey needs a modifier (Ctrl/Alt/Shift/Win) or an F-key.</value>
+  </data>
+  <data name="Hotkeys_InvalidRecord" xml:space="preserve">
+    <value>Invalid record hotkey.</value>
+  </data>
+  <data name="Hotkeys_InvalidCancel" xml:space="preserve">
+    <value>Invalid cancel hotkey.</value>
+  </data>
+  <data name="Hotkeys_RegistrationErrorRecord" xml:space="preserve">
+    <value>Failed to register the record hotkey '{0}' — it may already be in use.</value>
+  </data>
+  <data name="Hotkeys_RegistrationErrorCancel" xml:space="preserve">
+    <value>Failed to register the cancel hotkey '{0}'.</value>
+  </data>
+  <data name="Mic_Device" xml:space="preserve">
+    <value>Device</value>
+  </data>
+  <data name="Mic_Refresh" xml:space="preserve">
+    <value>Refresh</value>
+  </data>
+  <data name="Mic_NoneFound" xml:space="preserve">
+    <value>No active microphones found.</value>
+  </data>
+  <data name="Mic_DevicesFound" xml:space="preserve">
+    <value>Devices found: {0}</value>
+  </data>
+  <data name="Startup_WithWindows" xml:space="preserve">
+    <value>Start with Windows</value>
+  </data>
+  <data name="Startup_Minimized" xml:space="preserve">
+    <value>Start minimized to tray</value>
+  </data>
+  <data name="About_Description1" xml:space="preserve">
+    <value>VoiceTyper is a voice-to-text program. Press the hotkey, speak, and the text will be recognized and inserted into the active field or copied to the clipboard.</value>
+  </data>
+  <data name="About_Description2" xml:space="preserve">
+    <value>Recognition runs locally (Whisper) — audio and text never leave your device.</value>
+  </data>
+  <data name="About_Version" xml:space="preserve">
+    <value>Version</value>
+  </data>
+  <data name="About_Version_Tooltip" xml:space="preserve">
+    <value>Current app version.</value>
+  </data>
+  <data name="About_Logs" xml:space="preserve">
+    <value>Logs</value>
+  </data>
+  <data name="About_Logs_Tooltip" xml:space="preserve">
+    <value>Log file: %LOCALAPPDATA%\VoiceTyper\logs\voiceTyper.log</value>
+  </data>
+  <data name="Status_Ready" xml:space="preserve">
+    <value>Ready</value>
+  </data>
+  <data name="Status_Loading" xml:space="preserve">
+    <value>Loading...</value>
+  </data>
+  <data name="Status_Saved" xml:space="preserve">
+    <value>Saved</value>
+  </data>
+  <data name="Status_Recording" xml:space="preserve">
+    <value>Recording...</value>
+  </data>
+  <data name="Status_Processing" xml:space="preserve">
+    <value>Recognizing...</value>
+  </data>
+  <data name="Status_ModelLoaded" xml:space="preserve">
+    <value>Model loaded</value>
+  </data>
+  <data name="Status_DownloadCancelled" xml:space="preserve">
+    <value>Download cancelled</value>
+  </data>
+  <data name="Status_EngineError" xml:space="preserve">
+    <value>Model load error</value>
+  </data>
+  <data name="Status_Error" xml:space="preserve">
+    <value>Error</value>
+  </data>
+  <data name="Status_Capturing" xml:space="preserve">
+    <value>Capturing</value>
+  </data>
+  <data name="Status_ModelReloading" xml:space="preserve">
+    <value>Reloading model...</value>
+  </data>
+  <data name="Status_ApplyingMode" xml:space="preserve">
+    <value>Applying mode...</value>
+  </data>
+  <data name="Status_ApplyingMic" xml:space="preserve">
+    <value>Applying microphone...</value>
+  </data>
+  <data name="Status_ModelNotReady" xml:space="preserve">
+    <value>The model is downloading or not yet loaded — recording is disabled.</value>
+  </data>
+  <data name="Enum_RecordingMode_PushToTalk" xml:space="preserve">
+    <value>Hold</value>
+  </data>
+  <data name="Enum_RecordingMode_Toggle" xml:space="preserve">
+    <value>Toggle</value>
+  </data>
+  <data name="Enum_RecordingMode_Vad" xml:space="preserve">
+    <value>Auto (VAD)</value>
+  </data>
+  <data name="Enum_RecognitionLanguage_Auto" xml:space="preserve">
+    <value>Auto</value>
+  </data>
+  <data name="Enum_RecognitionLanguage_Ru" xml:space="preserve">
+    <value>Russian</value>
+  </data>
+  <data name="Enum_RecognitionLanguage_En" xml:space="preserve">
+    <value>English</value>
+  </data>
+  <data name="Enum_AppTheme_System" xml:space="preserve">
+    <value>System</value>
+  </data>
+  <data name="Enum_AppTheme_Light" xml:space="preserve">
+    <value>Light</value>
+  </data>
+  <data name="Enum_AppTheme_Dark" xml:space="preserve">
+    <value>Dark</value>
+  </data>
+  <data name="Enum_AppLanguage_Ru" xml:space="preserve">
+    <value>Russian</value>
+  </data>
+  <data name="Enum_AppLanguage_En" xml:space="preserve">
+    <value>English</value>
+  </data>
+  <data name="Log_Startup" xml:space="preserve">
+    <value>=== VoiceTyper start (PID {0}) ===</value>
+  </data>
+  <data name="Log_System" xml:space="preserve">
+    <value>Version: {0}, OS: {1}, CPU: {2} cores</value>
+  </data>
+  <data name="Log_LogDirectory" xml:space="preserve">
+    <value>Logs: {0}</value>
+  </data>
+  <data name="Log_SecondInstance" xml:space="preserve">
+    <value>Second instance detected — terminating.</value>
+  </data>
+  <data name="Log_SettingsPath" xml:space="preserve">
+    <value>Settings: {0}</value>
+  </data>
+  <data name="Log_SettingsSummary" xml:space="preserve">
+    <value>Settings: mode={0}, language={1}, model={2}, autopaste={3}, microphone={4}</value>
+  </data>
+  <data name="Log_Hotkeys" xml:space="preserve">
+    <value>Hotkeys: record='{0}', cancel='{1}'</value>
+  </data>
+  <data name="Log_HotkeyRegistration" xml:space="preserve">
+    <value>Hotkey registration: {0}</value>
+  </data>
+  <data name="Log_MicNone" xml:space="preserve">
+    <value>Microphones: no active devices found.</value>
+  </data>
+  <data name="Log_MicList" xml:space="preserve">
+    <value>Microphones: {0}</value>
+  </data>
+  <data name="Log_EngineInitModel" xml:space="preserve">
+    <value>Engine init: preparing the model...</value>
+  </data>
+  <data name="Log_ModelWhisper" xml:space="preserve">
+    <value>Whisper model: {0}</value>
+  </data>
+  <data name="Log_ModelVad" xml:space="preserve">
+    <value>VAD model: {0}</value>
+  </data>
+  <data name="Log_DownloadCancelled" xml:space="preserve">
+    <value>Model download cancelled by the user.</value>
+  </data>
+  <data name="Log_MicDevice" xml:space="preserve">
+    <value>Microphone (device): {0}</value>
+  </data>
+  <data name="Log_EngineReady" xml:space="preserve">
+    <value>Engine initialized successfully.</value>
+  </data>
+  <data name="Log_EngineFail" xml:space="preserve">
+    <value>Failed to prepare the engine/model.</value>
+  </data>
+  <data name="Log_ModelErrorBalloon" xml:space="preserve">
+    <value>Model preparation error: {0}</value>
+  </data>
+  <data name="Log_DefaultMic" xml:space="preserve">
+    <value>(default)</value>
+  </data>
+  <data name="Log_TestMicSuccess" xml:space="preserve">
+    <value>Microphone test: SUCCESS. Backend={0}, data read ≈ {1} ms.</value>
+  </data>
+  <data name="Log_TestMicNoData" xml:space="preserve">
+    <value>Microphone test: no data captured (check the microphone level).</value>
+  </data>
+  <data name="Log_TestMicError" xml:space="preserve">
+    <value>Microphone test: FAILED to capture the selected microphone.</value>
+  </data>
+  <data name="Log_SettingsApplied" xml:space="preserve">
+    <value>Settings applied: mode={0}, language={1}, model={2}, microphone={3}</value>
+  </data>
+  <data name="Log_StateChange" xml:space="preserve">
+    <value>Recording state -> {0}</value>
+  </data>
+  <data name="Log_TextReady" xml:space="preserve">
+    <value>Recognized text ({0} chars): {1}</value>
+  </data>
+  <data name="Log_EngineFailed" xml:space="preserve">
+    <value>Recording/recognition error: {0}</value>
+  </data>
+  <data name="Log_UnhandledAppDomain" xml:space="preserve">
+    <value>Unhandled exception (AppDomain).</value>
+  </data>
+  <data name="Log_UnhandledTask" xml:space="preserve">
+    <value>Unhandled task exception (Task).</value>
+  </data>
+  <data name="Log_UnhandledUi" xml:space="preserve">
+    <value>Unhandled exception (UI thread).</value>
+  </data>
+  <data name="Log_UnhandledErrorMsg" xml:space="preserve">
+    <value>Unhandled error: {0}</value>
+  </data>
+  <data name="Log_Quit" xml:space="preserve">
+    <value>=== VoiceTyper exit ===</value>
+  </data>
+  <data name="RSM_VadUnavailable" xml:space="preserve">
+    <value>VAD unavailable</value>
+  </data>
+  <data name="RSM_MicOpenFailed" xml:space="preserve">
+    <value>Failed to open the microphone: {0}. Make sure the device is active and not in use by another app.</value>
+  </data>
+</root>

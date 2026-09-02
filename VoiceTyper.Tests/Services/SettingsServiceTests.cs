@@ -52,6 +52,7 @@ public class SettingsServiceTests : IDisposable
             SilenceThresholdMs = 900,
             StartWithWindows = true,
             StartMinimized = false,
+            AppLanguage = AppLanguage.En,
         };
 
         service.Save(expected);
@@ -67,6 +68,7 @@ public class SettingsServiceTests : IDisposable
         Assert.Equal(expected.SilenceThresholdMs, actual.SilenceThresholdMs);
         Assert.Equal(expected.StartWithWindows, actual.StartWithWindows);
         Assert.Equal(expected.StartMinimized, actual.StartMinimized);
+        Assert.Equal(expected.AppLanguage, actual.AppLanguage);
     }
 
     [Fact]
@@ -80,6 +82,17 @@ public class SettingsServiceTests : IDisposable
         Assert.Contains("\"recordingMode\": \"vad\"", json);
         Assert.Contains("\"language\": \"ru\"", json);
         Assert.Contains("\"autoPasteEnabled\": true", json);
+    }
+
+    [Fact]
+    public void Save_WritesJsonWithCamelCaseAppLanguage()
+    {
+        var service = new SettingsService(_tempDir);
+        service.Save(new AppSettings { AppLanguage = AppLanguage.En });
+
+        var json = File.ReadAllText(service.SettingsFilePath);
+
+        Assert.Contains("\"appLanguage\": \"en\"", json);
     }
 
     [Fact]

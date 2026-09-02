@@ -1,0 +1,493 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="App_WindowTitle" xml:space="preserve">
+    <value>VoiceTyper — настройки</value>
+  </data>
+  <data name="App_TrayTooltip" xml:space="preserve">
+    <value>VoiceTyper</value>
+  </data>
+  <data name="App_TrayTooltipReady" xml:space="preserve">
+    <value>VoiceTyper — готов</value>
+  </data>
+  <data name="App_TrayOpenSettings" xml:space="preserve">
+    <value>Открыть настройки</value>
+  </data>
+  <data name="App_TrayRecord" xml:space="preserve">
+    <value>Запись</value>
+  </data>
+  <data name="App_TrayQuit" xml:space="preserve">
+    <value>Выход</value>
+  </data>
+  <data name="App_AlreadyRunning" xml:space="preserve">
+    <value>VoiceTyper уже запущен.</value>
+  </data>
+  <data name="App_MessageBoxTitle" xml:space="preserve">
+    <value>VoiceTyper</value>
+  </data>
+  <data name="App_BalloonMicError" xml:space="preserve">
+    <value>VoiceTyper — микрофон</value>
+  </data>
+  <data name="App_Cancel" xml:space="preserve">
+    <value>Отмена</value>
+  </data>
+  <data name="App_Reset" xml:space="preserve">
+    <value>Сбросить</value>
+  </data>
+  <data name="Nav_Main" xml:space="preserve">
+    <value>Основные</value>
+  </data>
+  <data name="Nav_AppTagline" xml:space="preserve">
+    <value>голосовой ввод</value>
+  </data>
+  <data name="Nav_Appearance" xml:space="preserve">
+    <value>Внешний вид</value>
+  </data>
+  <data name="Nav_Models" xml:space="preserve">
+    <value>Модели</value>
+  </data>
+  <data name="Nav_Hotkeys" xml:space="preserve">
+    <value>Горячие клавиши</value>
+  </data>
+  <data name="Nav_Microphone" xml:space="preserve">
+    <value>Микрофон</value>
+  </data>
+  <data name="Nav_Startup" xml:space="preserve">
+    <value>Запуск</value>
+  </data>
+  <data name="Nav_About" xml:space="preserve">
+    <value>О программе</value>
+  </data>
+  <data name="General_Title" xml:space="preserve">
+    <value>ОСНОВНЫЕ</value>
+  </data>
+  <data name="Look_Title" xml:space="preserve">
+    <value>ВНЕШНИЙ ВИД</value>
+  </data>
+  <data name="Models_Title" xml:space="preserve">
+    <value>МОДЕЛИ</value>
+  </data>
+  <data name="Hotkeys_Title" xml:space="preserve">
+    <value>ГОРЯЧИЕ КЛАВИШИ</value>
+  </data>
+  <data name="Mic_Title" xml:space="preserve">
+    <value>МИКРОФОН</value>
+  </data>
+  <data name="Startup_Title" xml:space="preserve">
+    <value>ЗАПУСК</value>
+  </data>
+  <data name="About_Title" xml:space="preserve">
+    <value>О ПРОГРАММЕ</value>
+  </data>
+  <data name="General_RecognitionLanguage" xml:space="preserve">
+    <value>Язык распознавания</value>
+  </data>
+  <data name="General_RecognitionLanguage_Tooltip" xml:space="preserve">
+    <value>Язык, на котором распознаётся речь. «Авто» — определять автоматически.</value>
+  </data>
+  <data name="General_RecordingMode" xml:space="preserve">
+    <value>Режим записи</value>
+  </data>
+  <data name="General_RecordingMode_Tooltip" xml:space="preserve">
+    <value>«Удержание» — запись, пока зажата клавиша. «Переключатель» — нажал/нажал. «Авто» — остановка по тишине.</value>
+  </data>
+  <data name="General_SilenceThreshold" xml:space="preserve">
+    <value>Порог тишины, мс</value>
+  </data>
+  <data name="General_SilenceThreshold_Tooltip" xml:space="preserve">
+    <value>Пауза (мс) в режиме «Авто», после которой запись считается завершённой.</value>
+  </data>
+  <data name="General_Temperature" xml:space="preserve">
+    <value>Температура</value>
+  </data>
+  <data name="General_Temperature_Tooltip" xml:space="preserve">
+    <value>Строгость распознавания: 0 — детерминированно, выше — мягче.</value>
+  </data>
+  <data name="General_NoiseReduction" xml:space="preserve">
+    <value>Подавлять фоновый шум</value>
+  </data>
+  <data name="General_ConditionOnPreviousText" xml:space="preserve">
+    <value>Учитывать контекст (для длинной речи)</value>
+  </data>
+  <data name="General_AutoPaste" xml:space="preserve">
+    <value>Автоматически вставлять текст (Ctrl+V)</value>
+  </data>
+  <data name="General_Terms" xml:space="preserve">
+    <value>Технические термины</value>
+  </data>
+  <data name="General_Terms_Tooltip" xml:space="preserve">
+    <value>Слова добавляются в промпт модели для точного распознавания (например API, JSON, IDE).</value>
+  </data>
+  <data name="General_Terms_Hint" xml:space="preserve">
+    <value>Слова добавляются в промпт модели для точного распознавания (например API, JSON, IDE).</value>
+  </data>
+  <data name="General_InterfaceLanguage" xml:space="preserve">
+    <value>Язык интерфейса</value>
+  </data>
+  <data name="General_InterfaceLanguage_Tooltip" xml:space="preserve">
+    <value>Язык интерфейса приложения. Можно переключить без перезапуска.</value>
+  </data>
+  <data name="Look_Theme" xml:space="preserve">
+    <value>Тема оформления</value>
+  </data>
+  <data name="Look_Theme_Tooltip" xml:space="preserve">
+    <value>«Авто» — следовать теме Windows. «Светлая»/«Тёмная» — вручную.</value>
+  </data>
+  <data name="Look_HideOnFocusLoss" xml:space="preserve">
+    <value>Сворачивать окно настроек при потере фокуса</value>
+  </data>
+  <data name="Models_Download" xml:space="preserve">
+    <value>Скачать</value>
+  </data>
+  <data name="Models_Delete_Tooltip" xml:space="preserve">
+    <value>Удалить с диска</value>
+  </data>
+  <data name="Models_Tiny_Description" xml:space="preserve">
+    <value>Минимальная модель. Быстро распознаёт, подходит для простых задач.</value>
+  </data>
+  <data name="Models_Base_Description" xml:space="preserve">
+    <value>Базовая модель. Хороший баланс скорости и качества на CPU.</value>
+  </data>
+  <data name="Models_Small_Description" xml:space="preserve">
+    <value>Рекомендуемая модель. Точное распознавание, умеренная нагрузка.</value>
+  </data>
+  <data name="Models_Medium_Description" xml:space="preserve">
+    <value>Качественное распознавание, заметно медленнее на CPU.</value>
+  </data>
+  <data name="Models_Large_Description" xml:space="preserve">
+    <value>Максимальное качество. Для мощных процессоров.</value>
+  </data>
+  <data name="Models_SpeedVeryFast" xml:space="preserve">
+    <value>Очень быстро</value>
+  </data>
+  <data name="Models_SpeedFast" xml:space="preserve">
+    <value>Быстро</value>
+  </data>
+  <data name="Models_SpeedMedium" xml:space="preserve">
+    <value>Средне</value>
+  </data>
+  <data name="Models_SpeedSlow" xml:space="preserve">
+    <value>Медленно</value>
+  </data>
+  <data name="Models_SpeedVerySlow" xml:space="preserve">
+    <value>Очень медленно</value>
+  </data>
+  <data name="Models_QualityLow" xml:space="preserve">
+    <value>Низкое</value>
+  </data>
+  <data name="Models_QualityMedium" xml:space="preserve">
+    <value>Среднее</value>
+  </data>
+  <data name="Models_QualityHigh" xml:space="preserve">
+    <value>Высокое</value>
+  </data>
+  <data name="Models_QualityVeryHigh" xml:space="preserve">
+    <value>Очень высокое</value>
+  </data>
+  <data name="Models_QualityMax" xml:space="preserve">
+    <value>Максимальное</value>
+  </data>
+  <data name="Models_SizeMb" xml:space="preserve">
+    <value>{0} МБ</value>
+  </data>
+  <data name="Models_SizeGb" xml:space="preserve">
+    <value>{0} ГБ</value>
+  </data>
+  <data name="Models_SizeKb" xml:space="preserve">
+    <value>{0} КБ</value>
+  </data>
+  <data name="Models_DownloadError" xml:space="preserve">
+    <value>Не удалось скачать модель «{0}»: {1}</value>
+  </data>
+  <data name="Models_DeleteSuccess" xml:space="preserve">
+    <value>Модель «{0}» удалена с диска.</value>
+  </data>
+  <data name="Models_DownloadInfoFmt" xml:space="preserve">
+    <value>{0}: {1} из {2} · {3}/с{4}</value>
+  </data>
+  <data name="Models_RemainingEta" xml:space="preserve">
+    <value> · осталось ~{0}</value>
+  </data>
+  <data name="Models_WhisperLabel" xml:space="preserve">
+    <value>Модель Whisper</value>
+  </data>
+  <data name="Models_VadLabel" xml:space="preserve">
+    <value>VAD</value>
+  </data>
+  <data name="Models_UnitGb" xml:space="preserve">
+    <value>ГБ</value>
+  </data>
+  <data name="Models_UnitMb" xml:space="preserve">
+    <value>МБ</value>
+  </data>
+  <data name="Models_UnitKb" xml:space="preserve">
+    <value>КБ</value>
+  </data>
+  <data name="Models_MinSecFmt" xml:space="preserve">
+    <value>{0} мин {1}с</value>
+  </data>
+  <data name="Models_SecFmt" xml:space="preserve">
+    <value>{0}с</value>
+  </data>
+  <data name="Hotkeys_Record" xml:space="preserve">
+    <value>Запись</value>
+  </data>
+  <data name="Hotkeys_Record_Tooltip" xml:space="preserve">
+    <value>Горячая клавиша записи. Кликните по полю и нажмите нужное сочетание.</value>
+  </data>
+  <data name="Hotkeys_Cancel" xml:space="preserve">
+    <value>Отмена</value>
+  </data>
+  <data name="Hotkeys_Cancel_Tooltip" xml:space="preserve">
+    <value>Горячая клавиша отмены записи и обработки.</value>
+  </data>
+  <data name="Hotkeys_FieldHint" xml:space="preserve">
+    <value>Кликните и нажмите нужное сочетание</value>
+  </data>
+  <data name="Hotkeys_CaptureHint" xml:space="preserve">
+    <value>Нажмите сочетание...</value>
+  </data>
+  <data name="Hotkeys_Hint" xml:space="preserve">
+    <value>Кликните по полю и нажмите нужное сочетание (например Ctrl+Alt+Space). Escape — отмена.</value>
+  </data>
+  <data name="Hotkeys_ConfirmDialog" xml:space="preserve">
+    <value>Новое сочетание клавиш: {0}
+Применить?</value>
+  </data>
+  <data name="Hotkeys_NeedsModifier" xml:space="preserve">
+    <value>Для глобальной горячей клавиши нужен модификатор (Ctrl/Alt/Shift/Win) или F-клавиша.</value>
+  </data>
+  <data name="Hotkeys_InvalidRecord" xml:space="preserve">
+    <value>Неверный хоткей записи.</value>
+  </data>
+  <data name="Hotkeys_InvalidCancel" xml:space="preserve">
+    <value>Неверный хоткей отмены.</value>
+  </data>
+  <data name="Hotkeys_RegistrationErrorRecord" xml:space="preserve">
+    <value>Не удалось зарегистрировать хоткей записи '{0}' — возможно, он уже занят.</value>
+  </data>
+  <data name="Hotkeys_RegistrationErrorCancel" xml:space="preserve">
+    <value>Не удалось зарегистрировать хоткей отмены '{0}'.</value>
+  </data>
+  <data name="Mic_Device" xml:space="preserve">
+    <value>Устройство</value>
+  </data>
+  <data name="Mic_Refresh" xml:space="preserve">
+    <value>Обновить</value>
+  </data>
+  <data name="Mic_NoneFound" xml:space="preserve">
+    <value>Активные микрофоны не найдены.</value>
+  </data>
+  <data name="Mic_DevicesFound" xml:space="preserve">
+    <value>Найдено устройств: {0}</value>
+  </data>
+  <data name="Startup_WithWindows" xml:space="preserve">
+    <value>Запускать вместе с Windows</value>
+  </data>
+  <data name="Startup_Minimized" xml:space="preserve">
+    <value>Запускать свёрнутым в трей</value>
+  </data>
+  <data name="About_Description1" xml:space="preserve">
+    <value>VoiceTyper — программа голосового ввода текста. Нажмите горячую клавишу, проговорите текст, и он будет распознан и вставлен в активное поле или скопирован в буфер обмена.</value>
+  </data>
+  <data name="About_Description2" xml:space="preserve">
+    <value>Распознавание выполняется локально (Whisper) — аудио и текст не покидают устройство.</value>
+  </data>
+  <data name="About_Version" xml:space="preserve">
+    <value>Версия</value>
+  </data>
+  <data name="About_Version_Tooltip" xml:space="preserve">
+    <value>Текущая версия приложения.</value>
+  </data>
+  <data name="About_Logs" xml:space="preserve">
+    <value>Логи</value>
+  </data>
+  <data name="About_Logs_Tooltip" xml:space="preserve">
+    <value>Файл журнала: %LOCALAPPDATA%\VoiceTyper\logs\voiceTyper.log</value>
+  </data>
+  <data name="Status_Ready" xml:space="preserve">
+    <value>Готов</value>
+  </data>
+  <data name="Status_Loading" xml:space="preserve">
+    <value>Загрузка...</value>
+  </data>
+  <data name="Status_Saved" xml:space="preserve">
+    <value>Сохранено</value>
+  </data>
+  <data name="Status_Recording" xml:space="preserve">
+    <value>Запись...</value>
+  </data>
+  <data name="Status_Processing" xml:space="preserve">
+    <value>Распознавание...</value>
+  </data>
+  <data name="Status_ModelLoaded" xml:space="preserve">
+    <value>Модель загружена</value>
+  </data>
+  <data name="Status_DownloadCancelled" xml:space="preserve">
+    <value>Скачивание отменено</value>
+  </data>
+  <data name="Status_EngineError" xml:space="preserve">
+    <value>Ошибка загрузки модели</value>
+  </data>
+  <data name="Status_Error" xml:space="preserve">
+    <value>Ошибка</value>
+  </data>
+  <data name="Status_Capturing" xml:space="preserve">
+    <value>Захват</value>
+  </data>
+  <data name="Status_ModelReloading" xml:space="preserve">
+    <value>Перезагрузка модели...</value>
+  </data>
+  <data name="Status_ApplyingMode" xml:space="preserve">
+    <value>Применение режима...</value>
+  </data>
+  <data name="Status_ApplyingMic" xml:space="preserve">
+    <value>Применение микрофона...</value>
+  </data>
+  <data name="Status_ModelNotReady" xml:space="preserve">
+    <value>Модель скачивается или ещё не загружена — запись отключена.</value>
+  </data>
+  <data name="Enum_RecordingMode_PushToTalk" xml:space="preserve">
+    <value>Удержание</value>
+  </data>
+  <data name="Enum_RecordingMode_Toggle" xml:space="preserve">
+    <value>Переключатель</value>
+  </data>
+  <data name="Enum_RecordingMode_Vad" xml:space="preserve">
+    <value>Авто (VAD)</value>
+  </data>
+  <data name="Enum_RecognitionLanguage_Auto" xml:space="preserve">
+    <value>Авто</value>
+  </data>
+  <data name="Enum_RecognitionLanguage_Ru" xml:space="preserve">
+    <value>Русский</value>
+  </data>
+  <data name="Enum_RecognitionLanguage_En" xml:space="preserve">
+    <value>Английский</value>
+  </data>
+  <data name="Enum_AppTheme_System" xml:space="preserve">
+    <value>Системная</value>
+  </data>
+  <data name="Enum_AppTheme_Light" xml:space="preserve">
+    <value>Светлая</value>
+  </data>
+  <data name="Enum_AppTheme_Dark" xml:space="preserve">
+    <value>Тёмная</value>
+  </data>
+  <data name="Enum_AppLanguage_Ru" xml:space="preserve">
+    <value>Русский</value>
+  </data>
+  <data name="Enum_AppLanguage_En" xml:space="preserve">
+    <value>Английский</value>
+  </data>
+  <data name="Log_Startup" xml:space="preserve">
+    <value>=== VoiceTyper запуск (PID {0}) ===</value>
+  </data>
+  <data name="Log_System" xml:space="preserve">
+    <value>Версия: {0}, ОС: {1}, процессор: {2} ядер</value>
+  </data>
+  <data name="Log_LogDirectory" xml:space="preserve">
+    <value>Логи: {0}</value>
+  </data>
+  <data name="Log_SecondInstance" xml:space="preserve">
+    <value>Обнаружен второй экземпляр — завершение.</value>
+  </data>
+  <data name="Log_SettingsPath" xml:space="preserve">
+    <value>Настройки: {0}</value>
+  </data>
+  <data name="Log_SettingsSummary" xml:space="preserve">
+    <value>Настройки: режим={0}, язык={1}, модель={2}, автовставка={3}, микрофон={4}</value>
+  </data>
+  <data name="Log_Hotkeys" xml:space="preserve">
+    <value>Хоткеи: запись='{0}', отмена='{1}'</value>
+  </data>
+  <data name="Log_HotkeyRegistration" xml:space="preserve">
+    <value>Регистрация хоткея: {0}</value>
+  </data>
+  <data name="Log_MicNone" xml:space="preserve">
+    <value>Микрофоны: активные устройства не найдены.</value>
+  </data>
+  <data name="Log_MicList" xml:space="preserve">
+    <value>Микрофоны: {0}</value>
+  </data>
+  <data name="Log_EngineInitModel" xml:space="preserve">
+    <value>Инициализация движка: подготовка модели...</value>
+  </data>
+  <data name="Log_ModelWhisper" xml:space="preserve">
+    <value>Модель Whisper: {0}</value>
+  </data>
+  <data name="Log_ModelVad" xml:space="preserve">
+    <value>Модель VAD: {0}</value>
+  </data>
+  <data name="Log_DownloadCancelled" xml:space="preserve">
+    <value>Загрузка модели отменена пользователем.</value>
+  </data>
+  <data name="Log_MicDevice" xml:space="preserve">
+    <value>Микрофон (устройство): {0}</value>
+  </data>
+  <data name="Log_EngineReady" xml:space="preserve">
+    <value>Движок инициализирован успешно.</value>
+  </data>
+  <data name="Log_EngineFail" xml:space="preserve">
+    <value>Не удалось подготовить движок/модель.</value>
+  </data>
+  <data name="Log_ModelErrorBalloon" xml:space="preserve">
+    <value>Ошибка подготовки модели: {0}</value>
+  </data>
+  <data name="Log_DefaultMic" xml:space="preserve">
+    <value>(по умолчанию)</value>
+  </data>
+  <data name="Log_TestMicSuccess" xml:space="preserve">
+    <value>Тест микрофона: УСПЕХ. Бэкенд={0}, считано данных ≈ {1} мс.</value>
+  </data>
+  <data name="Log_TestMicNoData" xml:space="preserve">
+    <value>Тест микрофона: запись не дала данных (проверьте уровень микрофона).</value>
+  </data>
+  <data name="Log_TestMicError" xml:space="preserve">
+    <value>Тест микрофона: НЕ УДАЛОСЬ захватить выбранный микрофон.</value>
+  </data>
+  <data name="Log_SettingsApplied" xml:space="preserve">
+    <value>Применены настройки: режим={0}, язык={1}, модель={2}, микрофон={3}</value>
+  </data>
+  <data name="Log_StateChange" xml:space="preserve">
+    <value>Состояние записи -> {0}</value>
+  </data>
+  <data name="Log_TextReady" xml:space="preserve">
+    <value>Распознанный текст ({0} симв.): {1}</value>
+  </data>
+  <data name="Log_EngineFailed" xml:space="preserve">
+    <value>Ошибка записи/распознавания: {0}</value>
+  </data>
+  <data name="Log_UnhandledAppDomain" xml:space="preserve">
+    <value>Необработанное исключение (AppDomain).</value>
+  </data>
+  <data name="Log_UnhandledTask" xml:space="preserve">
+    <value>Необработанное исключение задачи (Task).</value>
+  </data>
+  <data name="Log_UnhandledUi" xml:space="preserve">
+    <value>Необработанное исключение (UI-поток).</value>
+  </data>
+  <data name="Log_UnhandledErrorMsg" xml:space="preserve">
+    <value>Необработанная ошибка: {0}</value>
+  </data>
+  <data name="Log_Quit" xml:space="preserve">
+    <value>=== VoiceTyper завершение ===</value>
+  </data>
+  <data name="RSM_VadUnavailable" xml:space="preserve">
+    <value>VAD недоступен</value>
+  </data>
+  <data name="RSM_MicOpenFailed" xml:space="preserve">
+    <value>Не удалось открыть микрофон: {0}. Убедитесь, что устройство активно и не занято другим приложением.</value>
+  </data>
+</root>

@@ -1,6 +1,7 @@
 using NAudio.Wave;
 using VoiceTyper.Core.Abstractions;
 using VoiceTyper.Core.Audio;
+using VoiceTyper.Core.Localization;
 using VoiceTyper.Core.Models;
 
 namespace VoiceTyper.Core.Services;
@@ -79,7 +80,7 @@ public sealed class RecordingStateMachine : IRecordingStateMachine
         _mode = mode;
         _silenceThreshold = silenceThreshold;
         _optionsProvider = optionsProvider;
-        _segmenterFactory = segmenterFactory ?? (() => throw new NotSupportedException("VAD недоступен"));
+        _segmenterFactory = segmenterFactory ?? (() => throw new NotSupportedException(Loc.T("RSM_VadUnavailable")));
     }
 
     public event Action<RecordingState>? StateChanged;
@@ -155,7 +156,7 @@ public sealed class RecordingStateMachine : IRecordingStateMachine
         {
             _sessionCts?.Dispose();
             _sessionCts = null;
-            Failed?.Invoke($"Не удалось открыть микрофон: {ex.Message}. Убедитесь, что устройство активно и не занято другим приложением.");
+            Failed?.Invoke(Loc.Format("RSM_MicOpenFailed", ex.Message));
             return;
         }
 

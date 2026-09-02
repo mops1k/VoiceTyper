@@ -19,9 +19,9 @@
         <InformationalVersion>1.0.0</InformationalVersion>
     </PropertyGroup>
 
-    <!-- Оставляем только win-x64/win-x86 runtime-нативности и локализацию RU (EN — инвариантная) -->
+    <!-- Оставляем только win-x64/win-x86 runtime-нативности и локализацию RU/EN -->
     <Target Name="TrimOutput" AfterTargets="Build;Publish">
-        <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -Command &quot;$d='$(TargetDir)'; $rt=Join-Path $d 'runtimes'; if (Test-Path $rt) { Get-ChildItem $rt -Directory | Where-Object { $_.Name -notin @('win-x64','win-x86') } | Remove-Item -Recurse -Force }; if (Test-Path $d) { Get-ChildItem $d -Directory | Where-Object { $_.Name -notin @('ru','runtimes','Assets') -and $_.Name -match '^[a-z]{2}(-[A-Za-z]{2,4})?$' } | Remove-Item -Recurse -Force }&quot;" />
+        <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -Command &quot;$d='$(TargetDir)'; $rt=Join-Path $d 'runtimes'; if (Test-Path $rt) { Get-ChildItem $rt -Directory | Where-Object { $_.Name -notin @('win-x64','win-x86') } | Remove-Item -Recurse -Force }; if (Test-Path $d) { Get-ChildItem $d -Directory | Where-Object { $_.Name -notin @('ru','en','runtimes','Assets') -and $_.Name -match '^[a-z]{2}(-[A-Za-z]{2,4})?$' } | Remove-Item -Recurse -Force }&quot;" />
     </Target>
 
     <ItemGroup>

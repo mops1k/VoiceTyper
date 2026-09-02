@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using System.Diagnostics;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Threading;
@@ -18,15 +19,24 @@ public sealed partial class SettingsViewModel : ObservableObject
     private readonly HotkeyService _hotkeyService;
     private readonly IMicrophoneService _microphoneService;
     private readonly IModelManager _modelManager;
+    private readonly IUpdateService _updateService;
     private string _captureTarget = string.Empty;
     private bool _isInitializing;
     private DispatcherTimer? _autoSaveTimer;
+    private CancellationTokenSource? _updateDownloadCts;
+    private UpdateInfo? _pendingUpdate;
 
     /// <summary>Возникает после успешного сохранения и применения настроек.</summary>
     public event Action? SettingsApplied;
 
     /// <summary>Запрос отмены загрузки модели.</summary>
     public event Action? DownloadCancelRequested;
+
+    /// <summary>Найдена новая версия (для трей-balloon). Параметр — номер версии.</summary>
+    public event Action<string>? UpdateAvailable;
+
+    /// <summary>Начата установка обновления (окно следует скрыть).</summary>
+    public event Action? UpdateInstallStarted;
 
     /// <summary>Открыт ли модальный диалог подтверждения (защита от сворачивания окна в трей).</summary>
     public bool IsModalDialogOpen { get; private set; }
@@ -117,6 +127,30 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     [ObservableProperty]
     private AppLanguage _appLanguage = AppLanguage.Ru;
+
+    [ObservableProperty]
+    private bool _isCheckingUpdate;
+
+    [ObservableProperty]
+    private bool _isUpdateAvailable;
+
+    [ObservableProperty]
+    private bool _isDownloadingUpdate;
+
+    [ObservableProperty]
+    private double _updateDownloadProgress;
+
+    [ObservableProperty]
+    private string _updateStatus = string.Empty;
+
+    [ObservableProperty]
+    private string _latestVersion = string.Empty;
+
+    [ObservableProperty]
+    private string _releaseNotes = string.Empty;
+
+    [ObservableProperty]
+    private bool _isUpToDateVersion;
 
     /// <summary>Текущая версия приложения (чистый semver, без git-суффикса "+sha").</summary>
     public string AppVersion { get; } = ResolveAppVersion();
@@ -283,12 +317,13 @@ public sealed partial class SettingsViewModel : ObservableObject
         return asm.GetName().Version?.ToString(3) ?? "1.0.0";
     }
 
-    public SettingsViewModel(ISettingsService settingsService, HotkeyService hotkeyService, IMicrophoneService microphoneService, IModelManager modelManager)
+    public SettingsViewModel(ISettingsService settingsService, HotkeyService hotkeyService, IMicrophoneService microphoneService, IModelManager modelManager, IUpdateService updateService)
     {
         _settingsService = settingsService;
         _hotkeyService = hotkeyService;
         _microphoneService = microphoneService;
         _modelManager = modelManager;
+        _updateService = updateService;
         _isInitializing = true;
         try
         {
@@ -398,6 +433,136 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     [RelayCommand]
     private void CancelDownload() => DownloadCancelRequested?.Invoke();
+
+    /// <summary>
+    /// Проверяет наличие обновления. При <c>auto = true</c> ошибки не выводятся разрушительно
+    /// (только статус), а найденное обновление дополнительно показывает трей-balloon.
+    /// </summary>
+    public async Task CheckForUpdatesAsync(bool auto = false)
+    {
+        if (IsCheckingUpdate)
+        {
+            return;
+        }
+
+        IsCheckingUpdate = true;
+        UpdateStatus = Loc.T("Update_Checking");
+        try
+        {
+            var result = await _updateService.CheckForUpdateAsync(AppVersion);
+
+            if (result.IsUpToDate)
+            {
+                _pendingUpdate = null;
+                IsUpdateAvailable = false;
+                IsUpToDateVersion = true;
+                UpdateStatus = Loc.T("Update_UpToDate");
+            }
+            else if (result.IsAvailable && result.Update is not null)
+            {
+                _pendingUpdate = result.Update;
+                LatestVersion = result.Update.Version;
+                ReleaseNotes = result.Update.ReleaseNotes ?? string.Empty;
+                IsUpdateAvailable = true;
+                IsUpToDateVersion = false;
+                UpdateStatus = Loc.Format("Update_AvailableInfo", result.Update.Version);
+                if (auto)
+                {
+                    UpdateAvailable?.Invoke(result.Update.Version);
+                }
+            }
+            else
+            {
+                _pendingUpdate = null;
+                IsUpdateAvailable = false;
+                IsUpToDateVersion = false;
+                UpdateStatus = auto
+                    ? Loc.T("Update_CheckFailed")
+                    : Loc.Format("Update_CheckFailedDetail", result.Error);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            _pendingUpdate = null;
+            IsUpdateAvailable = false;
+            UpdateStatus = Loc.T("Update_CheckCancelled");
+        }
+        catch (Exception ex)
+        {
+            _pendingUpdate = null;
+            IsUpdateAvailable = false;
+            UpdateStatus = auto
+                ? Loc.T("Update_CheckFailed")
+                : Loc.Format("Update_CheckFailedDetail", ex.Message);
+        }
+        finally
+        {
+            IsCheckingUpdate = false;
+        }
+    }
+
+    [RelayCommand]
+    private Task CheckForUpdates() => CheckForUpdatesAsync(auto: false);
+
+    [RelayCommand]
+    private async Task InstallUpdate()
+    {
+        if (_pendingUpdate is null || !IsUpdateAvailable || IsDownloadingUpdate)
+        {
+            return;
+        }
+
+        IsModalDialogOpen = true;
+        var confirm = System.Windows.MessageBox.Show(
+            Loc.Format("Update_Confirm", LatestVersion),
+            Loc.T("App_MessageBoxTitle"),
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Question);
+        IsModalDialogOpen = false;
+
+        if (confirm != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        _updateDownloadCts = new CancellationTokenSource();
+        IsDownloadingUpdate = true;
+        UpdateDownloadProgress = 0;
+        UpdateStatus = Loc.T("Update_Downloading");
+        try
+        {
+            var progress = new Progress<double>(p => UpdateDownloadProgress = p);
+            var path = await _updateService.DownloadInstallerAsync(_pendingUpdate, progress, _updateDownloadCts.Token);
+
+            UpdateStatus = Loc.T("Update_StartingInstall");
+            UpdateInstallStarted?.Invoke();
+
+            var psi = new ProcessStartInfo(path)
+            {
+                UseShellExecute = true,
+                Arguments = "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-",
+            };
+            Process.Start(psi);
+            UpdateStatus = Loc.T("Update_InstallRunning");
+        }
+        catch (OperationCanceledException)
+        {
+            UpdateStatus = Loc.T("Update_InstallCancelled");
+        }
+        catch (Exception ex)
+        {
+            UpdateStatus = Loc.Format("Update_InstallFailed", ex.Message);
+        }
+        finally
+        {
+            _updateDownloadCts?.Dispose();
+            _updateDownloadCts = null;
+            IsDownloadingUpdate = false;
+        }
+    }
+
+    [RelayCommand]
+    private void CancelUpdateDownload() => _updateDownloadCts?.Cancel();
 
     private static string FormatSize(long bytes)
     {

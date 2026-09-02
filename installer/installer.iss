@@ -22,7 +22,7 @@ AppVerName=VoiceTyper {#AppVersion}
 AppPublisher=VoiceTyper
 AppPublisherURL=https://github.com/voiceTyper/voiceTyper
 VersionInfoVersion={#AppVersion}
-DefaultDirName={autopf}\VoiceTyper
+DefaultDirName={localappdata}\Programs\VoiceTyper
 DefaultGroupName=VoiceTyper
 DisableProgramGroupPage=yes
 OutputDir={#OutputDir}
@@ -33,7 +33,9 @@ WizardStyle=modern
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayIcon={app}\VoiceTyper.exe
-PrivilegesRequired=admin
+; Установка и запуск без прав администратора (per-user).
+PrivilegesRequired=lowest
+PrivilegesRequiredOverridesAllowed=dialog
 
 [Languages]
 Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"

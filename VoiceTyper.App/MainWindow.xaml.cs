@@ -1,4 +1,5 @@
-﻿using System.IO;
+﻿using System.ComponentModel;
+using System.IO;
 using System.Linq;
 using System.Windows;
 using System.Windows.Input;
@@ -6,6 +7,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using VoiceTyper.App.Services;
 using VoiceTyper.App.ViewModels;
+using VoiceTyper.Core.Localization;
 using VoiceTyper.Core.Models;
 using VoiceTyper.Core.Services;
 using Key = System.Windows.Input.Key;
@@ -24,6 +26,22 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         DataContext = viewModel;
+        Loc.Instance.PropertyChanged += OnLocChanged;
+        Closed += (_, _) => Loc.Instance.PropertyChanged -= OnLocChanged;
+    }
+
+    /// <summary>
+    /// После смены культуры (языка интерфейса) WPF может не перерисовать текст
+    /// до первого взаимодействия с окном. Принудительно обновляем разметку, чтобы
+    /// меню и подписи отобразились сразу, а не после клика по пункту.
+    /// </summary>
+    private void OnLocChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            InvalidateVisual();
+            UpdateLayout();
+        }), DispatcherPriority.Loaded);
     }
 
     protected override void OnSourceInitialized(EventArgs e)

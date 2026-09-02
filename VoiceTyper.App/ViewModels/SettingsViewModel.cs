@@ -179,18 +179,14 @@ public sealed partial class SettingsViewModel : ObservableObject
     {
         ModelItems = new[]
         {
-            new ModelListItem(ModelSize.Tiny, "Tiny", Loc.T("Models_Tiny_Description"), Loc.T("Models_SpeedVeryFast"), Loc.T("Models_QualityLow"), FormatModelSize(75)),
-            new ModelListItem(ModelSize.Base, "Base", Loc.T("Models_Base_Description"), Loc.T("Models_SpeedFast"), Loc.T("Models_QualityMedium"), FormatModelSize(142)),
-            new ModelListItem(ModelSize.Small, "Small", Loc.T("Models_Small_Description"), Loc.T("Models_SpeedMedium"), Loc.T("Models_QualityHigh"), FormatModelSize(466)),
-            new ModelListItem(ModelSize.Medium, "Medium", Loc.T("Models_Medium_Description"), Loc.T("Models_SpeedSlow"), Loc.T("Models_QualityVeryHigh"), FormatModelSizeGb(1.5)),
-            new ModelListItem(ModelSize.Large, "Large (turbo)", Loc.T("Models_Large_Description"), Loc.T("Models_SpeedVerySlow"), Loc.T("Models_QualityMax"), FormatModelSizeGb(1.6)),
+            new ModelListItem(ModelSize.Tiny, "Tiny", "Models_Tiny_Description", "Models_SpeedVeryFast", "Models_QualityLow", sizeMb: 75),
+            new ModelListItem(ModelSize.Base, "Base", "Models_Base_Description", "Models_SpeedFast", "Models_QualityMedium", sizeMb: 142),
+            new ModelListItem(ModelSize.Small, "Small", "Models_Small_Description", "Models_SpeedMedium", "Models_QualityHigh", sizeMb: 466),
+            new ModelListItem(ModelSize.Medium, "Medium", "Models_Medium_Description", "Models_SpeedSlow", "Models_QualityVeryHigh", sizeGb: 1.5),
+            new ModelListItem(ModelSize.Large, "Large (turbo)", "Models_Large_Description", "Models_SpeedVerySlow", "Models_QualityMax", sizeGb: 1.6),
         };
         RefreshModelItems();
     }
-
-    private static string FormatModelSize(int mb) => "≈ " + Loc.Format("Models_SizeMb", mb);
-
-    private static string FormatModelSizeGb(double gb) => "≈ " + Loc.Format("Models_SizeGb", gb);
 
     partial void OnModelSizeChanged(ModelSize value)
     {
@@ -337,24 +333,17 @@ public sealed partial class SettingsViewModel : ObservableObject
         Save();
     }
 
-    /// <summary>Язык интерфейса сменился — пересобираем списки и переопределяем временные строки.</summary>
+    /// <summary>
+    /// Язык интерфейса сменился. Списки (<see cref="NavItems"/>, выпадающие списки,
+    /// карточки моделей) обновляются сами — их локализуемые свойства подписаны на
+    /// <see cref="Loc"/> и поднимают <c>PropertyChanged</c>. Здесь обновляем только
+    /// разовые/вычисляемые строки, не зависящие от INPC-свойств элементов.
+    /// </summary>
     private void OnLocLanguageChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
-        NavItems = BuildNavItems();
-        RecordingModes = BuildRecordingModes();
-        Languages = BuildLanguages();
-        Themes = BuildThemes();
-        UiLanguages = BuildUiLanguages();
-        OnPropertyChanged(nameof(NavItems));
-        OnPropertyChanged(nameof(RecordingModes));
-        OnPropertyChanged(nameof(Languages));
-        OnPropertyChanged(nameof(Themes));
-        OnPropertyChanged(nameof(UiLanguages));
-        BuildModelItems();
-        OnPropertyChanged(nameof(ModelItems));
-        RefreshMicrophoneStatus();
         RecordHotkeyHint = RecordHotkey;
         CancelHotkeyHint = CancelHotkey;
+        RefreshMicrophoneStatus();
         ErrorMessage = string.Empty;
     }
 

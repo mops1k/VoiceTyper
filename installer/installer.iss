@@ -36,6 +36,12 @@ UninstallDisplayIcon={app}\VoiceTyper.exe
 ; Установка и запуск без прав администратора (per-user).
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
+; Запрет установки/удаления, пока VoiceTyper запущен (имя mutex'а из App.xaml.cs).
+AppMutex=Global\VoiceTyper_SingleInstance
+; Закрываем приложение (Windows Restart Manager) при замене выполняемых файлов
+; и не перезапускаем его сами — запуск делает секция [Run] ниже.
+CloseApplications=yes
+RestartApplications=no
 
 [Languages]
 Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"

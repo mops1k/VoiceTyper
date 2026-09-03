@@ -51,6 +51,41 @@ public class WavBuilderTests
         Assert.InRange(floats.Length, 16000 * 0.45, 16000 * 0.55);
     }
 
+    [Fact]
+    public void ConvertTo16KHzMonoWav_TrimsLeadingAndTrailingSilence()
+    {
+        // 1 с тишины + 0.5 с речи + 1 с тишины.
+        var silence = (int)(16000 * 1.0);
+        var speech = (int)(16000 * 0.5);
+        var raw = new byte[(silence + speech + silence) * 2];
+        var idx = 0;
+        for (var i = 0; i < silence; i++)
+        {
+            WriteShort(raw, ref idx, 0);
+        }
+        for (var i = 0; i < speech; i++)
+        {
+            var value = (short)(Math.Sin(2 * Math.PI * 440 * i / 16000) * short.MaxValue * 0.5);
+            WriteShort(raw, ref idx, value);
+        }
+        for (var i = 0; i < silence; i++)
+        {
+            WriteShort(raw, ref idx, 0);
+        }
+
+        var wav = WavBuilder.ConvertTo16KHzMonoWav(raw, new WaveFormat(16000, 16, 1));
+
+        using var reader = new WaveFileReader(new MemoryStream(wav));
+        // Тишина (2 с) вырезана, осталась речи 0.5 с + запас 0.5 с ≈ 1.0 с.
+        Assert.InRange(reader.TotalTime.TotalSeconds, 0.7, 1.2);
+    }
+
+    private static void WriteShort(byte[] buffer, ref int index, short value)
+    {
+        buffer[index++] = (byte)(value & 0xFF);
+        buffer[index++] = (byte)((value >> 8) & 0xFF);
+    }
+
     private static byte[] GenerateSinePcm16(double frequency, int sampleRate, int channels, double seconds)
     {
         var sampleCount = (int)(sampleRate * seconds);

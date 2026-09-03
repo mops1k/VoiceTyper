@@ -21,6 +21,9 @@ public static class WavBuilder
             NoiseSuppressor.Process(floats);
         }
 
+        // Вырезаем ведущую/замыкающую тишину: меньше аудио — быстрее распознавание.
+        floats = SilenceTrimmer.Trim(floats);
+
         using var outStream = new MemoryStream();
         var provider = new SampleToWaveProvider16(new FloatListSampleProvider(floats, TargetSampleRate));
         WaveFileWriter.WriteWavFileToStream(outStream, provider);

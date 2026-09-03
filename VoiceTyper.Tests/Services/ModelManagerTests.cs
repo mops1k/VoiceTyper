@@ -19,14 +19,25 @@ public class ModelManagerTests : IDisposable
     }
 
     [Theory]
-    [InlineData(ModelSize.Tiny, "ggml-tiny.bin")]
-    [InlineData(ModelSize.Base, "ggml-base.bin")]
-    [InlineData(ModelSize.Small, "ggml-small.bin")]
-    [InlineData(ModelSize.Medium, "ggml-medium.bin")]
-    [InlineData(ModelSize.Large, "ggml-large-v3-turbo.bin")]
+    [InlineData(ModelSize.Tiny, "ggml-tiny-q8_0.bin")]
+    [InlineData(ModelSize.Base, "ggml-base-q8_0.bin")]
+    [InlineData(ModelSize.Small, "ggml-small-q8_0.bin")]
+    [InlineData(ModelSize.Medium, "ggml-medium-q8_0.bin")]
+    [InlineData(ModelSize.Large, "ggml-large-v3-turbo-q8_0.bin")]
     public void GetModelFileName_MapsSizes(ModelSize size, string expected)
     {
         Assert.Equal(expected, ModelManager.GetModelFileName(size));
+    }
+
+    [Theory]
+    [InlineData(ModelSize.Tiny, 43_537_433L)]
+    [InlineData(ModelSize.Base, 81_768_585L)]
+    [InlineData(ModelSize.Small, 264_464_607L)]
+    [InlineData(ModelSize.Medium, 823_369_779L)]
+    [InlineData(ModelSize.Large, 874_188_075L)]
+    public void GetModelApproxSize_ReturnsQuantizedSizes(ModelSize size, long expected)
+    {
+        Assert.Equal(expected, ModelManager.GetModelApproxSize(size));
     }
 
     [Fact]
@@ -59,6 +70,40 @@ public class ModelManagerTests : IDisposable
         var result = await manager.EnsureVadModelAsync();
 
         Assert.Equal(path, result);
+    }
+
+    [Fact]
+    public void CleanupLegacyModels_RemovesOldFp16AndQ5Files()
+    {
+        var manager = new ModelManager(_tempDir);
+        Directory.CreateDirectory(_tempDir);
+        var legacyNames = new[]
+        {
+            "ggml-tiny.bin",
+            "ggml-base.bin",
+            "ggml-small.bin",
+            "ggml-medium.bin",
+            "ggml-large-v3-turbo.bin",
+            "ggml-tiny-q5_1.bin",
+            "ggml-base-q5_1.bin",
+            "ggml-small-q5_1.bin",
+            "ggml-medium-q5_0.bin",
+            "ggml-large-v3-turbo-q5_0.bin",
+        };
+        foreach (var name in legacyNames)
+        {
+            File.WriteAllText(Path.Combine(_tempDir, name), "legacy");
+        }
+        var keptPath = Path.Combine(_tempDir, ModelManager.GetModelFileName(ModelSize.Small));
+        File.WriteAllText(keptPath, "new");
+
+        manager.CleanupLegacyModels();
+
+        foreach (var name in legacyNames)
+        {
+            Assert.False(File.Exists(Path.Combine(_tempDir, name)), $"Legacy file should be deleted: {name}");
+        }
+        Assert.True(File.Exists(keptPath), "New quantized model should be kept");
     }
 
     [Fact]

@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using Whisper.net.Ggml;
 using VoiceTyper.Core.Models;
 
 namespace VoiceTyper.Core.Services;
@@ -23,11 +22,15 @@ public interface IModelManager
 
     /// <summary>Возвращает путь к модели Silero VAD, скачивая её при первом обращении.</summary>
     Task<string> EnsureVadModelAsync(IProgress<ModelDownloadProgress>? progress = null, CancellationToken ct = default);
+
+    /// <summary>Удаляет устаревшие (fp16) файлы моделей, ставшие ненужными после перехода на q5-квантизацию.</summary>
+    void CleanupLegacyModels();
 }
 
 /// <summary>
 /// Хранит модели в <c>%LOCALAPPDATA%\VoiceTyper\models</c>.
-/// Скачивание идёт через <see cref="WhisperGgmlDownloader"/> (HuggingFace), файл пишется
+/// Скачивание идёт напрямую с HuggingFace по фиксированным URL (черновик официального
+/// <c>download-ggml-model.sh</c> — квантованные Q5_0/Q5_1-варианты), файл пишется
 /// во временный файл и атомарно переименовывается по завершении.
 /// </summary>
 public sealed class ModelManager : IModelManager
@@ -35,17 +38,30 @@ public sealed class ModelManager : IModelManager
     public const string DefaultModelsDirectory = "models";
     private const string VadModelFileName = "ggml-silero-v6.2.0.bin";
 
-    private readonly string _modelsDirectory;
-    private readonly WhisperGgmlDownloader _downloader;
+    /// <summary>Базовый URL ggml-моделей Whisper (репозиторий ggerganov/whisper.cpp).</summary>
+    private const string ModelBaseUrl = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/";
 
-    public ModelManager(string? modelsDirectory = null, WhisperGgmlDownloader? downloader = null)
+    /// <summary>Базовый URL модели Silero VAD (репозиторий ggml-org/whisper-vad).</summary>
+    private const string VadBaseUrl = "https://huggingface.co/ggml-org/whisper-vad/resolve/main/";
+
+    private readonly string _modelsDirectory;
+    private readonly HttpClient _http;
+
+    public ModelManager(string? modelsDirectory = null, HttpClient? http = null)
     {
         _modelsDirectory = modelsDirectory
                            ?? Path.Combine(
                                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                                "VoiceTyper",
                                DefaultModelsDirectory);
-        _downloader = downloader ?? WhisperGgmlDownloader.Default;
+        _http = http ?? CreateHttpClient();
+    }
+
+    private static HttpClient CreateHttpClient()
+    {
+        var client = new HttpClient { Timeout = TimeSpan.FromMinutes(30) };
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("VoiceTyper/1.0");
+        return client;
     }
 
     public string ModelsDirectory => _modelsDirectory;
@@ -66,6 +82,19 @@ public sealed class ModelManager : IModelManager
         return true;
     }
 
+    public void CleanupLegacyModels()
+    {
+        Directory.CreateDirectory(_modelsDirectory);
+        foreach (var legacyName in LegacyModelFileNames)
+        {
+            var path = Path.Combine(_modelsDirectory, legacyName);
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+    }
+
     public async Task<string> EnsureModelAsync(ModelSize size, IProgress<ModelDownloadProgress>? progress = null, CancellationToken ct = default)
     {
         Directory.CreateDirectory(_modelsDirectory);
@@ -75,19 +104,8 @@ public sealed class ModelManager : IModelManager
             return path;
         }
 
-        var tmpPath = path + ".download";
-        try
-        {
-            await using var stream = await _downloader.GetGgmlModelAsync(MapToGgmlType(size), cancellationToken: ct);
-            await CopyWithProgressAsync(stream, tmpPath, GetModelApproxSize(size), progress, ct);
-            File.Move(tmpPath, path, overwrite: true);
-            return path;
-        }
-        catch
-        {
-            TryDelete(tmpPath);
-            throw;
-        }
+        var url = ModelBaseUrl + GetModelFileName(size);
+        return await DownloadAsync(url, path, GetModelApproxSize(size), progress, ct);
     }
 
     public async Task<string> EnsureVadModelAsync(IProgress<ModelDownloadProgress>? progress = null, CancellationToken ct = default)
@@ -99,11 +117,27 @@ public sealed class ModelManager : IModelManager
             return path;
         }
 
+        var url = VadBaseUrl + VadModelFileName;
+        return await DownloadAsync(url, path, VadModelApproxSize, progress, ct);
+    }
+
+    private async Task<string> DownloadAsync(string url, string path, long expectedSize,
+        IProgress<ModelDownloadProgress>? progress, CancellationToken ct)
+    {
         var tmpPath = path + ".download";
         try
         {
-            await using var stream = await _downloader.GetGgmlSileroVadModelAsync(cancellationToken: ct);
-            await CopyWithProgressAsync(stream, tmpPath, VadModelApproxSize, progress, ct);
+            long totalBytes = expectedSize;
+            using var request = new HttpRequestMessage(HttpMethod.Get, url);
+            using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+            response.EnsureSuccessStatusCode();
+            if (response.Content.Headers.ContentLength is { } len && len > 0)
+            {
+                totalBytes = len;
+            }
+
+            await using var stream = await response.Content.ReadAsStreamAsync(ct);
+            await CopyWithProgressAsync(stream, tmpPath, totalBytes, progress, ct);
             File.Move(tmpPath, path, overwrite: true);
             return path;
         }
@@ -156,41 +190,45 @@ public sealed class ModelManager : IModelManager
             sw.Elapsed.TotalSeconds > 0 ? total / sw.Elapsed.TotalSeconds : 0));
     }
 
-    /// <summary>Примерный итоговый размер файла модели (байты) — для расчёта прогресса и ETA.</summary>
-    internal static long GetModelApproxSize(ModelSize size) => size switch
+    /// <summary>Точный размер квантованного файла модели (байты) — для расчёта прогресса и ETA.</summary>
+    public static long GetModelApproxSize(ModelSize size) => size switch
     {
-        ModelSize.Tiny => 75_000_000,
-        ModelSize.Base => 142_000_000,
-        ModelSize.Small => 466_000_000,
-        ModelSize.Medium => 1_500_000_000,
-        ModelSize.Large => 1_620_000_000,
+        ModelSize.Tiny => 43_537_433,
+        ModelSize.Base => 81_768_585,
+        ModelSize.Small => 264_464_607,
+        ModelSize.Medium => 823_369_779,
+        ModelSize.Large => 874_188_075,
         _ => 0,
     };
 
-    private const long VadModelApproxSize = 2_300_000;
+    private const long VadModelApproxSize = 885_098;
 
-    /// <summary>Имя файла модели на диске, например <c>ggml-small.bin</c>.</summary>
+    /// <summary>Имя файла модели на диске, например <c>ggml-small-q8_0.bin</c>.</summary>
     public static string GetModelFileName(ModelSize size) => size switch
     {
-        ModelSize.Tiny => "ggml-tiny.bin",
-        ModelSize.Base => "ggml-base.bin",
-        ModelSize.Small => "ggml-small.bin",
-        ModelSize.Medium => "ggml-medium.bin",
-        ModelSize.Large => "ggml-large-v3-turbo.bin",
+        ModelSize.Tiny => "ggml-tiny-q8_0.bin",
+        ModelSize.Base => "ggml-base-q8_0.bin",
+        ModelSize.Small => "ggml-small-q8_0.bin",
+        ModelSize.Medium => "ggml-medium-q8_0.bin",
+        ModelSize.Large => "ggml-large-v3-turbo-q8_0.bin",
         _ => throw new ArgumentOutOfRangeException(nameof(size), size, null),
+    };
+
+    /// <summary>Устаревшие имена (fp16 и q5), остававшиеся от предыдущих версий до перехода на q8.</summary>
+    private static readonly string[] LegacyModelFileNames =
+    {
+        "ggml-tiny.bin",
+        "ggml-base.bin",
+        "ggml-small.bin",
+        "ggml-medium.bin",
+        "ggml-large-v3-turbo.bin",
+        "ggml-tiny-q5_1.bin",
+        "ggml-base-q5_1.bin",
+        "ggml-small-q5_1.bin",
+        "ggml-medium-q5_0.bin",
+        "ggml-large-v3-turbo-q5_0.bin",
     };
 
     /// <summary>Имя файла Silero VAD на диске.</summary>
     public static string GetVadModelFileName() => VadModelFileName;
-
-    private static GgmlType MapToGgmlType(ModelSize size) => size switch
-    {
-        ModelSize.Tiny => GgmlType.Tiny,
-        ModelSize.Base => GgmlType.Base,
-        ModelSize.Small => GgmlType.Small,
-        ModelSize.Medium => GgmlType.Medium,
-        // LargeV3Turbo даёт качество близкое к large при вдвое меньшем размере — практичнее для CPU.
-        ModelSize.Large => GgmlType.LargeV3Turbo,
-        _ => throw new ArgumentOutOfRangeException(nameof(size), size, null),
-    };
 }

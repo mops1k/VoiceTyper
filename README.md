@@ -67,16 +67,19 @@ everything is recognized locally.
 
 ## Models
 
+All models are **q8-quantized ggml** (Q8_0) — considerably smaller in memory and on disk than fp16, at virtually the same quality and speed.
+
 | Size | File on disk | Speed | Quality | Comment |
 |---|---|---|---|---|
-| Tiny | ~75 MB | very fast | low | for simple tasks |
-| Base | ~142 MB | fast | medium | a compromise |
-| **Small (default)** | ~466 MB | medium | high | good RU/EN quality |
-| Medium | ~1.5 GB | slow | very high | more accurate, slower |
-| Large (turbo) | ~1.6 GB | very slow | maximum | for powerful CPUs |
+| Tiny (q8) | ~42 MB | very fast | low | for simple tasks |
+| Base (q8) | ~78 MB | fast | medium | a compromise |
+| **Small (default)** (q8) | ~252 MB | medium | high | good RU/EN quality |
+| Medium (q8) | ~785 MB | slow | very high | more accurate, slower |
+| Large (turbo, q8) | ~834 MB | very slow | maximum | compact, for powerful CPUs |
 
 Models are stored in `%LOCALAPPDATA%\VoiceTyper\models` and are downloaded once.
 In the "Models" section they can be pre-downloaded and deleted from disk (to free up space).
+On update, obsolete fp16 and q5 files are automatically removed from disk.
 
 ---
 

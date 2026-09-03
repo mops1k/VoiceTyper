@@ -234,6 +234,10 @@ public class RecordingStateMachineTests
             return Task.FromResult("привет");
         }
 
+        public void Warmup()
+        {
+        }
+
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 

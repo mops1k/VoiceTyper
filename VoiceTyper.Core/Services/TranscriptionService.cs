@@ -13,6 +13,9 @@ public interface ITranscriptionService : IAsyncDisposable
     /// <summary>Транскрибирует WAV-файл (16 кГц / моно / 16 бит) в текст.</summary>
     Task<string> TranscribeAsync(byte[] wavBytes, RecognitionLanguage language, string prompt, CancellationToken ct = default,
         float temperature = 0f, bool conditionOnPreviousText = false);
+
+    /// <summary>Прогревает модель: принудительно грузит её в память, чтобы первая диктовка не ждала загрузку.</summary>
+    void Warmup();
 }
 
 /// <summary>
@@ -28,10 +31,20 @@ public sealed class WhisperTranscriptionService : ITranscriptionService
     public WhisperTranscriptionService(string modelPath)
     {
         ModelPath = modelPath;
-        _threads = Math.Clamp(Environment.ProcessorCount, 2, 16);
+        _threads = Math.Clamp(CpuCoreInfo.GetPhysicalCoreCount(), 1, 16);
     }
 
     public string ModelPath { get; }
+
+    /// <summary>
+    /// Принудительно создаёт фабрику (грузит модель в память), не запуская инференс.
+    /// Позволяет выполнить «прогрев» при старте приложения, чтобы первое распознавание
+    /// не включало в себя задержку загрузки весов (~1–3 сек).
+    /// </summary>
+    public void Warmup()
+    {
+        _factory ??= WhisperFactory.FromPath(ModelPath);
+    }
 
     public async Task<string> TranscribeAsync(byte[] wavBytes, RecognitionLanguage language, string prompt, CancellationToken ct = default,
         float temperature = 0f, bool conditionOnPreviousText = false)

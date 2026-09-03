@@ -154,19 +154,19 @@
     <value>Delete from disk</value>
   </data>
   <data name="Models_Tiny_Description" xml:space="preserve">
-    <value>Tiny model. Fast recognition, suitable for simple tasks.</value>
+    <value>Tiny model (q8). Fast recognition, memory-efficient.</value>
   </data>
   <data name="Models_Base_Description" xml:space="preserve">
-    <value>Base model. Good balance of speed and quality on CPU.</value>
+    <value>Base model (q8). Good balance of speed and quality on CPU.</value>
   </data>
   <data name="Models_Small_Description" xml:space="preserve">
-    <value>Recommended model. Accurate recognition, moderate load.</value>
+    <value>Recommended model (q8). Accurate recognition, moderate load.</value>
   </data>
   <data name="Models_Medium_Description" xml:space="preserve">
-    <value>High-quality recognition, noticeably slower on CPU.</value>
+    <value>High-quality recognition (q8), noticeably slower on CPU.</value>
   </data>
   <data name="Models_Large_Description" xml:space="preserve">
-    <value>Maximum quality. For powerful processors.</value>
+    <value>Maximum quality (q8, turbo). For powerful processors.</value>
   </data>
   <data name="Models_SpeedVeryFast" xml:space="preserve">
     <value>Very fast</value>

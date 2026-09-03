@@ -107,6 +107,7 @@ public partial class App : Application
         }
 
         _modelManager = new ModelManager();
+        _modelManager.CleanupLegacyModels();
         _microphoneService = new MicrophoneService();
         _updateService = new GithubUpdateService();
         ThemeManager.Apply(_currentSettings.Theme);
@@ -209,6 +210,7 @@ public partial class App : Application
 
                         var oldTranscription = _transcription;
                         _transcription = new WhisperTranscriptionService(modelPath);
+                        _transcription.Warmup();
                         await (oldTranscription?.DisposeAsync() ?? ValueTask.CompletedTask);
 
                         _logger.Info(Loc.Format("Log_ModelWhisper", modelPath));

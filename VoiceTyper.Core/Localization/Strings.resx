@@ -154,19 +154,19 @@
     <value>Удалить с диска</value>
   </data>
   <data name="Models_Tiny_Description" xml:space="preserve">
-    <value>Минимальная модель. Быстро распознаёт, подходит для простых задач.</value>
+    <value>Минимальная модель (q8). Быстро распознаёт, экономна по памяти.</value>
   </data>
   <data name="Models_Base_Description" xml:space="preserve">
-    <value>Базовая модель. Хороший баланс скорости и качества на CPU.</value>
+    <value>Базовая модель (q8). Хороший баланс скорости и качества на CPU.</value>
   </data>
   <data name="Models_Small_Description" xml:space="preserve">
-    <value>Рекомендуемая модель. Точное распознавание, умеренная нагрузка.</value>
+    <value>Рекомендуемая модель (q8). Точное распознавание, умеренная нагрузка.</value>
   </data>
   <data name="Models_Medium_Description" xml:space="preserve">
-    <value>Качественное распознавание, заметно медленнее на CPU.</value>
+    <value>Качественное распознавание (q8), заметно медленнее на CPU.</value>
   </data>
   <data name="Models_Large_Description" xml:space="preserve">
-    <value>Максимальное качество. Для мощных процессоров.</value>
+    <value>Максимальное качество (q8, turbo). Для мощных процессоров.</value>
   </data>
   <data name="Models_SpeedVeryFast" xml:space="preserve">
     <value>Очень быстро</value>

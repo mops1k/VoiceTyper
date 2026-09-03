@@ -213,11 +213,11 @@ public sealed partial class SettingsViewModel : ObservableObject
     {
         ModelItems = new[]
         {
-            new ModelListItem(ModelSize.Tiny, "Tiny", "Models_Tiny_Description", "Models_SpeedVeryFast", "Models_QualityLow", sizeMb: 75),
-            new ModelListItem(ModelSize.Base, "Base", "Models_Base_Description", "Models_SpeedFast", "Models_QualityMedium", sizeMb: 142),
-            new ModelListItem(ModelSize.Small, "Small", "Models_Small_Description", "Models_SpeedMedium", "Models_QualityHigh", sizeMb: 466),
-            new ModelListItem(ModelSize.Medium, "Medium", "Models_Medium_Description", "Models_SpeedSlow", "Models_QualityVeryHigh", sizeGb: 1.5),
-            new ModelListItem(ModelSize.Large, "Large (turbo)", "Models_Large_Description", "Models_SpeedVerySlow", "Models_QualityMax", sizeGb: 1.6),
+            new ModelListItem(ModelSize.Tiny, "Tiny (q8)", "Models_Tiny_Description", "Models_SpeedVeryFast", "Models_QualityLow", sizeMb: 42),
+            new ModelListItem(ModelSize.Base, "Base (q8)", "Models_Base_Description", "Models_SpeedFast", "Models_QualityMedium", sizeMb: 78),
+            new ModelListItem(ModelSize.Small, "Small (q8)", "Models_Small_Description", "Models_SpeedMedium", "Models_QualityHigh", sizeMb: 252),
+            new ModelListItem(ModelSize.Medium, "Medium (q8)", "Models_Medium_Description", "Models_SpeedSlow", "Models_QualityVeryHigh", sizeMb: 785),
+            new ModelListItem(ModelSize.Large, "Large (turbo, q8)", "Models_Large_Description", "Models_SpeedVerySlow", "Models_QualityMax", sizeMb: 834),
         };
         RefreshModelItems();
     }

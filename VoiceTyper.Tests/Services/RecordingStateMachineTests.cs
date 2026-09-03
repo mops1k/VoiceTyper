@@ -7,7 +7,8 @@ namespace VoiceTyper.Tests.Services;
 
 public class RecordingStateMachineTests
 {
-    private static readonly TranscriptionOptions DefaultOptions = new(RecognitionLanguage.Ru, "API,CPU", AutoPaste: true);
+    private static readonly TranscriptionOptions DefaultOptions =
+        new(RecognitionLanguage.Ru, "API,CPU", AutoPaste: true);
 
     [Fact]
     public void ToggleMode_PressStarts_PressAgainProcesses()
@@ -110,7 +111,56 @@ public class RecordingStateMachineTests
         Assert.Equal(1, ctx.Recorder.StopCount);
     }
 
-    private static (RecordingStateMachine Machine, FakeRecorder Recorder, FakeTranscription Transcription, FakeOutput Output, List<string> ReadyTexts)
+    [Fact]
+    public void VadMode_EnergySpeechWhileVadSilent_DoesNotStopUntilRealSilence()
+    {
+        // Регресс бага «обрыв во время непрерывной речи»: Silero может не отдавать
+        // сегменты, пока человек говорит без длинных пауз. Стоп допускается только
+        // после реальной тишины (энергия падает), а не по «устаревшей» речи.
+        var vadSegmenter = new FakeVadSegmenter { EmitOnFirstCall = false };
+        var ctx = CreateContext(
+            RecordingMode.Vad,
+            wav: new byte[] { 1, 2, 3 },
+            segmenterFactory: () => vadSegmenter,
+            silenceThreshold: TimeSpan.FromSeconds(1.0));
+        ctx.Recorder.NewBytes = PcmBytes(amplitude: 0.2f);
+
+        ctx.Machine.PressRecord();
+        Assert.Equal(RecordingState.Recording, ctx.Machine.State);
+
+        Thread.Sleep(700); // несколько VAD-тиков непрерывной «речи»
+        Assert.Equal(RecordingState.Recording, ctx.Machine.State);
+        Assert.Equal(0, ctx.Recorder.StopCount);
+
+        ctx.Recorder.NewBytes = new byte[16000]; // реальная тишина (нули)
+
+        var deadline = DateTime.UtcNow.AddSeconds(15);
+        while (ctx.Machine.State != RecordingState.Idle && DateTime.UtcNow < deadline)
+        {
+            Thread.Sleep(50);
+        }
+
+        Assert.Equal(RecordingState.Idle, ctx.Machine.State);
+        Assert.Equal(1, ctx.Recorder.StopCount);
+        Assert.Single(ctx.ReadyTexts);
+    }
+
+    private static byte[] PcmBytes(float amplitude)
+    {
+        var sampleCount = 8000; // 0.5 с при 16 кГц
+        var data = new byte[sampleCount * 2];
+        var value = (short)(amplitude * short.MaxValue);
+        for (var i = 0; i < sampleCount; i++)
+        {
+            data[i * 2] = (byte)(value & 0xFF);
+            data[i * 2 + 1] = (byte)((value >> 8) & 0xFF);
+        }
+
+        return data;
+    }
+
+    private static (RecordingStateMachine Machine, FakeRecorder Recorder, FakeTranscription Transcription, FakeOutput
+        Output, List<string> ReadyTexts)
         CreateContext(
             RecordingMode mode,
             byte[]? wav,
@@ -176,7 +226,8 @@ public class RecordingStateMachineTests
         public string ModelPath => "fake-model";
         public int Calls { get; private set; }
 
-        public Task<string> TranscribeAsync(byte[] wavBytes, RecognitionLanguage language, string prompt, CancellationToken ct = default,
+        public Task<string> TranscribeAsync(byte[] wavBytes, RecognitionLanguage language, string prompt,
+            CancellationToken ct = default,
             float temperature = 0f, bool conditionOnPreviousText = false)
         {
             Calls++;
@@ -199,12 +250,13 @@ public class RecordingStateMachineTests
 
     private sealed class FakeVadSegmenter : ISpeechSegmenter
     {
+        public bool EmitOnFirstCall { get; init; } = true;
         public int Calls { get; private set; }
 
         public IReadOnlyList<(TimeSpan Start, TimeSpan End)> DetectSpeechNoReset(float[] samples)
         {
             Calls++;
-            return Calls == 1
+            return EmitOnFirstCall && Calls == 1
                 ? new[] { (TimeSpan.Zero, TimeSpan.FromMilliseconds(300)) }
                 : Array.Empty<(TimeSpan, TimeSpan)>();
         }

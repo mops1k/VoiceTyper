@@ -88,7 +88,8 @@ public partial class App : Application
         DispatcherUnhandledException += (_, args) =>
         {
             _logger.Error(Loc.T("Log_UnhandledUi"), args.Exception);
-            MessageBox.Show(Loc.Format("Log_UnhandledErrorMsg", args.Exception.Message), Loc.T("App_MessageBoxTitle"), MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(Loc.Format("Log_UnhandledErrorMsg", args.Exception.Message), Loc.T("App_MessageBoxTitle"),
+                MessageBoxButton.OK, MessageBoxImage.Error);
             args.Handled = true;
         };
 
@@ -99,7 +100,8 @@ public partial class App : Application
         if (!createdNew)
         {
             _logger.Warn(Loc.T("Log_SecondInstance"));
-            MessageBox.Show(Loc.T("App_AlreadyRunning"), Loc.T("App_MessageBoxTitle"), MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show(Loc.T("App_AlreadyRunning"), Loc.T("App_MessageBoxTitle"), MessageBoxButton.OK,
+                MessageBoxImage.Information);
             Shutdown();
             return;
         }
@@ -111,8 +113,8 @@ public partial class App : Application
         _lastAppliedTheme = _currentSettings.Theme;
         _logger.Info(Loc.Format("Log_SettingsPath", _settingsService.SettingsFilePath));
         _logger.Info(Loc.Format("Log_SettingsSummary", _currentSettings.RecordingMode, _currentSettings.Language,
-                     _currentSettings.ModelSize, _currentSettings.AutoPasteEnabled,
-                     _currentSettings.MicrophoneDeviceId ?? Loc.T("Log_DefaultMic")));
+            _currentSettings.ModelSize, _currentSettings.AutoPasteEnabled,
+            _currentSettings.MicrophoneDeviceId ?? Loc.T("Log_DefaultMic")));
         _logger.Info(Loc.Format("Log_Hotkeys", _currentSettings.RecordHotkey, _currentSettings.CancelHotkey));
 
         _tray = new TrayIcon();
@@ -134,10 +136,12 @@ public partial class App : Application
             ? Loc.T("Log_MicNone")
             : Loc.Format("Log_MicList", string.Join(" | ", microphones.Select(m => m.Name))));
 
-        _settingsViewModel = new SettingsViewModel(_settingsService, _hotkeys, _microphoneService, _modelManager, _updateService);
+        _settingsViewModel =
+            new SettingsViewModel(_settingsService, _hotkeys, _microphoneService, _modelManager, _updateService);
         _settingsViewModel.SettingsApplied += OnSettingsApplied;
         _settingsViewModel.DownloadCancelRequested += CancelModelDownload;
-        _settingsViewModel.UpdateAvailable += v => _tray?.ShowBalloon(Loc.T("App_MessageBoxTitle"), Loc.Format("Update_AvailableBalloon", v));
+        _settingsViewModel.UpdateAvailable += v =>
+            _tray?.ShowBalloon(Loc.T("App_MessageBoxTitle"), Loc.Format("Update_AvailableBalloon", v));
         _settingsViewModel.UpdateInstallStarted += () => _mainWindow?.Hide();
         _settingsViewModel.SetStatus(Loc.T("Status_Ready"));
         ThemeManager.ThemeApplied += () => _tray?.ApplyTheme(ThemeManager.IsSystemDark);
@@ -197,8 +201,10 @@ public partial class App : Application
                     _downloadCts = new CancellationTokenSource();
                     try
                     {
-                        var modelPath = await _modelManager!.EnsureModelAsync(_currentSettings.ModelSize, ModelDownloadProgress(Loc.T("Models_WhisperLabel")), _downloadCts.Token);
-                        _vadPath = await _modelManager.EnsureVadModelAsync(ModelDownloadProgress(Loc.T("Models_VadLabel")), _downloadCts.Token);
+                        var modelPath = await _modelManager!.EnsureModelAsync(_currentSettings.ModelSize,
+                            ModelDownloadProgress(Loc.T("Models_WhisperLabel")), _downloadCts.Token);
+                        _vadPath = await _modelManager.EnsureVadModelAsync(
+                            ModelDownloadProgress(Loc.T("Models_VadLabel")), _downloadCts.Token);
                         _loadedModelSize = _currentSettings.ModelSize;
 
                         var oldTranscription = _transcription;
@@ -225,7 +231,8 @@ public partial class App : Application
                 _loadedMicrophoneId = _currentSettings.MicrophoneDeviceId;
                 _lastRecordingMode = _currentSettings.RecordingMode;
                 _lastSilenceThresholdMs = _currentSettings.SilenceThresholdMs;
-                _logger.Info(Loc.Format("Log_MicDevice", _currentSettings.MicrophoneDeviceId ?? Loc.T("Log_DefaultMic")));
+                _logger.Info(
+                    Loc.Format("Log_MicDevice", _currentSettings.MicrophoneDeviceId ?? Loc.T("Log_DefaultMic")));
 
                 if (oldMachine is not null)
                 {
@@ -245,7 +252,8 @@ public partial class App : Application
                     _currentSettings.RecordingMode,
                     TimeSpan.FromMilliseconds(_currentSettings.SilenceThresholdMs),
                     GetTranscriptionOptions,
-                    () => new SileroSpeechSegmenter(_vadPath!));
+                    () => new SileroSpeechSegmenter(_vadPath!),
+                    _logger);
 
                 machine.StateChanged += OnStateChanged;
                 machine.TextReady += OnTextReady;
@@ -345,7 +353,7 @@ public partial class App : Application
 
         _settingsViewModel?.SetStatus(Loc.T("Status_Saved"));
         _logger.Info(Loc.Format("Log_SettingsApplied", _currentSettings.RecordingMode, _currentSettings.Language,
-                     _currentSettings.ModelSize, _currentSettings.MicrophoneDeviceId ?? Loc.T("Log_DefaultMic")));
+            _currentSettings.ModelSize, _currentSettings.MicrophoneDeviceId ?? Loc.T("Log_DefaultMic")));
 
         var modelChanged = _currentSettings.ModelSize != _loadedModelSize;
         var micChanged = _currentSettings.MicrophoneDeviceId != _loadedMicrophoneId;
@@ -362,7 +370,9 @@ public partial class App : Application
         {
             _settingsViewModel?.SetStatus(modelChanged
                 ? Loc.T("Status_ModelReloading")
-                : behaviorChanged ? Loc.T("Status_ApplyingMode") : Loc.T("Status_ApplyingMic"));
+                : behaviorChanged
+                    ? Loc.T("Status_ApplyingMode")
+                    : Loc.T("Status_ApplyingMic"));
             _ = InitializeEngineAsync();
         }
         else
@@ -373,7 +383,8 @@ public partial class App : Application
 
     private void OnRecordPressed()
     {
-        if (_stateMachine is null || _engineInitializing || !_modelManager!.IsModelDownloaded(_currentSettings.ModelSize))
+        if (_stateMachine is null || _engineInitializing ||
+            !_modelManager!.IsModelDownloaded(_currentSettings.ModelSize))
         {
             _tray?.ShowBalloon(Loc.T("App_MessageBoxTitle"), Loc.T("Status_ModelNotReady"));
             return;
@@ -404,7 +415,8 @@ public partial class App : Application
 
     private void OnTrayRecord()
     {
-        if (_stateMachine is null || _engineInitializing || !_modelManager!.IsModelDownloaded(_currentSettings.ModelSize))
+        if (_stateMachine is null || _engineInitializing ||
+            !_modelManager!.IsModelDownloaded(_currentSettings.ModelSize))
         {
             _tray?.ShowBalloon(Loc.T("App_MessageBoxTitle"), Loc.T("Status_ModelNotReady"));
             return;
@@ -433,7 +445,8 @@ public partial class App : Application
     private void CancelModelDownload() => _downloadCts?.Cancel();
 
     private void OnStateChanged(RecordingState state)
-    {        _logger.Info(Loc.Format("Log_StateChange", state));
+    {
+        _logger.Info(Loc.Format("Log_StateChange", state));
         Dispatcher.BeginInvoke(() =>
         {
             _tray?.SetRecording(state == RecordingState.Recording);
@@ -470,10 +483,7 @@ public partial class App : Application
     private void OnTextReady(string text)
     {
         _logger.Info(Loc.Format("Log_TextReady", text.Length, text));
-        Dispatcher.BeginInvoke(() =>
-        {
-            _settingsViewModel?.SetLastText(text);
-        });
+        Dispatcher.BeginInvoke(() => { _settingsViewModel?.SetLastText(text); });
     }
 
     private string? _lastMicError;

@@ -15,7 +15,12 @@ public enum RecordingState
 }
 
 /// <summary>Параметры распознавания и вывода для текущего сеанса (читаются на каждый вызов).</summary>
-public sealed record TranscriptionOptions(RecognitionLanguage Language, string Prompt, bool AutoPaste, float Temperature = 0f, bool ConditionOnPreviousText = false);
+public sealed record TranscriptionOptions(
+    RecognitionLanguage Language,
+    string Prompt,
+    bool AutoPaste,
+    float Temperature = 0f,
+    bool ConditionOnPreviousText = false);
 
 /// <summary>
 /// Конечный автомат записи: <c>Idle → Recording → Processing → Idle</c>.
@@ -59,6 +64,7 @@ public sealed class RecordingStateMachine : IRecordingStateMachine
     private readonly Func<TranscriptionOptions> _optionsProvider;
     private readonly RecordingMode _mode;
     private readonly TimeSpan _silenceThreshold;
+    private readonly IAppLogger? _logger;
     private readonly object _lock = new();
 
     private CancellationTokenSource? _sessionCts;
@@ -72,7 +78,8 @@ public sealed class RecordingStateMachine : IRecordingStateMachine
         RecordingMode mode,
         TimeSpan silenceThreshold,
         Func<TranscriptionOptions> optionsProvider,
-        Func<ISpeechSegmenter>? segmenterFactory = null)
+        Func<ISpeechSegmenter>? segmenterFactory = null,
+        IAppLogger? logger = null)
     {
         _recorder = recorder;
         _transcription = transcription;
@@ -81,6 +88,7 @@ public sealed class RecordingStateMachine : IRecordingStateMachine
         _silenceThreshold = silenceThreshold;
         _optionsProvider = optionsProvider;
         _segmenterFactory = segmenterFactory ?? (() => throw new NotSupportedException(Loc.T("RSM_VadUnavailable")));
+        _logger = logger;
     }
 
     public event Action<RecordingState>? StateChanged;
@@ -175,6 +183,11 @@ public sealed class RecordingStateMachine : IRecordingStateMachine
         var wav = _recorder.Stop();
         if (wav is null || wav.Length == 0)
         {
+            if (_mode == RecordingMode.Vad)
+            {
+                _logger?.Info("[VAD] пустой захват: распознавать нечего");
+            }
+
             _segmenter?.Dispose();
             _segmenter = null;
             SetState(RecordingState.Idle);
@@ -221,6 +234,10 @@ public sealed class RecordingStateMachine : IRecordingStateMachine
     private async Task VadLoopAsync(CancellationToken ct)
     {
         var detector = new SilenceAutoStopDetector(_segmenter!, _silenceThreshold);
+        _logger?.Info(
+            $"[VAD] сессия начата: порог тишины {(int)_silenceThreshold.TotalMilliseconds} мс, " +
+            $"макс. ожидание речи {SilenceAutoStopDetector.MaxIdleBeforeSpeech.TotalSeconds:0} с");
+        var chunks = 0;
         try
         {
             while (!ct.IsCancellationRequested)
@@ -236,8 +253,12 @@ public sealed class RecordingStateMachine : IRecordingStateMachine
                 if (newBytes.Length > 0 && format is not null)
                 {
                     var floats = WavBuilder.ConvertTo16KHzMonoFloats(newBytes, format);
-                    if (detector.Process(floats))
+                    chunks++;
+                    if (detector.Process(floats, out var reason))
                     {
+                        _logger?.Info(
+                            $"[VAD] остановка: причина={reason}, фрагментов={chunks}, " +
+                            $"звука ≈ {detector.TotalFedSeconds:0.0} с");
                         lock (_lock)
                         {
                             if (State == RecordingState.Recording)

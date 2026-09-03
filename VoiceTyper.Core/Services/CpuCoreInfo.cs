@@ -1,4 +1,4 @@
-Теперь можно спокойно сделать commit push tag pushusing System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
 
 namespace VoiceTyper.Core.Services;
 

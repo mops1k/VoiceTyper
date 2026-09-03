@@ -60,8 +60,8 @@ Name: "{autodesktop}\VoiceTyper"; Filename: "{app}\VoiceTyper.exe"; Tasks: deskt
 Filename: "{app}\VoiceTyper.exe"; Description: "Запустить VoiceTyper"; Flags: nowait postinstall; Check: not IsAutoUpdate
 
 [Code]
-; Авто-обновление запускает установщик с /AutoUpdate (см. UpdateLauncher в приложении):
-; перезапуск приложения после установки делает сам наблюдатель, чтобы не было двойного запуска.
+// Авто-обновление запускает установщик с /AutoUpdate (см. UpdateLauncher в приложении):
+// перезапуск приложения после установки делает сам наблюдатель, чтобы не было двойного запуска.
 function IsAutoUpdate: Boolean;
 begin
   Result := CmdLineParamExists('/AutoUpdate');

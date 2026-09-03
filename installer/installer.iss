@@ -64,5 +64,6 @@ Filename: "{app}\VoiceTyper.exe"; Description: "Запустить VoiceTyper"; 
 // перезапуск приложения после установки делает сам наблюдатель, чтобы не было двойного запуска.
 function IsAutoUpdate: Boolean;
 begin
-  Result := CmdLineParamExists('/AutoUpdate');
+  // Встроенной CmdLineParamExists в Inno Setup нет, поэтому ищем флаг в полной командной строке.
+  Result := Pos('/AutoUpdate', GetCmdTail) > 0;
 end;

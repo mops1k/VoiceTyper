@@ -142,7 +142,7 @@ public partial class App : Application
         _settingsViewModel.DownloadCancelRequested += CancelModelDownload;
         _settingsViewModel.UpdateAvailable += v =>
             _tray?.ShowBalloon(Loc.T("App_MessageBoxTitle"), Loc.Format("Update_AvailableBalloon", v));
-        _settingsViewModel.UpdateInstallStarted += () => _mainWindow?.Hide();
+        _settingsViewModel.UpdateInstallStarted += OnUpdateInstallStarted;
         _settingsViewModel.SetStatus(Loc.T("Status_Ready"));
         ThemeManager.ThemeApplied += () => _tray?.ApplyTheme(ThemeManager.IsSystemDark);
 
@@ -510,5 +510,34 @@ public partial class App : Application
         _tray?.Dispose();
         _mainWindow?.Close();
         Shutdown();
+    }
+
+    /// <summary>
+    /// Установка обновления: запускаем скрытый наблюдатель (он покажет мастер установки
+    /// и перезапустит приложение после его закрытия), затем полностью закрываемся,
+    /// чтобы освободить exe и mutex одиночного экземпляра. В трей не сворачиваемся.
+    /// </summary>
+    private void OnUpdateInstallStarted(string installerPath)
+    {
+        try
+        {
+            var appPath = Environment.ProcessPath;
+            if (string.IsNullOrWhiteSpace(appPath))
+            {
+                throw new InvalidOperationException("Не удалось определить путь к приложению.");
+            }
+
+            _logger.Info(Loc.Format("Log_UpdateQuit", installerPath));
+            UpdateLauncher.Run(installerPath, appPath);
+            Quit();
+        }
+        catch (Exception ex)
+        {
+            _logger.Error(Loc.Format("Update_InstallFailed", ex.Message));
+            if (_settingsViewModel is not null)
+            {
+                _settingsViewModel.UpdateStatus = Loc.Format("Update_InstallFailed", ex.Message);
+            }
+        }
     }
 }

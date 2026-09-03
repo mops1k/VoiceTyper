@@ -484,6 +484,9 @@
   <data name="Log_Quit" xml:space="preserve">
     <value>=== VoiceTyper завершение ===</value>
   </data>
+  <data name="Log_UpdateQuit" xml:space="preserve">
+    <value>Запуск установщика {0}; приложение закрывается для обновления.</value>
+  </data>
   <data name="RSM_VadUnavailable" xml:space="preserve">
     <value>VAD недоступен</value>
   </data>

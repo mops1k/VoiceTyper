@@ -1,6 +1,5 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using System.Diagnostics;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Threading;
@@ -35,8 +34,9 @@ public sealed partial class SettingsViewModel : ObservableObject
     /// <summary>Найдена новая версия (для трей-balloon). Параметр — номер версии.</summary>
     public event Action<string>? UpdateAvailable;
 
-    /// <summary>Начата установка обновления (окно следует скрыть).</summary>
-    public event Action? UpdateInstallStarted;
+    /// <summary>Начата установка обновления. Параметр — путь к скачанному установщику;
+    /// приложение должно полностью закрыться, а установщик — запуститься.</summary>
+    public event Action<string>? UpdateInstallStarted;
 
     /// <summary>Открыт ли модальный диалог подтверждения (защита от сворачивания окна в трей).</summary>
     public bool IsModalDialogOpen { get; private set; }
@@ -535,15 +535,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             var path = await _updateService.DownloadInstallerAsync(_pendingUpdate, progress, _updateDownloadCts.Token);
 
             UpdateStatus = Loc.T("Update_StartingInstall");
-            UpdateInstallStarted?.Invoke();
-
-            var psi = new ProcessStartInfo(path)
-            {
-                UseShellExecute = true,
-                Arguments = "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-",
-            };
-            Process.Start(psi);
-            UpdateStatus = Loc.T("Update_InstallRunning");
+            UpdateInstallStarted?.Invoke(path);
         }
         catch (OperationCanceledException)
         {

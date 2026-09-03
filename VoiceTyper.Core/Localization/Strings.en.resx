@@ -484,6 +484,9 @@ Apply?</value>
   <data name="Log_Quit" xml:space="preserve">
     <value>=== VoiceTyper exit ===</value>
   </data>
+  <data name="Log_UpdateQuit" xml:space="preserve">
+    <value>Starting installer {0}; the app is shutting down for the update.</value>
+  </data>
   <data name="RSM_VadUnavailable" xml:space="preserve">
     <value>VAD unavailable</value>
   </data>

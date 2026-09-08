@@ -280,6 +280,36 @@
   <data name="Hotkeys_RegistrationErrorCancel" xml:space="preserve">
     <value>Не удалось зарегистрировать хоткей отмены '{0}'.</value>
   </data>
+  <data name="Gamepad_Title" xml:space="preserve">
+    <value>Кнопки геймпада</value>
+  </data>
+  <data name="Gamepad_Record" xml:space="preserve">
+    <value>Запись (геймпад)</value>
+  </data>
+  <data name="Gamepad_Cancel" xml:space="preserve">
+    <value>Отмена (геймпад)</value>
+  </data>
+  <data name="Gamepad_CaptureHint" xml:space="preserve">
+    <value>Нажмите кнопку на геймпаде…</value>
+  </data>
+  <data name="Gamepad_CaptureTooltip" xml:space="preserve">
+    <value>Кликните и нажмите нужную кнопку на геймпаде. Выбор подтверждается диалогом.</value>
+  </data>
+  <data name="Gamepad_Clear" xml:space="preserve">
+    <value>Очистить</value>
+  </data>
+  <data name="Gamepad_None" xml:space="preserve">
+    <value>Не назначено</value>
+  </data>
+  <data name="Gamepad_ConfirmDialog" xml:space="preserve">
+    <value>Привязать кнопку геймпада «{0}»?</value>
+  </data>
+  <data name="Gamepad_Hint" xml:space="preserve">
+    <value>Поддерживаются Xbox-совместимые контроллеры (XInput) и другие геймпады/джойстики (DirectInput). Для DirectInput кнопка привязывается к конкретному устройству.</value>
+  </data>
+  <data name="Gamepad_DirectInputButton" xml:space="preserve">
+    <value>Кнопка {0}</value>
+  </data>
   <data name="Mic_Device" xml:space="preserve">
     <value>Устройство</value>
   </data>

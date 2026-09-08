@@ -41,6 +41,8 @@
       <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
       <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.11" />
       <PackageReference Include="NHotkey.Wpf" Version="4.0.0" />
+      <PackageReference Include="Vortice.DirectInput" Version="3.8.3" />
+      <PackageReference Include="Vortice.XInput" Version="3.8.3" />
       <PackageReference Include="WindowsInput" Version="6.4.1" />
     </ItemGroup>
 

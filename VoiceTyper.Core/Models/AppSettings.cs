@@ -67,6 +67,15 @@ public sealed class AppSettings
     /// <summary>Горячая клавиша отмены записи/обработки.</summary>
     public string CancelHotkey { get; set; } = "Ctrl+Alt+Escape";
 
+    /// <summary>
+    /// Кнопка геймпада для записи (например <c>XInput|A</c> или <c>DInput|Logitech|3</c>).
+    /// Пустая строка/возможный null = не назначено.
+    /// </summary>
+    public string? RecordGamepadButton { get; set; }
+
+    /// <summary>Кнопка геймпада для отмены (формат как у <see cref="RecordGamepadButton"/>).</summary>
+    public string? CancelGamepadButton { get; set; }
+
     public RecognitionLanguage Language { get; set; } = RecognitionLanguage.Ru;
 
     public ModelSize ModelSize { get; set; } = ModelSize.Small;

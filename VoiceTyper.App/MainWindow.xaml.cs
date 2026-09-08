@@ -127,8 +127,10 @@ public partial class MainWindow : Window
 
     private void Window_Deactivated(object? sender, EventArgs e)
     {
-        // Окно потеряло фокус — сбрасываем режим захвата.
-        (DataContext as SettingsViewModel)?.CancelCapture();
+        // Окно потеряло фокус — сбрасываем режим захвата (клавиатура и геймпад).
+        var vm = DataContext as SettingsViewModel;
+        vm?.CancelCapture();
+        vm?.CancelGamepadCapture();
         ScheduleHideToTray();
     }
 

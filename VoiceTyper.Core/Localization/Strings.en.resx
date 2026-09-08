@@ -280,6 +280,36 @@ Apply?</value>
   <data name="Hotkeys_RegistrationErrorCancel" xml:space="preserve">
     <value>Failed to register the cancel hotkey '{0}'.</value>
   </data>
+  <data name="Gamepad_Title" xml:space="preserve">
+    <value>Gamepad buttons</value>
+  </data>
+  <data name="Gamepad_Record" xml:space="preserve">
+    <value>Record (gamepad)</value>
+  </data>
+  <data name="Gamepad_Cancel" xml:space="preserve">
+    <value>Cancel (gamepad)</value>
+  </data>
+  <data name="Gamepad_CaptureHint" xml:space="preserve">
+    <value>Press a gamepad button…</value>
+  </data>
+  <data name="Gamepad_CaptureTooltip" xml:space="preserve">
+    <value>Click and press the desired button on your gamepad. The pick is confirmed by a dialog.</value>
+  </data>
+  <data name="Gamepad_Clear" xml:space="preserve">
+    <value>Clear</value>
+  </data>
+  <data name="Gamepad_None" xml:space="preserve">
+    <value>Not set</value>
+  </data>
+  <data name="Gamepad_ConfirmDialog" xml:space="preserve">
+    <value>Assign the gamepad button "{0}"?</value>
+  </data>
+  <data name="Gamepad_Hint" xml:space="preserve">
+    <value>Supports Xbox-compatible controllers (XInput) and other gamepads/joysticks (DirectInput). DirectInput buttons are bound to a specific device.</value>
+  </data>
+  <data name="Gamepad_DirectInputButton" xml:space="preserve">
+    <value>Button {0}</value>
+  </data>
   <data name="Mic_Device" xml:space="preserve">
     <value>Device</value>
   </data>

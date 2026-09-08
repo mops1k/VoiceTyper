@@ -16,6 +16,7 @@ public sealed partial class SettingsViewModel : ObservableObject
 {
     private readonly ISettingsService _settingsService;
     private readonly HotkeyService _hotkeyService;
+    private readonly GamepadInputService _gamepadService;
     private readonly IMicrophoneService _microphoneService;
     private readonly IModelManager _modelManager;
     private readonly IUpdateService _updateService;
@@ -58,6 +59,21 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     [ObservableProperty]
     private string _cancelHotkeyHint = string.Empty;
+
+    [ObservableProperty]
+    private string _recordGamepadButton = string.Empty;
+
+    [ObservableProperty]
+    private string _cancelGamepadButton = string.Empty;
+
+    [ObservableProperty]
+    private bool _isCapturingGamepad;
+
+    [ObservableProperty]
+    private string _recordGamepadButtonHint = string.Empty;
+
+    [ObservableProperty]
+    private string _cancelGamepadButtonHint = string.Empty;
 
     [ObservableProperty]
     private RecognitionLanguage _language;
@@ -317,10 +333,11 @@ public sealed partial class SettingsViewModel : ObservableObject
         return asm.GetName().Version?.ToString(3) ?? "1.0.0";
     }
 
-    public SettingsViewModel(ISettingsService settingsService, HotkeyService hotkeyService, IMicrophoneService microphoneService, IModelManager modelManager, IUpdateService updateService)
+    public SettingsViewModel(ISettingsService settingsService, HotkeyService hotkeyService, GamepadInputService gamepadService, IMicrophoneService microphoneService, IModelManager modelManager, IUpdateService updateService)
     {
         _settingsService = settingsService;
         _hotkeyService = hotkeyService;
+        _gamepadService = gamepadService;
         _microphoneService = microphoneService;
         _modelManager = modelManager;
         _updateService = updateService;
@@ -378,6 +395,8 @@ public sealed partial class SettingsViewModel : ObservableObject
     {
         RecordHotkeyHint = RecordHotkey;
         CancelHotkeyHint = CancelHotkey;
+        RecordGamepadButtonHint = GamepadDisplay(RecordGamepadButton);
+        CancelGamepadButtonHint = GamepadDisplay(CancelGamepadButton);
         RefreshMicrophoneStatus();
         ErrorMessage = string.Empty;
     }
@@ -651,6 +670,97 @@ public sealed partial class SettingsViewModel : ObservableObject
         CancelHotkeyHint = CancelHotkey;
     }
 
+    /// <summary>Отмена захвата кнопки геймпада (Escape/потеря фокуса окном).</summary>
+    public void CancelGamepadCapture()
+    {
+        if (!IsCapturingGamepad)
+        {
+            return;
+        }
+
+        _gamepadService.CancelCapture();
+        IsCapturingGamepad = false;
+        RecordGamepadButtonHint = GamepadDisplay(RecordGamepadButton);
+        CancelGamepadButtonHint = GamepadDisplay(CancelGamepadButton);
+    }
+
+    [RelayCommand]
+    private Task CaptureRecordGamepad() => CaptureGamepadAsync("record");
+
+    [RelayCommand]
+    private Task CaptureCancelGamepad() => CaptureGamepadAsync("cancel");
+
+    [RelayCommand]
+    private void ClearRecordGamepad()
+    {
+        RecordGamepadButton = string.Empty;
+        RecordGamepadButtonHint = GamepadDisplay(RecordGamepadButton);
+    }
+
+    [RelayCommand]
+    private void ClearCancelGamepad()
+    {
+        CancelGamepadButton = string.Empty;
+        CancelGamepadButtonHint = GamepadDisplay(CancelGamepadButton);
+    }
+
+    private async Task CaptureGamepadAsync(string target)
+    {
+        if (IsCapturingGamepad)
+        {
+            return;
+        }
+
+        IsCapturingGamepad = true;
+        if (target == "record")
+        {
+            RecordGamepadButtonHint = Loc.T("Gamepad_CaptureHint");
+        }
+        else
+        {
+            CancelGamepadButtonHint = Loc.T("Gamepad_CaptureHint");
+        }
+
+        try
+        {
+            var binding = await _gamepadService.StartCapture();
+            if (binding is not null)
+            {
+                IsModalDialogOpen = true;
+                var result = System.Windows.MessageBox.Show(
+                    Loc.Format("Gamepad_ConfirmDialog", GamepadBindingParser.ToDisplayString(binding)),
+                    Loc.T("App_MessageBoxTitle"),
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Question);
+                IsModalDialogOpen = false;
+
+                if (result == MessageBoxResult.Yes)
+                {
+                    var text = GamepadBindingParser.Format(binding);
+                    if (target == "record")
+                    {
+                        RecordGamepadButton = text;
+                    }
+                    else
+                    {
+                        CancelGamepadButton = text;
+                    }
+                }
+            }
+        }
+        finally
+        {
+            IsCapturingGamepad = false;
+            RecordGamepadButtonHint = GamepadDisplay(RecordGamepadButton);
+            CancelGamepadButtonHint = GamepadDisplay(CancelGamepadButton);
+        }
+    }
+
+    private static string GamepadDisplay(string? text) =>
+        GamepadBindingParser.TryParse(text, out var binding)
+            ? GamepadBindingParser.ToDisplayString(binding)
+            : Loc.T("Gamepad_None");
+
     /// <summary>Подсказка, что для глобального хоткея нужен модификатор или F-клавиша.</summary>
     public void NotifyHotkeyNeedsModifier() =>
         ErrorMessage = Loc.T("Hotkeys_NeedsModifier");
@@ -683,6 +793,26 @@ public sealed partial class SettingsViewModel : ObservableObject
         ScheduleAutoSave();
     }
 
+    partial void OnRecordGamepadButtonChanged(string value)
+    {
+        if (!IsCapturingGamepad)
+        {
+            RecordGamepadButtonHint = GamepadDisplay(value);
+        }
+
+        ScheduleAutoSave();
+    }
+
+    partial void OnCancelGamepadButtonChanged(string value)
+    {
+        if (!IsCapturingGamepad)
+        {
+            CancelGamepadButtonHint = GamepadDisplay(value);
+        }
+
+        ScheduleAutoSave();
+    }
+
     partial void OnRecordingModeChanged(RecordingMode value) => ScheduleAutoSave();
     partial void OnLanguageChanged(RecognitionLanguage value) => ScheduleAutoSave();
     partial void OnAutoPasteEnabledChanged(bool value) => ScheduleAutoSave();
@@ -704,6 +834,8 @@ public sealed partial class SettingsViewModel : ObservableObject
         RecordingMode = s.RecordingMode;
         RecordHotkey = s.RecordHotkey;
         CancelHotkey = s.CancelHotkey;
+        RecordGamepadButton = s.RecordGamepadButton ?? string.Empty;
+        CancelGamepadButton = s.CancelGamepadButton ?? string.Empty;
         Language = s.Language;
         ModelSize = s.ModelSize;
         AutoPasteEnabled = s.AutoPasteEnabled;
@@ -741,6 +873,8 @@ public sealed partial class SettingsViewModel : ObservableObject
             RecordingMode = RecordingMode,
             RecordHotkey = HotkeyParser.Format(HotkeyParser.Parse(RecordHotkey)),
             CancelHotkey = HotkeyParser.Format(HotkeyParser.Parse(CancelHotkey)),
+            RecordGamepadButton = string.IsNullOrWhiteSpace(RecordGamepadButton) ? null : RecordGamepadButton,
+            CancelGamepadButton = string.IsNullOrWhiteSpace(CancelGamepadButton) ? null : CancelGamepadButton,
             Language = Language,
             ModelSize = ModelSize,
             AutoPasteEnabled = AutoPasteEnabled,
@@ -758,6 +892,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         };
 
         var errors = _hotkeyService.ApplySettings(settings);
+        _gamepadService.ApplySettings(settings);
         _settingsService.Save(settings);
         StartupManager.SetRunAtStartup(settings.StartWithWindows);
 
@@ -777,6 +912,8 @@ public sealed partial class SettingsViewModel : ObservableObject
         RecordingMode = defaults.RecordingMode;
         RecordHotkey = defaults.RecordHotkey;
         CancelHotkey = defaults.CancelHotkey;
+        RecordGamepadButton = defaults.RecordGamepadButton ?? string.Empty;
+        CancelGamepadButton = defaults.CancelGamepadButton ?? string.Empty;
         Language = defaults.Language;
         ModelSize = defaults.ModelSize;
         AutoPasteEnabled = defaults.AutoPasteEnabled;

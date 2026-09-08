@@ -508,6 +508,54 @@
                             </Border>
                         </StackPanel>
                     </Border>
+                    <Border Style="{StaticResource Card}" Margin="0,14,0,0">
+                        <StackPanel>
+                            <TextBlock Style="{StaticResource SectionTitle}" Margin="6,0,0,8"
+                                       Text="{Binding [Gamepad_Title], Source={x:Static loc:Loc.Instance}}" />
+                            <Border Style="{StaticResource Row}">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Style="{StaticResource RowLabel}"
+                                               Text="{Binding [Gamepad_Record], Source={x:Static loc:Loc.Instance}}" />
+                                    <DockPanel Grid.Column="1">
+                                        <Button DockPanel.Dock="Right" Content="{Binding [Gamepad_Clear], Source={x:Static loc:Loc.Instance}}"
+                                                Style="{StaticResource SecondaryButton}" Padding="12,7" Margin="8,0,0,0"
+                                                Command="{Binding ClearRecordGamepadCommand}" />
+                                        <Button Content="{Binding RecordGamepadButtonHint}"
+                                                Style="{StaticResource SecondaryButton}" MinWidth="180" Padding="14,7"
+                                                ToolTip="{Binding [Gamepad_CaptureTooltip], Source={x:Static loc:Loc.Instance}}"
+                                                Command="{Binding CaptureRecordGamepadCommand}" />
+                                    </DockPanel>
+                                </Grid>
+                            </Border>
+                            <Border Style="{StaticResource Row}">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Style="{StaticResource RowLabel}"
+                                               Text="{Binding [Gamepad_Cancel], Source={x:Static loc:Loc.Instance}}" />
+                                    <DockPanel Grid.Column="1">
+                                        <Button DockPanel.Dock="Right" Content="{Binding [Gamepad_Clear], Source={x:Static loc:Loc.Instance}}"
+                                                Style="{StaticResource SecondaryButton}" Padding="12,7" Margin="8,0,0,0"
+                                                Command="{Binding ClearCancelGamepadCommand}" />
+                                        <Button Content="{Binding CancelGamepadButtonHint}"
+                                                Style="{StaticResource SecondaryButton}" MinWidth="180" Padding="14,7"
+                                                ToolTip="{Binding [Gamepad_CaptureTooltip], Source={x:Static loc:Loc.Instance}}"
+                                                Command="{Binding CaptureCancelGamepadCommand}" />
+                                    </DockPanel>
+                                </Grid>
+                            </Border>
+                            <Border Style="{StaticResource Row}" BorderThickness="0">
+                                <TextBlock Style="{StaticResource Hint}" Margin="0,0,0,0"
+                                           Text="{Binding [Gamepad_Hint], Source={x:Static loc:Loc.Instance}}" />
+                            </Border>
+                        </StackPanel>
+                    </Border>
                     </StackPanel>
 
                     <!-- Микрофон -->

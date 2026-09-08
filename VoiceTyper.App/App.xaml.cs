@@ -2,6 +2,7 @@
 using System.Globalization;
 using System.IO;
 using System.Windows;
+using System.Windows.Input;
 using Application = System.Windows.Application;
 using MessageBox = System.Windows.MessageBox;
 using VoiceTyper.App.Services;
@@ -27,6 +28,7 @@ public partial class App : Application
     private Mutex? _mutex;
     private TrayIcon? _tray;
     private HotkeyService? _hotkeys;
+    private GamepadInputService? _gamepad;
     private ISettingsService? _settingsService;
     private IModelManager? _modelManager;
     private IMicrophoneService? _microphoneService;
@@ -132,13 +134,19 @@ public partial class App : Application
             _tray.ShowBalloon(Loc.T("App_MessageBoxTitle"), error);
         }
 
+        _gamepad = new GamepadInputService();
+        _gamepad.ApplySettings(_currentSettings);
+        _gamepad.RecordPressed += OnGamepadRecordPressed;
+        _gamepad.CancelPressed += OnCancelPressed;
+        _gamepad.Start();
+
         var microphones = _microphoneService.GetMicrophones();
         _logger.Info(microphones.Count == 0
             ? Loc.T("Log_MicNone")
             : Loc.Format("Log_MicList", string.Join(" | ", microphones.Select(m => m.Name))));
 
         _settingsViewModel =
-            new SettingsViewModel(_settingsService, _hotkeys, _microphoneService, _modelManager, _updateService);
+            new SettingsViewModel(_settingsService, _hotkeys, _gamepad, _microphoneService, _modelManager, _updateService);
         _settingsViewModel.SettingsApplied += OnSettingsApplied;
         _settingsViewModel.DownloadCancelRequested += CancelModelDownload;
         _settingsViewModel.UpdateAvailable += v =>
@@ -176,6 +184,7 @@ public partial class App : Application
     {
         _logger.Info(Loc.T("Log_Quit"));
         _hotkeys?.UnregisterAll();
+        _gamepad?.Dispose();
         _tray?.Dispose();
         _statusOverlay?.Close();
         _ = _stateMachine?.DisposeAsync() ?? ValueTask.CompletedTask;
@@ -357,6 +366,8 @@ public partial class App : Application
         _logger.Info(Loc.Format("Log_SettingsApplied", _currentSettings.RecordingMode, _currentSettings.Language,
             _currentSettings.ModelSize, _currentSettings.MicrophoneDeviceId ?? Loc.T("Log_DefaultMic")));
 
+        _gamepad?.ApplySettings(_currentSettings);
+
         var modelChanged = _currentSettings.ModelSize != _loadedModelSize;
         var micChanged = _currentSettings.MicrophoneDeviceId != _loadedMicrophoneId;
         var behaviorChanged = _currentSettings.RecordingMode != _lastRecordingMode
@@ -383,7 +394,11 @@ public partial class App : Application
         }
     }
 
-    private void OnRecordPressed()
+    private void OnRecordPressed() => StartRecord(_hotkeys!.RecordKey);
+
+    private void OnGamepadRecordPressed() => StartRecord(null);
+
+    private void StartRecord(Key? keyboardKey)
     {
         if (_stateMachine is null || _engineInitializing ||
             !_modelManager!.IsModelDownloaded(_currentSettings.ModelSize))
@@ -395,7 +410,9 @@ public partial class App : Application
         _stateMachine.PressRecord();
         if (_currentSettings.RecordingMode == RecordingMode.PushToTalk)
         {
-            _ = DetectRecordReleaseAsync();
+            _ = keyboardKey.HasValue
+                ? DetectRecordReleaseAsync()
+                : DetectGamepadRecordReleaseAsync();
         }
     }
 
@@ -404,6 +421,20 @@ public partial class App : Application
         try
         {
             await HotkeyReleaseDetector.WaitForKeyRelease(_hotkeys!.RecordKey);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        _stateMachine?.ReleaseRecord();
+    }
+
+    private async Task DetectGamepadRecordReleaseAsync()
+    {
+        try
+        {
+            await _gamepad!.WaitForRecordReleaseAsync();
         }
         catch (OperationCanceledException)
         {
@@ -509,6 +540,7 @@ public partial class App : Application
     {
         _isQuitting = true;
         _hotkeys?.UnregisterAll();
+        _gamepad?.Dispose();
         _tray?.Dispose();
         _mainWindow?.Close();
         Shutdown();

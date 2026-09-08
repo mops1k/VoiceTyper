@@ -12,8 +12,10 @@ public static class NoiseSuppressor
     {
         const int frameSize = 256;
         const double noiseFloorInit = 1e-4;
-        const double thresholdRatio = 3.0;
-        const double dampGain = 0.35;
+        // Бережнее к тихой речи: порог ниже (меньше кадров считается «шумом»), а глушение
+        // мягче — чтобы не «прижимать» спокойный голос и не терять окончания русских слов.
+        const double thresholdRatio = 2.0;
+        const double dampGain = 0.6;
 
         double noiseFloor = noiseFloorInit;
         double gain = 1.0;

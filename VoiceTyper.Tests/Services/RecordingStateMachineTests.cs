@@ -189,6 +189,7 @@ public class RecordingStateMachineTests
     {
         public bool IsRecording { get; private set; }
         public WaveFormat? CaptureFormat { get; set; } = new WaveFormat(16000, 16, 1);
+        public bool NoiseReductionEnabled { get; set; }
         public byte[]? WavToReturn { get; set; }
         public byte[] NewBytes { get; set; } = Array.Empty<byte>();
         public int StartCount { get; private set; }
@@ -228,11 +229,14 @@ public class RecordingStateMachineTests
 
         public Task<string> TranscribeAsync(byte[] wavBytes, RecognitionLanguage language, string prompt,
             CancellationToken ct = default,
-            float temperature = 0f, bool conditionOnPreviousText = false)
+            float temperature = 0f, bool conditionOnPreviousText = false, int bestOf = 1)
         {
             Calls++;
+            LastBestOf = bestOf;
             return Task.FromResult("привет");
         }
+
+        public int LastBestOf { get; private set; }
 
         public void Warmup()
         {

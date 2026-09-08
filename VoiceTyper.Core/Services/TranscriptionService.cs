@@ -10,9 +10,13 @@ public interface ITranscriptionService : IAsyncDisposable
     /// <summary>Путь к используемой ggml-модели.</summary>
     string ModelPath { get; }
 
-    /// <summary>Транскрибирует WAV-файл (16 кГц / моно / 16 бит) в текст.</summary>
+    /// <summary>
+    /// Транскрибирует WAV-файл (16 кГц / моно / 16 бит) в текст.
+    /// <paramref name="bestOf"/> — число кандидатов при жадном сэмплировании (1 — самый быстрый,
+    /// больше — точнее). Для финального результата можно задать 3–5, для быстрого предпросмотра — 1.
+    /// </summary>
     Task<string> TranscribeAsync(byte[] wavBytes, RecognitionLanguage language, string prompt, CancellationToken ct = default,
-        float temperature = 0f, bool conditionOnPreviousText = false);
+        float temperature = 0f, bool conditionOnPreviousText = false, int bestOf = 1);
 
     /// <summary>Прогревает модель: принудительно грузит её в память, чтобы первая диктовка не ждала загрузку.</summary>
     void Warmup();
@@ -26,6 +30,7 @@ public interface ITranscriptionService : IAsyncDisposable
 public sealed class WhisperTranscriptionService : ITranscriptionService
 {
     private readonly int _threads;
+    private readonly SemaphoreSlim _gate = new(1, 1);
     private WhisperFactory? _factory;
 
     public WhisperTranscriptionService(string modelPath)
@@ -47,14 +52,37 @@ public sealed class WhisperTranscriptionService : ITranscriptionService
     }
 
     public async Task<string> TranscribeAsync(byte[] wavBytes, RecognitionLanguage language, string prompt, CancellationToken ct = default,
-        float temperature = 0f, bool conditionOnPreviousText = false)
+        float temperature = 0f, bool conditionOnPreviousText = false, int bestOf = 1)
+    {
+        // whisper.cpp контекст не потокобезопасен для параллельных вызовов whisper_full(),
+        // а при частичном распознавании чанк (фоновый цикл) и финализация «хвоста» могут
+        // идти практически одновременно. Сериализуем все запуски инференса.
+        await _gate.WaitAsync(ct);
+        try
+        {
+            return await TranscribeCoreAsync(wavBytes, language, prompt, ct, temperature, conditionOnPreviousText, bestOf);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    private async Task<string> TranscribeCoreAsync(byte[] wavBytes, RecognitionLanguage language, string prompt,
+        CancellationToken ct, float temperature, bool conditionOnPreviousText, int bestOf)
     {
         var factory = _factory ??= WhisperFactory.FromPath(ModelPath);
 
         var builder = factory.CreateBuilder()
             .WithThreads(_threads)
             .WithNoSpeechThreshold(0.6f)
-            .WithTemperature(temperature);
+            .WithTemperature(temperature)
+            // Greedy Search (без Beam и температурного/энтропийного фолбека). bestOf=1 —
+            // самый быстрый; для финального результата можно задать больше (точнее).
+            .WithGreedySamplingStrategy(g => g.WithBestOf(Math.Max(1, bestOf)))
+            .WithTemperatureInc(0f)
+            .WithEntropyThreshold(-1f)
+            .WithLogProbThreshold(-1f);
 
         if (!conditionOnPreviousText)
         {
@@ -99,6 +127,7 @@ public sealed class WhisperTranscriptionService : ITranscriptionService
     {
         _factory?.Dispose();
         _factory = null;
+        _gate.Dispose();
         return ValueTask.CompletedTask;
     }
 }

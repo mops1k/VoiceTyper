@@ -8,6 +8,9 @@ public interface IAudioRecorder : IDisposable
     /// <summary>Формат, в котором устройство отдаёт данные (заполняется после Start).</summary>
     NAudio.Wave.WaveFormat? CaptureFormat { get; }
 
+    /// <summary>Применять ли подавление фонового шума к записываемым сэмплам.</summary>
+    bool NoiseReductionEnabled { get; set; }
+
     /// <summary>Начинает запись с устройства по умолчанию.</summary>
     void Start();
 

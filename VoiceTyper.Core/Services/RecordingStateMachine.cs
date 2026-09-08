@@ -30,6 +30,11 @@ public sealed record TranscriptionOptions(
 /// <item>Toggle — нажал/нажал;</item>
 /// <item>Vad — авто-остановка по тишине (Silero VAD).</item>
 /// </list>
+///
+/// В любом режиме финал — транскрибация всего накопленного аудио («полная»), которая и попадает
+/// в буфер обмена. Промежуточного стримингового предпросмотра нет: эксперимент показал, что он
+/// даёт артефакты на границах и не ускоряет итог (финал всё равно полный).
+///
 /// События могут вызываться с фоновых потоков — подписчики сами машаллят на UI.
 /// </summary>
 public interface IRecordingStateMachine : IAsyncDisposable
@@ -174,7 +179,7 @@ public sealed class RecordingStateMachine : IRecordingStateMachine
         {
             _segmenter = _segmenterFactory();
             var cts = _sessionCts;
-            _ = Task.Run(() => VadLoopAsync(cts.Token));
+            _ = Task.Run(() => BackgroundLoopAsync(cts.Token));
         }
     }
 
@@ -205,7 +210,7 @@ public sealed class RecordingStateMachine : IRecordingStateMachine
         {
             var options = _optionsProvider();
             var text = await _transcription.TranscribeAsync(wav, options.Language, options.Prompt, ct,
-                options.Temperature, options.ConditionOnPreviousText);
+                options.Temperature, options.ConditionOnPreviousText, bestOf: 3);
 
             if (!string.IsNullOrWhiteSpace(text) && await _output.OutputAsync(text, options.AutoPaste, ct))
             {
@@ -231,12 +236,16 @@ public sealed class RecordingStateMachine : IRecordingStateMachine
         }
     }
 
-    private async Task VadLoopAsync(CancellationToken ct)
+    /// <summary>
+    /// Фоновый цикл авто-останова в VAD-режиме.
+    /// </summary>
+    private async Task BackgroundLoopAsync(CancellationToken ct)
     {
         var detector = new SilenceAutoStopDetector(_segmenter!, _silenceThreshold);
         _logger?.Info(
             $"[VAD] сессия начата: порог тишины {(int)_silenceThreshold.TotalMilliseconds} мс, " +
             $"макс. ожидание речи {SilenceAutoStopDetector.MaxIdleBeforeSpeech.TotalSeconds:0} с");
+
         var chunks = 0;
         try
         {
@@ -269,6 +278,11 @@ public sealed class RecordingStateMachine : IRecordingStateMachine
 
                         return;
                     }
+                }
+
+                if (State != RecordingState.Recording)
+                {
+                    return;
                 }
 
                 await Task.Delay(VadPollInterval, ct);

@@ -1,0 +1,29 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="VoiceTyper.App.Overlay.StatusOverlayWindow"
+        Width="1" Height="1"
+        SystemDecorations="None"
+        Background="Transparent"
+        TransparencyLevelHint="Transparent"
+        Topmost="True"
+        ShowInTaskbar="False"
+        ShowActivated="False"
+        CanResize="False"
+        SizeToContent="WidthAndHeight"
+        WindowState="Normal">
+    <Grid Margin="0,0,0,26" IsHitTestVisible="False">
+        <Border Background="{DynamicResource Bg.Control}"
+                BorderBrush="{DynamicResource Accent}"
+                BorderThickness="1.5"
+                CornerRadius="16"
+                Padding="20,11"
+                IsHitTestVisible="False">
+            <StackPanel Orientation="Horizontal" IsHitTestVisible="False">
+                <Ellipse x:Name="Dot" Width="11" Height="11" Fill="{DynamicResource Accent}"
+                         VerticalAlignment="Center" Margin="0,0,11,0" />
+                <TextBlock x:Name="StatusText" Foreground="{DynamicResource Fg.Text}"
+                           FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" />
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>

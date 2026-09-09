@@ -1,19 +1,19 @@
-﻿using System.ComponentModel;
-using System.Globalization;
+﻿using System.Globalization;
 using System.IO;
-using System.Windows;
-using System.Windows.Input;
-using Application = System.Windows.Application;
-using MessageBox = System.Windows.MessageBox;
-using VoiceTyper.App.Services;
-using VoiceTyper.App.Tray;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Markup.Xaml;
+using Avalonia.Threading;
 using VoiceTyper.App.Overlay;
+using VoiceTyper.App.Services;
 using VoiceTyper.App.ViewModels;
 using VoiceTyper.Core.Abstractions;
 using VoiceTyper.Core.Audio;
 using VoiceTyper.Core.Localization;
 using VoiceTyper.Core.Models;
 using VoiceTyper.Core.Services;
+using AppTrayIcon = VoiceTyper.App.Tray.TrayIcon;
 
 namespace VoiceTyper.App;
 
@@ -26,7 +26,7 @@ public partial class App : Application
     private const string MutexName = "Global\\VoiceTyper_SingleInstance";
 
     private Mutex? _mutex;
-    private TrayIcon? _tray;
+    private AppTrayIcon? _tray;
     private HotkeyService? _hotkeys;
     private GamepadInputService? _gamepad;
     private ISettingsService? _settingsService;
@@ -58,18 +58,39 @@ public partial class App : Application
         _logger = new FileLogger();
     }
 
-    protected override void OnStartup(StartupEventArgs e)
+    public override void Initialize()
     {
-        base.OnStartup(e);
+        AvaloniaXamlLoader.Load(this);
+    }
 
-        // Каждый запуск начинаем с чистого лога.
-        _logger.Clear();
+    public override void OnFrameworkInitializationCompleted()
+    {
+        if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+        {
+            // Приложение живёт в трее: закрытие последнего окна не завершает процесс.
+            desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
+            AppDomain.CurrentDomain.UnhandledException += (_, args) =>
+                _logger.Error(Loc.T("Log_UnhandledAppDomain"), args.ExceptionObject as Exception);
+            TaskScheduler.UnobservedTaskException += (_, args) =>
+            {
+                _logger.Error(Loc.T("Log_UnhandledTask"), args.Exception);
+                args.SetObserved();
+            };
+
+            _logger.Clear();
+            StartupCore(desktop);
+        }
+
+        base.OnFrameworkInitializationCompleted();
+    }
+
+    private void StartupCore(IClassicDesktopStyleApplicationLifetime desktop)
+    {
         _settingsService = new SettingsService();
         _currentSettings = _settingsService.Load();
 
-        // Язык применяем сразу после загрузки настроек, но до первого лога/UI,
-        // чтобы логи и сообщения были на нужном языке. При первом запуске — по ОС.
+        // Язык применяем сразу после загрузки настроек, но до первого лога/UI.
         var effectiveLanguage = ResolveEffectiveLanguage();
         Loc.Instance.Apply(effectiveLanguage);
         _lastAppliedLanguage = effectiveLanguage;
@@ -79,32 +100,15 @@ public partial class App : Application
             _settingsService.Save(_currentSettings);
         }
 
-        AppDomain.CurrentDomain.UnhandledException += (_, args) =>
-            _logger.Error(Loc.T("Log_UnhandledAppDomain"), args.ExceptionObject as Exception);
-        TaskScheduler.UnobservedTaskException += (_, args) =>
-        {
-            _logger.Error(Loc.T("Log_UnhandledTask"), args.Exception);
-            args.SetObserved();
-        };
-
-        DispatcherUnhandledException += (_, args) =>
-        {
-            _logger.Error(Loc.T("Log_UnhandledUi"), args.Exception);
-            MessageBox.Show(Loc.Format("Log_UnhandledErrorMsg", args.Exception.Message), Loc.T("App_MessageBoxTitle"),
-                MessageBoxButton.OK, MessageBoxImage.Error);
-            args.Handled = true;
-        };
-
         _logger.Info(Loc.Format("Log_Startup", Environment.ProcessId));
         _logger.Info(Loc.Format("Log_System", Environment.Version, Environment.OSVersion, Environment.ProcessorCount));
         _logger.Info(Loc.Format("Log_LogDirectory", _logger.LogDirectory));
+
         _mutex = new Mutex(initiallyOwned: true, MutexName, out var createdNew);
         if (!createdNew)
         {
             _logger.Warn(Loc.T("Log_SecondInstance"));
-            MessageBox.Show(Loc.T("App_AlreadyRunning"), Loc.T("App_MessageBoxTitle"), MessageBoxButton.OK,
-                MessageBoxImage.Information);
-            Shutdown();
+            NotifySecondInstance(desktop);
             return;
         }
 
@@ -114,20 +118,22 @@ public partial class App : Application
         _updateService = new GithubUpdateService();
         ThemeManager.Apply(_currentSettings.Theme);
         _lastAppliedTheme = _currentSettings.Theme;
+
         _logger.Info(Loc.Format("Log_SettingsPath", _settingsService.SettingsFilePath));
         _logger.Info(Loc.Format("Log_SettingsSummary", _currentSettings.RecordingMode, _currentSettings.Language,
             _currentSettings.ModelSize, _currentSettings.AutoPasteEnabled,
             _currentSettings.MicrophoneDeviceId ?? Loc.T("Log_DefaultMic")));
         _logger.Info(Loc.Format("Log_Hotkeys", _currentSettings.RecordHotkey, _currentSettings.CancelHotkey));
 
-        _tray = new TrayIcon();
+        _tray = new AppTrayIcon();
         _tray.ApplyTheme(ThemeManager.IsSystemDark);
         _tray.OpenSettingsRequested += ShowSettingsWindow;
         _tray.RecordRequested += OnTrayRecord;
         _tray.QuitRequested += Quit;
+
         _hotkeys = new HotkeyService();
-        _hotkeys.RecordPressed += OnRecordPressed;
-        _hotkeys.CancelPressed += OnCancelPressed;
+        _hotkeys.RecordPressed += () => Dispatcher.UIThread.Post(OnRecordPressed);
+        _hotkeys.CancelPressed += () => Dispatcher.UIThread.Post(OnCancelPressed);
         foreach (var error in _hotkeys.ApplySettings(_currentSettings))
         {
             _logger.Warn(Loc.Format("Log_HotkeyRegistration", error));
@@ -136,8 +142,8 @@ public partial class App : Application
 
         _gamepad = new GamepadInputService();
         _gamepad.ApplySettings(_currentSettings);
-        _gamepad.RecordPressed += OnGamepadRecordPressed;
-        _gamepad.CancelPressed += OnCancelPressed;
+        _gamepad.RecordPressed += () => Dispatcher.UIThread.Post(OnGamepadRecordPressed);
+        _gamepad.CancelPressed += () => Dispatcher.UIThread.Post(OnCancelPressed);
         _gamepad.Start();
 
         var microphones = _microphoneService.GetMicrophones();
@@ -145,8 +151,14 @@ public partial class App : Application
             ? Loc.T("Log_MicNone")
             : Loc.Format("Log_MicList", string.Join(" | ", microphones.Select(m => m.Name))));
 
-        _settingsViewModel =
-            new SettingsViewModel(_settingsService, _hotkeys, _gamepad, _microphoneService, _modelManager, _updateService);
+        _settingsViewModel = new SettingsViewModel(
+            _settingsService,
+            _hotkeys,
+            _gamepad,
+            _microphoneService,
+            _modelManager,
+            _updateService,
+            new AvaloniaDialogService());
         _settingsViewModel.SettingsApplied += OnSettingsApplied;
         _settingsViewModel.DownloadCancelRequested += CancelModelDownload;
         _settingsViewModel.UpdateAvailable += v =>
@@ -155,14 +167,25 @@ public partial class App : Application
         _settingsViewModel.SetStatus(Loc.T("Status_Ready"));
         ThemeManager.ThemeApplied += () => _tray?.ApplyTheme(ThemeManager.IsSystemDark);
 
+        _mainWindow = new MainWindow();
+        _mainWindow.SetViewModel(_settingsViewModel);
+        desktop.MainWindow = _mainWindow;
+
+        // Окно показываем всегда (хотя бы один раз), чтобы у приложения был
+        // рабочий TopLevel для буфера обмена. При StartMinimized сразу прячем.
+        if (_currentSettings.StartMinimized)
+        {
+            _mainWindow.Show();
+            _mainWindow.Hide();
+        }
+        else
+        {
+            _mainWindow.Show();
+        }
+
         _ = _settingsViewModel.CheckForUpdatesAsync(auto: true);
         _ = InitializeEngineAsync();
         _ = TestMicrophoneAsync();
-
-        if (!_currentSettings.StartMinimized)
-        {
-            ShowSettingsWindow();
-        }
     }
 
     /// <summary>
@@ -180,17 +203,23 @@ public partial class App : Application
         return _currentSettings.AppLanguage;
     }
 
-    protected override void OnExit(ExitEventArgs e)
+    /// <summary>Запущен второй экземпляр — показываем сообщение и выходим.</summary>
+    private void NotifySecondInstance(IClassicDesktopStyleApplicationLifetime desktop)
     {
-        _logger.Info(Loc.T("Log_Quit"));
-        _hotkeys?.UnregisterAll();
-        _gamepad?.Dispose();
-        _tray?.Dispose();
-        _statusOverlay?.Close();
-        _ = _stateMachine?.DisposeAsync() ?? ValueTask.CompletedTask;
-        _ = _transcription?.DisposeAsync() ?? ValueTask.CompletedTask;
-        _mutex?.Dispose();
-        base.OnExit(e);
+        Dispatcher.UIThread.Post(async () =>
+        {
+            try
+            {
+                var dialog = new AvaloniaDialogService();
+                await dialog.InfoAsync(Loc.T("App_AlreadyRunning"), Loc.T("App_MessageBoxTitle"));
+            }
+            finally
+            {
+                _isQuitting = true;
+                _mutex?.Dispose();
+                desktop.Shutdown();
+            }
+        });
     }
 
     private async Task InitializeEngineAsync()
@@ -259,7 +288,7 @@ public partial class App : Application
                 var machine = new RecordingStateMachine(
                     recorder,
                     _transcription,
-                    new TextOutputService(new WpfClipboardWriter(Dispatcher), new InputSimulatorPaster()),
+                    new TextOutputService(new AvaloniaClipboardWriter(), new InputSimulatorPaster()),
                     _currentSettings.RecordingMode,
                     TimeSpan.FromMilliseconds(_currentSettings.SilenceThresholdMs),
                     GetTranscriptionOptions,
@@ -331,23 +360,23 @@ public partial class App : Application
 
     private void ShowSettingsWindow()
     {
-        if (_mainWindow is null)
+        if (_isQuitting)
         {
-            _mainWindow = new MainWindow(_settingsViewModel!);
-            _mainWindow.Closing += OnMainWindowClosing;
+            return;
+        }
+
+        if (_mainWindow is null || !_mainWindow.IsVisible)
+        {
+            _mainWindow = new MainWindow();
+            _mainWindow.SetViewModel(_settingsViewModel!);
+            if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+            {
+                desktop.MainWindow = _mainWindow;
+            }
         }
 
         _mainWindow.Show();
         _mainWindow.Activate();
-    }
-
-    private void OnMainWindowClosing(object? sender, CancelEventArgs e)
-    {
-        if (!_isQuitting)
-        {
-            e.Cancel = true;
-            _mainWindow!.Hide();
-        }
     }
 
     private void OnSettingsApplied()
@@ -394,11 +423,11 @@ public partial class App : Application
         }
     }
 
-    private void OnRecordPressed() => StartRecord(_hotkeys!.RecordKey);
+    private void OnRecordPressed() => StartRecord(_hotkeys!.RecordKeyVk);
 
     private void OnGamepadRecordPressed() => StartRecord(null);
 
-    private void StartRecord(Key? keyboardKey)
+    private void StartRecord(int? keyboardVk)
     {
         if (_stateMachine is null || _engineInitializing ||
             !_modelManager!.IsModelDownloaded(_currentSettings.ModelSize))
@@ -410,17 +439,17 @@ public partial class App : Application
         _stateMachine.PressRecord();
         if (_currentSettings.RecordingMode == RecordingMode.PushToTalk)
         {
-            _ = keyboardKey.HasValue
-                ? DetectRecordReleaseAsync()
+            _ = keyboardVk.HasValue
+                ? DetectRecordReleaseAsync(keyboardVk.Value)
                 : DetectGamepadRecordReleaseAsync();
         }
     }
 
-    private async Task DetectRecordReleaseAsync()
+    private async Task DetectRecordReleaseAsync(int vk)
     {
         try
         {
-            await HotkeyReleaseDetector.WaitForKeyRelease(_hotkeys!.RecordKey);
+            await HotkeyService.WaitForKeyRelease(vk);
         }
         catch (OperationCanceledException)
         {
@@ -460,7 +489,7 @@ public partial class App : Application
             _stateMachine.PressRecord();
             if (_currentSettings.RecordingMode == RecordingMode.PushToTalk)
             {
-                _ = DetectRecordReleaseAsync();
+                _ = DetectRecordReleaseAsync(_hotkeys!.RecordKeyVk);
             }
         }
         else
@@ -472,7 +501,7 @@ public partial class App : Application
     private IProgress<ModelDownloadProgress> ModelDownloadProgress(string name)
     {
         return new Progress<ModelDownloadProgress>(p =>
-            Dispatcher.BeginInvoke(() => _settingsViewModel?.SetModelDownload(name, p)));
+            Dispatcher.UIThread.Post(() => _settingsViewModel?.SetModelDownload(name, p)));
     }
 
     private void CancelModelDownload() => _downloadCts?.Cancel();
@@ -480,7 +509,7 @@ public partial class App : Application
     private void OnStateChanged(RecordingState state)
     {
         _logger.Info(Loc.Format("Log_StateChange", state));
-        Dispatcher.BeginInvoke(() =>
+        Dispatcher.UIThread.Post(() =>
         {
             _tray?.SetRecording(state == RecordingState.Recording);
             var status = state switch
@@ -496,7 +525,7 @@ public partial class App : Application
 
     private void UpdateStatusOverlay(RecordingState state)
     {
-        // Создаём лениво и только на UI-потоке (сюда попадаем из Dispatcher.BeginInvoke).
+        // Создаём лениво и только на UI-потоке.
         _statusOverlay ??= new StatusOverlayWindow();
 
         switch (state)
@@ -516,7 +545,7 @@ public partial class App : Application
     private void OnTextReady(string text)
     {
         _logger.Info(Loc.Format("Log_TextReady", text.Length, text));
-        Dispatcher.BeginInvoke(() => { _settingsViewModel?.SetLastText(text); });
+        Dispatcher.UIThread.Post(() => _settingsViewModel?.SetLastText(text));
     }
 
     private string? _lastMicError;
@@ -524,7 +553,7 @@ public partial class App : Application
     private void OnEngineFailed(string message)
     {
         _logger.Error(Loc.Format("Log_EngineFailed", message));
-        Dispatcher.BeginInvoke(() =>
+        Dispatcher.UIThread.Post(() =>
         {
             _settingsViewModel?.SetStatus(Loc.T("Status_Error"));
             // Показываем уведомление один раз, чтобы не спамить при каждом нажатии.
@@ -542,8 +571,19 @@ public partial class App : Application
         _hotkeys?.UnregisterAll();
         _gamepad?.Dispose();
         _tray?.Dispose();
+        _statusOverlay?.Close();
+        _ = _stateMachine?.DisposeAsync() ?? ValueTask.CompletedTask;
+        _ = _transcription?.DisposeAsync() ?? ValueTask.CompletedTask;
         _mainWindow?.Close();
-        Shutdown();
+        _mutex?.Dispose();
+        if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+        {
+            desktop.Shutdown();
+        }
+        else
+        {
+            Environment.Exit(0);
+        }
     }
 
     /// <summary>

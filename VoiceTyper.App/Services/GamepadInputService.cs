@@ -12,7 +12,7 @@ namespace VoiceTyper.App.Services;
 /// события <see cref="RecordPressed"/>/<see cref="RecordReleased"/>/<see cref="CancelPressed"/>
 /// подаются при смене состояния привязанных кнопок. Также поддерживает захват кнопки.
 /// </summary>
-public sealed class GamepadInputService : IDisposable
+public sealed class GamepadInputService : IGamepadInputService, IDisposable
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(33);
 

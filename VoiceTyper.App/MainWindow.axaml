@@ -1,0 +1,712 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:VoiceTyper.App"
+        xmlns:loc="clr-namespace:VoiceTyper.Core.Localization;assembly=VoiceTyper.Core"
+        mc:Ignorable="d" d:DesignWidth="820" d:DesignHeight="640"
+        x:Class="VoiceTyper.App.MainWindow"
+        Title="{Binding [App_WindowTitle], Source={x:Static loc:Loc.Instance}}"
+        Width="980" Height="640"
+        MinWidth="760" MinHeight="480"
+        WindowStartupLocation="CenterScreen"
+        SystemDecorations="None"
+        KeyDown="Window_PreviewKeyDown"
+        Deactivated="Window_Deactivated">
+
+    <Window.Styles>
+        <Style Selector="TextBlock.sectionTitle">
+            <Setter Property="Foreground" Value="{DynamicResource Fg.Muted}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Margin" Value="6,16,0,8" />
+        </Style>
+        <Style Selector="Border.card">
+            <Setter Property="Background" Value="{DynamicResource Bg.Control}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Border}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="12" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+        </Style>
+        <Style Selector="Border.row">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Border}" />
+            <Setter Property="BorderThickness" Value="0,0,0,1" />
+            <Setter Property="Padding" Value="14,12" />
+        </Style>
+        <Style Selector="TextBlock.rowLabel">
+            <Setter Property="Foreground" Value="{DynamicResource Fg.Text}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style Selector="TextBlock.infoGlyph">
+            <Setter Property="FontFamily" Value="Segoe MDL2 Assets" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="{DynamicResource Fg.Muted}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Margin" Value="10,0,0,0" />
+        </Style>
+        <Style Selector="TextBlock.hint">
+            <Setter Property="Foreground" Value="{DynamicResource Fg.Muted}" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Margin" Value="14,4,14,0" />
+        </Style>
+        <Style Selector="Button.primary">
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="Background" Value="{DynamicResource Accent}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Padding" Value="18,8" />
+        </Style>
+        <Style Selector="Button.secondary">
+            <Setter Property="Foreground" Value="{DynamicResource Fg.Text}" />
+            <Setter Property="Background" Value="{DynamicResource Bg.ControlHover}" />
+            <Setter Property="Padding" Value="16,8" />
+        </Style>
+        <Style Selector="Button.dangerIcon">
+            <Setter Property="Foreground" Value="#FFFF6B6B" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Padding" Value="8,5" />
+            <Setter Property="FontFamily" Value="Segoe MDL2 Assets" />
+            <Setter Property="FontSize" Value="14" />
+        </Style>
+        <Style Selector="Button.titleBar">
+            <Setter Property="Foreground" Value="{DynamicResource Fg.Text}" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Width" Value="46" />
+            <Setter Property="Height" Value="31" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="FontFamily" Value="Segoe MDL2 Assets" />
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="VerticalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="CornerRadius" Value="0" />
+        </Style>
+        <Style Selector="Button.titleBar:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource Bg.ControlHover}" />
+        </Style>
+        <Style Selector="Button.titleBar.close:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#FFC42B1C" />
+            <Setter Property="Foreground" Value="White" />
+        </Style>
+        <Style Selector="CheckBox.toggle">
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Grid Background="Transparent">
+                        <Border x:Name="Track" Width="40" Height="22" CornerRadius="11"
+                                BorderThickness="1" VerticalAlignment="Center" HorizontalAlignment="Center">
+                            <Ellipse x:Name="Thumb" Width="18" Height="18"
+                                     HorizontalAlignment="Left" VerticalAlignment="Center" Margin="2,0,0,0" />
+                        </Border>
+                    </Grid>
+                </ControlTemplate>
+            </Setter>
+        </Style>
+        <Style Selector="CheckBox.toggle /template/ Border#Track">
+            <Setter Property="Background" Value="{DynamicResource Bg.ControlHover}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Border}" />
+        </Style>
+        <Style Selector="CheckBox.toggle /template/ Ellipse#Thumb">
+            <Setter Property="Fill" Value="{DynamicResource Fg.Muted}" />
+        </Style>
+        <Style Selector="CheckBox.toggle:checked /template/ Border#Track">
+            <Setter Property="Background" Value="{DynamicResource Accent}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Accent}" />
+        </Style>
+        <Style Selector="CheckBox.toggle:checked /template/ Ellipse#Thumb">
+            <Setter Property="Fill" Value="White" />
+            <Setter Property="HorizontalAlignment" Value="Right" />
+            <Setter Property="Margin" Value="0,0,2,0" />
+        </Style>
+    </Window.Styles>
+
+    <Window.Resources>
+        <local:NavVisibilityConverter x:Key="NavVis" />
+        <local:InvertBoolConverter x:Key="InvertBool" />
+    </Window.Resources>
+
+    <Grid Background="{DynamicResource Bg.Window}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="32" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Тайтлбар -->
+        <Border Grid.Row="0" Background="{DynamicResource Bg.Control}" BorderBrush="{DynamicResource Border}"
+                BorderThickness="0,0,0,1">
+            <Grid>
+                <TextBlock Text="VoiceTyper" VerticalAlignment="Center" Margin="12,0,0,0"
+                           Foreground="{DynamicResource Fg.Text}" FontSize="13" FontWeight="SemiBold" />
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top">
+                    <Button Classes="titleBar" Content="&#xE921;" Click="MinimizeButton_Click" />
+                    <Button Classes="titleBar close" Content="&#xE8BB;" Click="CloseButton_Click" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Тело -->
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="210" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Навигация -->
+            <StackPanel Grid.Column="0" Margin="10,14,10,10">
+                <StackPanel Orientation="Horizontal" Margin="12,0,12,18">
+                    <Image Source="avares://VoiceTyper/Assets/voiceTyper.png" Width="34" Height="34" Margin="0,0,10,0" />
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="VoiceTyper" FontSize="17" FontWeight="Bold" />
+                        <TextBlock Text="{Binding [Nav_AppTagline], Source={x:Static loc:Loc.Instance}}"
+                                   FontSize="11" Foreground="{DynamicResource Fg.Muted}" />
+                    </StackPanel>
+                </StackPanel>
+                <ListBox ItemsSource="{Binding NavItems}"
+                         SelectedItem="{Binding SelectedNav}"
+                         Background="Transparent" BorderThickness="0">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Orientation="Horizontal" Margin="14,10">
+                                <TextBlock Text="{Binding Glyph}" VerticalAlignment="Center" FontSize="16"
+                                           FontFamily="Segoe MDL2 Assets" />
+                                <TextBlock Text="{Binding Label}" Margin="12,0,0,0" VerticalAlignment="Center"
+                                           FontSize="14" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </StackPanel>
+
+            <!-- Содержимое -->
+            <Grid Grid.Column="1">
+                <!-- Общий ScrollViewer для обычных настроек (скрывается при открытии Журнала) -->
+                <ScrollViewer HorizontalScrollBarVisibility="Disabled"
+                              VerticalScrollBarVisibility="Auto" Padding="14,14,14,10"
+                              IsVisible="{Binding SelectedNavItem, Converter={StaticResource NavVis}, ConverterParameter=Log, Converter={StaticResource InvertBool}}">
+                    <StackPanel>
+
+                        <!-- Основные -->
+                        <StackPanel IsVisible="{Binding SelectedNavItem, Converter={StaticResource NavVis}, ConverterParameter=Main}">
+                            <TextBlock Classes="sectionTitle" Text="{Binding [General_Title], Source={x:Static loc:Loc.Instance}}" />
+                            <Border Classes="card">
+                                <StackPanel>
+                                    <Border Classes="row">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="{Binding [General_RecognitionLanguage], Source={x:Static loc:Loc.Instance}}" Classes="rowLabel" />
+                                                <TextBlock Classes="infoGlyph" Text="&#xE946;" ToolTip.Tip="{Binding [General_RecognitionLanguage_Tooltip], Source={x:Static loc:Loc.Instance}}" />
+                                            </StackPanel>
+                                            <ComboBox Grid.Column="1" Width="180" ItemsSource="{Binding Languages}"
+                                                      SelectedItem="{Binding SelectedLanguage}">
+                                                <ComboBox.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <TextBlock Text="{Binding Label}" />
+                                                    </DataTemplate>
+                                                </ComboBox.ItemTemplate>
+                                            </ComboBox>
+                                        </Grid>
+                                    </Border>
+                                    <Border Classes="row">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="{Binding [General_InterfaceLanguage], Source={x:Static loc:Loc.Instance}}" Classes="rowLabel" />
+                                                <TextBlock Classes="infoGlyph" Text="&#xE946;" ToolTip.Tip="{Binding [General_InterfaceLanguage_Tooltip], Source={x:Static loc:Loc.Instance}}" />
+                                            </StackPanel>
+                                            <ComboBox Grid.Column="1" Width="180" ItemsSource="{Binding UiLanguages}"
+                                                      SelectedItem="{Binding SelectedUiLanguage}">
+                                                <ComboBox.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <TextBlock Text="{Binding Label}" />
+                                                    </DataTemplate>
+                                                </ComboBox.ItemTemplate>
+                                            </ComboBox>
+                                        </Grid>
+                                    </Border>
+                                    <Border Classes="row">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="{Binding [General_RecordingMode], Source={x:Static loc:Loc.Instance}}" Classes="rowLabel" />
+                                                <TextBlock Classes="infoGlyph" Text="&#xE946;" ToolTip.Tip="{Binding [General_RecordingMode_Tooltip], Source={x:Static loc:Loc.Instance}}" />
+                                            </StackPanel>
+                                            <ComboBox Grid.Column="1" Width="180" ItemsSource="{Binding RecordingModes}"
+                                                      SelectedItem="{Binding SelectedRecordingMode}">
+                                                <ComboBox.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <TextBlock Text="{Binding Label}" />
+                                                    </DataTemplate>
+                                                </ComboBox.ItemTemplate>
+                                            </ComboBox>
+                                        </Grid>
+                                    </Border>
+                                    <Border Classes="row">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="{Binding [General_SilenceThreshold], Source={x:Static loc:Loc.Instance}}" Classes="rowLabel" />
+                                                <TextBlock Classes="infoGlyph" Text="&#xE946;" ToolTip.Tip="{Binding [General_SilenceThreshold_Tooltip], Source={x:Static loc:Loc.Instance}}" />
+                                            </StackPanel>
+                                            <TextBox Grid.Column="1" Width="180" Text="{Binding SilenceThresholdMs}" />
+                                        </Grid>
+                                    </Border>
+                                    <Border Classes="row">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="{Binding [General_Temperature], Source={x:Static loc:Loc.Instance}}" Classes="rowLabel" />
+                                                <TextBlock Classes="infoGlyph" Text="&#xE946;" ToolTip.Tip="{Binding [General_Temperature_Tooltip], Source={x:Static loc:Loc.Instance}}" />
+                                            </StackPanel>
+                                            <ComboBox Grid.Column="1" Width="180" ItemsSource="{Binding Temperatures}"
+                                                      SelectedItem="{Binding Temperature}" />
+                                        </Grid>
+                                    </Border>
+                                    <Border Classes="row">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="{Binding [General_NoiseReduction], Source={x:Static loc:Loc.Instance}}" Classes="rowLabel" />
+                                            <CheckBox Classes="toggle" Grid.Column="1" IsChecked="{Binding NoiseReductionEnabled}" />
+                                        </Grid>
+                                    </Border>
+                                    <Border Classes="row">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="{Binding [General_ConditionOnPreviousText], Source={x:Static loc:Loc.Instance}}" Classes="rowLabel" />
+                                            <CheckBox Classes="toggle" Grid.Column="1" IsChecked="{Binding ConditionOnPreviousText}" />
+                                        </Grid>
+                                    </Border>
+                                    <Border Classes="row">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="{Binding [General_AutoPaste], Source={x:Static loc:Loc.Instance}}" Classes="rowLabel" />
+                                            <CheckBox Classes="toggle" Grid.Column="1" IsChecked="{Binding AutoPasteEnabled}" />
+                                        </Grid>
+                                    </Border>
+                                    <Border Classes="row" BorderThickness="0">
+                                        <StackPanel>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="{Binding [General_Terms], Source={x:Static loc:Loc.Instance}}" Classes="rowLabel" />
+                                                <TextBlock Classes="infoGlyph" Text="&#xE946;" ToolTip.Tip="{Binding [General_Terms_Tooltip], Source={x:Static loc:Loc.Instance}}" />
+                                            </StackPanel>
+                                            <TextBox Margin="0,10,0,0" Text="{Binding TermsDictionary}"
+                                                     TextWrapping="Wrap" Height="58" VerticalContentAlignment="Top" />
+                                            <TextBlock Classes="hint"
+                                                       Text="{Binding [General_Terms_Hint], Source={x:Static loc:Loc.Instance}}" />
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+
+                        <!-- Внешний вид -->
+                        <StackPanel IsVisible="{Binding SelectedNavItem, Converter={StaticResource NavVis}, ConverterParameter=Appearance}">
+                            <TextBlock Classes="sectionTitle" Text="{Binding [Look_Title], Source={x:Static loc:Loc.Instance}}" />
+                            <Border Classes="card">
+                                <StackPanel>
+                                    <Border Classes="row" BorderThickness="0">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="{Binding [Look_Theme], Source={x:Static loc:Loc.Instance}}" Classes="rowLabel" />
+                                                <TextBlock Classes="infoGlyph" Text="&#xE946;" ToolTip.Tip="{Binding [Look_Theme_Tooltip], Source={x:Static loc:Loc.Instance}}" />
+                                            </StackPanel>
+                                            <ComboBox Grid.Column="1" Width="180" ItemsSource="{Binding Themes}"
+                                                      SelectedItem="{Binding SelectedTheme}">
+                                                <ComboBox.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <TextBlock Text="{Binding Label}" />
+                                                    </DataTemplate>
+                                                </ComboBox.ItemTemplate>
+                                            </ComboBox>
+                                        </Grid>
+                                    </Border>
+                                    <Border Classes="row" BorderThickness="0">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="{Binding [Look_HideOnFocusLoss], Source={x:Static loc:Loc.Instance}}" Classes="rowLabel" />
+                                            <CheckBox Classes="toggle" Grid.Column="1" IsChecked="{Binding HideOnFocusLoss}" />
+                                        </Grid>
+                                    </Border>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+
+                        <!-- Модели -->
+                        <StackPanel IsVisible="{Binding SelectedNavItem, Converter={StaticResource NavVis}, ConverterParameter=Models}">
+                            <TextBlock Classes="sectionTitle" Text="{Binding [Models_Title], Source={x:Static loc:Loc.Instance}}" />
+                            <Border Classes="card">
+                                <ItemsControl ItemsSource="{Binding ModelItems}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Classes="row">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto" />
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <CheckBox Classes="toggle" Grid.Column="0" VerticalAlignment="Center"
+                                                              IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                                              Command="{Binding DataContext.SelectModelCommand, RelativeSource={RelativeSource AncestorType={x:Type Window}}}"
+                                                              CommandParameter="{Binding}"
+                                                              Margin="0,0,12,0" />
+                                                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,12,0">
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <TextBlock Text="{Binding Name}" Classes="rowLabel" />
+                                                            <TextBlock Text="{Binding ApproxSize}" Foreground="{DynamicResource Fg.Muted}"
+                                                                       FontSize="12" VerticalAlignment="Center" Margin="8,0,0,0" />
+                                                        </StackPanel>
+                                                        <TextBlock Text="{Binding Description}" Foreground="{DynamicResource Fg.Muted}"
+                                                                   FontSize="12" TextWrapping="Wrap" Margin="0,3,0,0" />
+                                                        <TextBlock Text="{Binding Speed}" Foreground="{DynamicResource Fg.Muted}"
+                                                                   FontSize="11" Margin="0,2,0,0" />
+                                                    </StackPanel>
+                                                    <Button Grid.Column="2" Classes="secondary"
+                                                            Content="{Binding [Models_Download], Source={x:Static loc:Loc.Instance}}"
+                                                            Padding="12,6" MinWidth="0" VerticalAlignment="Center"
+                                                            Margin="0,0,8,0"
+                                                            IsVisible="{Binding CanDownload}"
+                                                            Command="{Binding DataContext.DownloadModelCommand, RelativeSource={RelativeSource AncestorType={x:Type Window}}}"
+                                                            CommandParameter="{Binding}" />
+                                                    <Button Grid.Column="3" Classes="dangerIcon" Content="&#xE74D;"
+                                                            ToolTip.Tip="{Binding [Models_Delete_Tooltip], Source={x:Static loc:Loc.Instance}}"
+                                                            VerticalAlignment="Center"
+                                                            IsVisible="{Binding IsDownloaded}"
+                                                            Command="{Binding DataContext.DeleteModelCommand, RelativeSource={RelativeSource AncestorType={x:Type Window}}}"
+                                                            CommandParameter="{Binding}" IsEnabled="{Binding CanDelete}" />
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </Border>
+                        </StackPanel>
+
+                        <!-- Горячие клавиши -->
+                        <StackPanel IsVisible="{Binding SelectedNavItem, Converter={StaticResource NavVis}, ConverterParameter=Hotkeys}">
+                            <TextBlock Classes="sectionTitle" Text="{Binding [Hotkeys_Title], Source={x:Static loc:Loc.Instance}}" />
+                            <Border Classes="card">
+                                <StackPanel>
+                                    <Border Classes="row">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="{Binding [Hotkeys_Record], Source={x:Static loc:Loc.Instance}}" Classes="rowLabel" />
+                                                <TextBlock Classes="infoGlyph" Text="&#xE946;" ToolTip.Tip="{Binding [Hotkeys_Record_Tooltip], Source={x:Static loc:Loc.Instance}}" />
+                                            </StackPanel>
+                                            <TextBox Grid.Column="1" Width="180" Text="{Binding RecordHotkeyHint}"
+                                                     IsReadOnly="True" Focusable="False" Cursor="Hand"
+                                                     ToolTip.Tip="{Binding [Hotkeys_FieldHint], Source={x:Static loc:Loc.Instance}}"
+                                                     Tapped="CaptureRecordHotkey_Click" />
+                                        </Grid>
+                                    </Border>
+                                    <Border Classes="row">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="{Binding [Hotkeys_Cancel], Source={x:Static loc:Loc.Instance}}" Classes="rowLabel" />
+                                                <TextBlock Classes="infoGlyph" Text="&#xE946;" ToolTip.Tip="{Binding [Hotkeys_Cancel_Tooltip], Source={x:Static loc:Loc.Instance}}" />
+                                            </StackPanel>
+                                            <TextBox Grid.Column="1" Width="180" Text="{Binding CancelHotkeyHint}"
+                                                     IsReadOnly="True" Focusable="False" Cursor="Hand"
+                                                     ToolTip.Tip="{Binding [Hotkeys_FieldHint], Source={x:Static loc:Loc.Instance}}"
+                                                     Tapped="CaptureCancelHotkey_Click" />
+                                        </Grid>
+                                    </Border>
+                                    <TextBlock Classes="hint"
+                                               Text="{Binding [Hotkeys_Hint], Source={x:Static loc:Loc.Instance}}" />
+                                </StackPanel>
+                            </Border>
+                            <Border Classes="card" Margin="0,14,0,0">
+                                <StackPanel>
+                                    <TextBlock Classes="sectionTitle" Margin="6,14,0,8"
+                                               Text="{Binding [Gamepad_Title], Source={x:Static loc:Loc.Instance}}" />
+                                    <Border Classes="row">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Classes="rowLabel"
+                                                       Text="{Binding [Gamepad_Record], Source={x:Static loc:Loc.Instance}}"
+                                                       Margin="0,0,12,0" />
+                                            <WrapPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
+                                                <Button Classes="secondary" Content="{Binding RecordGamepadButtonHint}"
+                                                        Margin="0,0,8,0"
+                                                        ToolTip.Tip="{Binding [Gamepad_CaptureTooltip], Source={x:Static loc:Loc.Instance}}"
+                                                        Command="{Binding CaptureRecordGamepadCommand}" />
+                                                <Button Classes="secondary" Content="{Binding [Gamepad_Clear], Source={x:Static loc:Loc.Instance}}"
+                                                        Command="{Binding ClearRecordGamepadCommand}" />
+                                            </WrapPanel>
+                                        </Grid>
+                                    </Border>
+                                    <Border Classes="row">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Classes="rowLabel"
+                                                       Text="{Binding [Gamepad_Cancel], Source={x:Static loc:Loc.Instance}}"
+                                                       Margin="0,0,12,0" />
+                                            <WrapPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
+                                                <Button Classes="secondary" Content="{Binding CancelGamepadButtonHint}"
+                                                        Margin="0,0,8,0"
+                                                        ToolTip.Tip="{Binding [Gamepad_CaptureTooltip], Source={x:Static loc:Loc.Instance}}"
+                                                        Command="{Binding CaptureCancelGamepadCommand}" />
+                                                <Button Classes="secondary" Content="{Binding [Gamepad_Clear], Source={x:Static loc:Loc.Instance}}"
+                                                        Command="{Binding ClearCancelGamepadCommand}" />
+                                            </WrapPanel>
+                                        </Grid>
+                                    </Border>
+                                    <TextBlock Classes="hint"
+                                               Text="{Binding [Gamepad_Hint], Source={x:Static loc:Loc.Instance}}" />
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+
+                        <!-- Микрофон -->
+                        <StackPanel IsVisible="{Binding SelectedNavItem, Converter={StaticResource NavVis}, ConverterParameter=Microphone}">
+                            <TextBlock Classes="sectionTitle" Text="{Binding [Mic_Title], Source={x:Static loc:Loc.Instance}}" />
+                            <Border Classes="card">
+                                <StackPanel>
+                                    <Border Classes="row" BorderThickness="0">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="{Binding [Mic_Device], Source={x:Static loc:Loc.Instance}}" Classes="rowLabel" />
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                                                <Button Classes="secondary"
+                                                        Content="{Binding [Mic_Refresh], Source={x:Static loc:Loc.Instance}}"
+                                                        Command="{Binding RefreshMicrophonesCommand}" />
+                                                <ComboBox ItemsSource="{Binding Microphones}" SelectedItem="{Binding SelectedMicrophone}"
+                                                          Width="280">
+                                                    <ComboBox.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <TextBlock Text="{Binding Name}" />
+                                                        </DataTemplate>
+                                                    </ComboBox.ItemTemplate>
+                                                </ComboBox>
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                    <TextBlock Text="{Binding MicrophoneStatus}" Classes="hint" />
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+
+                        <!-- Запуск -->
+                        <StackPanel IsVisible="{Binding SelectedNavItem, Converter={StaticResource NavVis}, ConverterParameter=Startup}">
+                            <TextBlock Classes="sectionTitle" Text="{Binding [Startup_Title], Source={x:Static loc:Loc.Instance}}" />
+                            <Border Classes="card">
+                                <StackPanel>
+                                    <Border Classes="row">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="{Binding [Startup_WithWindows], Source={x:Static loc:Loc.Instance}}" Classes="rowLabel" />
+                                            <CheckBox Classes="toggle" Grid.Column="1" IsChecked="{Binding StartWithWindows}" />
+                                        </Grid>
+                                    </Border>
+                                    <Border Classes="row" BorderThickness="0">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="{Binding [Startup_Minimized], Source={x:Static loc:Loc.Instance}}" Classes="rowLabel" />
+                                            <CheckBox Classes="toggle" Grid.Column="1" IsChecked="{Binding StartMinimized}" />
+                                        </Grid>
+                                    </Border>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+
+                        <!-- О программе -->
+                        <StackPanel IsVisible="{Binding SelectedNavItem, Converter={StaticResource NavVis}, ConverterParameter=About}">
+                            <TextBlock Classes="sectionTitle" Text="{Binding [About_Title], Source={x:Static loc:Loc.Instance}}" />
+                            <Border Classes="card">
+                                <StackPanel>
+                                    <Border Classes="row">
+                                        <TextBlock TextWrapping="Wrap"
+                                                   Text="{Binding [About_Description1], Source={x:Static loc:Loc.Instance}}" />
+                                    </Border>
+                                    <Border Classes="row">
+                                        <TextBlock TextWrapping="Wrap"
+                                                   Text="{Binding [About_Description2], Source={x:Static loc:Loc.Instance}}" />
+                                    </Border>
+                                    <Border Classes="row">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="{Binding [About_Version], Source={x:Static loc:Loc.Instance}}" Classes="rowLabel" />
+                                                <TextBlock Classes="infoGlyph" Text="&#xE946;" ToolTip.Tip="{Binding [About_Version_Tooltip], Source={x:Static loc:Loc.Instance}}" />
+                                            </StackPanel>
+                                            <TextBlock Grid.Column="1" Text="{Binding AppVersion}" VerticalAlignment="Center"
+                                                       Foreground="{DynamicResource Fg.Muted}" />
+                                        </Grid>
+                                    </Border>
+                                    <Border Classes="row">
+                                        <StackPanel>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="{Binding [Update_Title], Source={x:Static loc:Loc.Instance}}" Classes="rowLabel" />
+                                                    <TextBlock Classes="infoGlyph" Text="&#xE946;" ToolTip.Tip="{Binding [Update_Tooltip], Source={x:Static loc:Loc.Instance}}" />
+                                                </StackPanel>
+                                                <Button Grid.Column="1" Classes="secondary"
+                                                        Content="{Binding [Update_Check], Source={x:Static loc:Loc.Instance}}"
+                                                        Command="{Binding CheckForUpdatesCommand}"
+                                                        IsEnabled="{Binding IsCheckingUpdate, Converter={StaticResource InvertBool}}" />
+                                            </Grid>
+                                            <TextBlock Text="{Binding UpdateStatus}" Classes="hint" />
+                                            <StackPanel IsVisible="{Binding IsUpdateAvailable}" Margin="0,10,0,0">
+                                                <TextBlock Text="{Binding [Update_NewAvailable], Source={x:Static loc:Loc.Instance}}"
+                                                           FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource Fg.Text}" />
+                                                <TextBlock Text="{Binding ReleaseNotes}" FontSize="11" Foreground="{DynamicResource Fg.Muted}"
+                                                           TextWrapping="Wrap" MaxHeight="90" Margin="0,4,0,0"
+                                                           IsVisible="{Binding HasReleaseNotes}" />
+                                                <Button Classes="primary" Content="{Binding [Update_Install], Source={x:Static loc:Loc.Instance}}"
+                                                        Margin="0,10,0,0" HorizontalAlignment="Left"
+                                                        Command="{Binding InstallUpdateCommand}"
+                                                        IsEnabled="{Binding IsDownloadingUpdate, Converter={StaticResource InvertBool}}" />
+                                            </StackPanel>
+                                            <StackPanel IsVisible="{Binding IsDownloadingUpdate}" Margin="0,10,0,0">
+                                                <ProgressBar Value="{Binding UpdateDownloadProgress}" Maximum="1" Height="5" />
+                                                <DockPanel Margin="0,6,0,0">
+                                                    <Button DockPanel.Dock="Right" Classes="secondary"
+                                                            Content="{Binding [App_Cancel], Source={x:Static loc:Loc.Instance}}"
+                                                            Command="{Binding CancelUpdateDownloadCommand}" Padding="12,4" Margin="12,0,0,0" />
+                                                    <TextBlock Text="{Binding UpdateStatus}" Foreground="{DynamicResource Fg.Muted}"
+                                                               FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap" />
+                                                </DockPanel>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+
+                    </StackPanel>
+                </ScrollViewer>
+
+                <!-- Автономная секция Лога (занимает ровно доступное место по высоте) -->
+                <Grid IsVisible="{Binding SelectedNavItem, Converter={StaticResource NavVis}, ConverterParameter=Log}"
+                      Loaded="LogSection_Loaded" Unloaded="LogSection_Unloaded"
+                      Margin="14,14,14,10" RowDefinitions="Auto,*">
+
+                    <TextBlock Grid.Row="0" Classes="sectionTitle" Margin="6,0,0,8"
+                               Text="{Binding [Log_Title], Source={x:Static loc:Loc.Instance}}" />
+
+                    <Border Grid.Row="1" Classes="card">
+                        <Grid RowDefinitions="Auto,*">
+
+                            <!-- Шапка с путем и кнопкой -->
+                            <Border Grid.Row="0" Classes="row" BorderThickness="0">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Grid.Column="0" Text="{Binding LogFilePath}" VerticalAlignment="Center"
+                                               Foreground="{DynamicResource Fg.Muted}" TextWrapping="Wrap"
+                                               TextTrimming="CharacterEllipsis" />
+                                    <Button Grid.Column="1" Classes="secondary"
+                                            Content="{Binding [Log_Refresh], Source={x:Static loc:Loc.Instance}}"
+                                            Command="{Binding RefreshLogCommand}" Margin="12,0,0,0" />
+                                </Grid>
+                            </Border>
+
+                            <!-- Поле лога со встроенным скроллом -->
+                            <TextBox Grid.Row="1" Text="{Binding LogText, Mode=OneWay}"
+                                     IsReadOnly="True" TextWrapping="Wrap"
+                                     AcceptsReturn="True"
+                                     ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                     FontFamily="Consolas" FontSize="11"
+                                     Margin="14,0,14,14"
+                                     VerticalContentAlignment="Top"
+                                     HorizontalContentAlignment="Stretch"
+                                     HorizontalAlignment="Stretch"
+                                     VerticalAlignment="Stretch" />
+                        </Grid>
+                    </Border>
+                </Grid>
+            </Grid>
+        </Grid>
+
+        <!-- Нижняя панель -->
+        <Grid Grid.Row="2" Margin="18,10,18,14">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,24,0">
+                <TextBlock Text="{Binding StatusText}" Foreground="{DynamicResource Fg.Muted}" FontSize="12" />
+                <TextBlock Text="{Binding ErrorMessage}" Foreground="#FFFF6B6B" TextWrapping="Wrap" FontSize="12"
+                           IsVisible="{Binding HasError}" />
+                <StackPanel IsVisible="{Binding IsDownloading}" Margin="0,6,0,0">
+                    <ProgressBar Value="{Binding DownloadProgress}" Maximum="1" Height="5"
+                                 Foreground="{DynamicResource Accent}" />
+                    <DockPanel Margin="0,4,0,0">
+                        <Button DockPanel.Dock="Right" Classes="secondary"
+                                Content="{Binding [App_Cancel], Source={x:Static loc:Loc.Instance}}"
+                                Command="{Binding CancelDownloadCommand}" Padding="12,4" Margin="12,0,0,0" />
+                        <TextBlock Text="{Binding DownloadInfo}" Foreground="{DynamicResource Fg.Muted}"
+                                   FontSize="12" VerticalAlignment="Center" TextWrapping="Wrap" />
+                    </DockPanel>
+                </StackPanel>
+            </StackPanel>
+            <Button Grid.Column="1" Classes="secondary"
+                    Content="{Binding [App_Reset], Source={x:Static loc:Loc.Instance}}"
+                    Command="{Binding ResetDefaultsCommand}" />
+        </Grid>
+    </Grid>
+</Window>

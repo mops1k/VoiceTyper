@@ -36,6 +36,12 @@
   <data name="App_MessageBoxTitle" xml:space="preserve">
     <value>VoiceTyper</value>
   </data>
+  <data name="Common_Yes" xml:space="preserve">
+    <value>Yes</value>
+  </data>
+  <data name="Common_No" xml:space="preserve">
+    <value>No</value>
+  </data>
   <data name="App_BalloonMicError" xml:space="preserve">
     <value>VoiceTyper — microphone</value>
   </data>
@@ -68,6 +74,15 @@
   </data>
   <data name="Nav_About" xml:space="preserve">
     <value>About</value>
+  </data>
+  <data name="Nav_Log" xml:space="preserve">
+    <value>Log</value>
+  </data>
+  <data name="Log_Title" xml:space="preserve">
+    <value>LOG</value>
+  </data>
+  <data name="Log_Refresh" xml:space="preserve">
+    <value>Refresh</value>
   </data>
   <data name="General_Title" xml:space="preserve">
     <value>GENERAL</value>

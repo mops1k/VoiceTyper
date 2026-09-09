@@ -1,61 +1,47 @@
-﻿using System.Runtime.InteropServices;
-using System.Windows;
-using System.Windows.Interop;
+using System.Runtime.InteropServices;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Media;
+using Avalonia.Styling;
 using Microsoft.Win32;
 using VoiceTyper.Core.Models;
 
 namespace VoiceTyper.App.Services;
 
 /// <summary>
-/// Управление темой приложения. Меняет словарь цветов (тёмный/светлый),
-/// синхронизирует заголовок окна Windows (immersive dark/light) и умеет
-/// следовать за системной темой (авто) с живым обновлением.
+/// Управление темой приложения. Переключает палитру цветов (тёмный/светлый),
+/// вариант FluentTheme и умеет следовать за системной темой Windows.
 /// </summary>
 public static class ThemeManager
 {
     private const string PersonalizeKey =
         @"HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize";
 
-    private const int WmSettingChange = 0x001A;
-    private const int DwmwaUseImmersiveDarkMode = 20;
-
     private static AppTheme _currentTheme = AppTheme.System;
     private static bool _isDark = true;
+    private static ResourceDictionary? _palette;
 
     public static bool IsDark => _isDark;
 
     /// <summary>Тема системы тёмная (по реестру Windows).</summary>
     public static bool IsSystemDark => !SystemUsesLightTheme();
 
-    /// <summary>Возникает после применения темы (в т.ч. при смене системной темы).</summary>
+    /// <summary>Возникает после применения темы.</summary>
     public static event Action? ThemeApplied;
 
-    /// <summary>Применить тему: подменяет палитру и перекрашивает заголовки окон.</summary>
+    /// <summary>Применить тему: переключает FluentTheme-вариант и словарь палитры.</summary>
     public static void Apply(AppTheme theme)
     {
         _currentTheme = theme;
         _isDark = ResolveIsDark(theme);
 
-        var app = System.Windows.Application.Current;
-        if (app is null)
+        var app = Application.Current;
+        if (app is not null)
         {
-            return;
+            app.RequestedThemeVariant = _isDark ? ThemeVariant.Dark : ThemeVariant.Light;
+            SwapPalette(app);
         }
 
-        var dicts = app.Resources.MergedDictionaries;
-        for (var i = dicts.Count - 1; i >= 0; i--)
-        {
-            var source = dicts[i].Source?.OriginalString ?? string.Empty;
-            if (source.EndsWith("Dark.xaml") || source.EndsWith("Light.xaml"))
-            {
-                dicts.RemoveAt(i);
-            }
-        }
-
-        var uri = _isDark ? "Themes/Dark.xaml" : "Themes/Light.xaml";
-        dicts.Add(new ResourceDictionary { Source = new Uri(uri, UriKind.Relative) });
-
-        ApplyToAllWindows();
         ThemeApplied?.Invoke();
     }
 
@@ -66,59 +52,32 @@ public static class ThemeManager
         _ => SystemUsesLightTheme() is false,
     };
 
-    /// <summary>Перекрасить заголовок окна по текущей теме.</summary>
-    public static void ApplyTitleBar(Window window)
+    private static void SwapPalette(Application app)
     {
-        if (window is null)
+        var merged = app.Resources.MergedDictionaries;
+        if (_palette is not null && merged.Contains(_palette))
         {
-            return;
+            merged.Remove(_palette);
         }
 
-        var hwnd = new WindowInteropHelper(window).Handle;
-        if (hwnd == IntPtr.Zero)
-        {
-            return;
-        }
-
-        var dark = _isDark ? 1 : 0;
-        _ = DwmSetWindowAttribute(hwnd, DwmwaUseImmersiveDarkMode, ref dark, sizeof(int));
+        _palette = BuildPalette(_isDark);
+        merged.Add(_palette);
     }
 
-    /// <summary>Подписаться на смену системной темы (для режима «Авто»).</summary>
-    public static void AttachLiveUpdates(Window window)
+    /// <summary>Строит словарь палитры с теми же ключами, что использовал WPF-интерфейс.</summary>
+    private static ResourceDictionary BuildPalette(bool dark)
     {
-        if (window is null)
+        var palette = new ResourceDictionary
         {
-            return;
-        }
-
-        var hwnd = new WindowInteropHelper(window).Handle;
-        var source = HwndSource.FromHwnd(hwnd);
-        source?.RemoveHook(WndProc);
-        source?.AddHook(WndProc);
-    }
-
-    private static void ApplyToAllWindows()
-    {
-        foreach (Window window in System.Windows.Application.Current.Windows)
-        {
-            ApplyTitleBar(window);
-        }
-    }
-
-    private static IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
-    {
-        if (msg == WmSettingChange)
-        {
-            // Системная тема изменилась — обновляем, только если выбран режим «Авто».
-            if (_currentTheme == AppTheme.System)
-            {
-                Apply(AppTheme.System);
-                handled = true;
-            }
-        }
-
-        return IntPtr.Zero;
+            ["Bg.Window"] = new SolidColorBrush(Color.Parse(dark ? "#FF1E1E1E" : "#FFEDEDED")),
+            ["Bg.Control"] = new SolidColorBrush(Color.Parse(dark ? "#FF2D2D2D" : "#FFFFFFFF")),
+            ["Bg.ControlHover"] = new SolidColorBrush(Color.Parse(dark ? "#FF3A3A3A" : "#FFE2E2E2")),
+            ["Fg.Text"] = new SolidColorBrush(Color.Parse(dark ? "#FFE6E6E6" : "#FF1B1B1B")),
+            ["Fg.Muted"] = new SolidColorBrush(Color.Parse(dark ? "#FF9A9A9A" : "#FF616161")),
+            ["Border"] = new SolidColorBrush(Color.Parse(dark ? "#FF555555" : "#FFD6D6D6")),
+            ["Accent"] = new SolidColorBrush(Color.Parse(dark ? "#FF4C8BF5" : "#FF3B82F6")),
+        };
+        return palette;
     }
 
     private static bool SystemUsesLightTheme()
@@ -133,7 +92,4 @@ public static class ThemeManager
             return false;
         }
     }
-
-    [DllImport("dwmapi.dll")]
-    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
 }

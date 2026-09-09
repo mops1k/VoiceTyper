@@ -1,8 +1,8 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using System.IO;
 using System.Reflection;
-using System.Windows;
-using System.Windows.Threading;
+using Avalonia.Threading;
 using VoiceTyper.App.Models;
 using VoiceTyper.App.Services;
 using VoiceTyper.Core.Localization;
@@ -15,15 +15,18 @@ namespace VoiceTyper.App.ViewModels;
 public sealed partial class SettingsViewModel : ObservableObject
 {
     private readonly ISettingsService _settingsService;
-    private readonly HotkeyService _hotkeyService;
-    private readonly GamepadInputService _gamepadService;
+    private readonly IHotkeyService _hotkeyService;
+    private readonly IGamepadInputService _gamepadService;
     private readonly IMicrophoneService _microphoneService;
     private readonly IModelManager _modelManager;
     private readonly IUpdateService _updateService;
+    private readonly IDialogService _dialogService;
     private string _captureTarget = string.Empty;
     private bool _isInitializing;
     private DispatcherTimer? _autoSaveTimer;
+    private DispatcherTimer? _logTimer;
     private CancellationTokenSource? _updateDownloadCts;
+    private CancellationTokenSource? _modelDownloadCts;
     private UpdateInfo? _pendingUpdate;
 
     /// <summary>Возникает после успешного сохранения и применения настроек.</summary>
@@ -74,6 +77,9 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     [ObservableProperty]
     private string _cancelGamepadButtonHint = string.Empty;
+
+    [ObservableProperty]
+    private string _logText = string.Empty;
 
     [ObservableProperty]
     private RecognitionLanguage _language;
@@ -171,6 +177,21 @@ public sealed partial class SettingsViewModel : ObservableObject
     /// <summary>Текущая версия приложения (чистый semver, без git-суффикса "+sha").</summary>
     public string AppVersion { get; } = ResolveAppVersion();
 
+    /// <summary>Есть ли текст ошибки для отображения (нижняя панель).</summary>
+    public bool HasError => !string.IsNullOrEmpty(ErrorMessage);
+
+    /// <summary>Есть ли заметки о выпуске для отображения.</summary>
+    public bool HasReleaseNotes => !string.IsNullOrEmpty(ReleaseNotes);
+
+    /// <summary>Путь к журналу приложения (для раздела «О программе»).</summary>
+    public string LogFilePath { get; } = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "VoiceTyper", "logs", "voiceTyper.log");
+
+    partial void OnErrorMessageChanged(string value) => OnPropertyChanged(nameof(HasError));
+
+    partial void OnReleaseNotesChanged(string value) => OnPropertyChanged(nameof(HasReleaseNotes));
+
     public IReadOnlyList<LocalizedOption<AppTheme>> Themes { get; private set; } = Array.Empty<LocalizedOption<AppTheme>>();
 
     public IReadOnlyList<double> Temperatures { get; } = new[] { 0.0, 0.2, 0.4, 0.6, 0.8 };
@@ -185,6 +206,73 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     public IReadOnlyList<LocalizedOption<AppLanguage>> UiLanguages { get; private set; } = Array.Empty<LocalizedOption<AppLanguage>>();
 
+    /// <summary>Выбранный пункт навигации (объект для ListBox SelectedItem).</summary>
+    public LocalizedNavItem? SelectedNav
+    {
+        get => NavItems.FirstOrDefault(n => n.Key == SelectedNavItem);
+        set
+        {
+            if (value is not null && value.Key != SelectedNavItem)
+            {
+                SelectedNavItem = value.Key;
+            }
+        }
+    }
+
+    partial void OnSelectedNavItemChanged(string value) => OnPropertyChanged(nameof(SelectedNav));
+
+    /// <summary>Выбранный язык распознавания (объект-опция для ComboBox SelectedItem).</summary>
+    public LocalizedOption<RecognitionLanguage>? SelectedLanguage
+    {
+        get => Languages.FirstOrDefault(o => o.Value == Language);
+        set
+        {
+            if (value is not null && value.Value != Language)
+            {
+                Language = value.Value;
+            }
+        }
+    }
+
+    /// <summary>Выбранный язык интерфейса (объект-опция для ComboBox SelectedItem).</summary>
+    public LocalizedOption<AppLanguage>? SelectedUiLanguage
+    {
+        get => UiLanguages.FirstOrDefault(o => o.Value == AppLanguage);
+        set
+        {
+            if (value is not null && value.Value != AppLanguage)
+            {
+                AppLanguage = value.Value;
+            }
+        }
+    }
+
+    /// <summary>Выбранный режим записи (объект-опция для ComboBox SelectedItem).</summary>
+    public LocalizedOption<RecordingMode>? SelectedRecordingMode
+    {
+        get => RecordingModes.FirstOrDefault(o => o.Value == RecordingMode);
+        set
+        {
+            if (value is not null && value.Value != RecordingMode)
+            {
+                RecordingMode = value.Value;
+            }
+        }
+    }
+
+    /// <summary>Выбранная тема (объект-опция для ComboBox SelectedItem).</summary>
+    public LocalizedOption<AppTheme>? SelectedTheme
+    {
+        get => Themes.FirstOrDefault(o => o.Value == Theme);
+        set
+        {
+            if (value is not null && value.Value != Theme)
+            {
+                Theme = value.Value;
+            }
+        }
+    }
+
     public IReadOnlyList<ModelSize> ModelSizes { get; } = Enum.GetValues<ModelSize>();
 
     private static IReadOnlyList<LocalizedNavItem> BuildNavItems() => new[]
@@ -195,6 +283,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         new LocalizedNavItem("Hotkeys", "\uE765"),
         new LocalizedNavItem("Microphone", "\uE720"),
         new LocalizedNavItem("Startup", "\uE768"),
+        new LocalizedNavItem("Log", "\uE7C3"),
         new LocalizedNavItem("About", "\uE946"),
     };
 
@@ -279,29 +368,44 @@ public sealed partial class SettingsViewModel : ObservableObject
             return;
         }
 
+        _modelDownloadCts?.Cancel();
+        _modelDownloadCts?.Dispose();
+        _modelDownloadCts = new CancellationTokenSource();
+        var ct = _modelDownloadCts.Token;
+
         try
         {
+            IsDownloading = true;
             var progress = new Progress<ModelDownloadProgress>(p => UpdateModelUi(item.Name, p));
-            await _modelManager.EnsureModelAsync(item.Size, progress);
-            await System.Windows.Application.Current.Dispatcher.InvokeAsync(() => item.IsDownloaded = true);
+            await _modelManager.EnsureModelAsync(item.Size, progress, ct);
+            await Dispatcher.UIThread.InvokeAsync(() => item.IsDownloaded = true);
         }
         catch (OperationCanceledException)
         {
-        }
-        catch (Exception ex)
-        {
-            await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
-                ErrorMessage = Loc.Format("Models_DownloadError", item.Name, ex.Message));
-        }
-        finally
-        {
-            await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+            await Dispatcher.UIThread.InvokeAsync(() =>
             {
                 IsDownloading = false;
                 DownloadInfo = string.Empty;
                 DownloadProgress = 0;
                 RefreshModelItems();
             });
+        }
+        catch (Exception ex)
+        {
+            await Dispatcher.UIThread.InvokeAsync(() =>
+                ErrorMessage = Loc.Format("Models_DownloadError", item.Name, ex.Message));
+        }
+        finally
+        {
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                IsDownloading = false;
+                DownloadInfo = string.Empty;
+                DownloadProgress = 0;
+                RefreshModelItems();
+            });
+            _modelDownloadCts?.Dispose();
+            _modelDownloadCts = null;
         }
     }
 
@@ -333,7 +437,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         return asm.GetName().Version?.ToString(3) ?? "1.0.0";
     }
 
-    public SettingsViewModel(ISettingsService settingsService, HotkeyService hotkeyService, GamepadInputService gamepadService, IMicrophoneService microphoneService, IModelManager modelManager, IUpdateService updateService)
+    public SettingsViewModel(ISettingsService settingsService, IHotkeyService hotkeyService, IGamepadInputService gamepadService, IMicrophoneService microphoneService, IModelManager modelManager, IUpdateService updateService, IDialogService dialogService)
     {
         _settingsService = settingsService;
         _hotkeyService = hotkeyService;
@@ -341,6 +445,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         _microphoneService = microphoneService;
         _modelManager = modelManager;
         _updateService = updateService;
+        _dialogService = dialogService;
         _isInitializing = true;
         try
         {
@@ -428,6 +533,58 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     public void SetLastText(string text) => LastText = text;
 
+    /// <summary>Читает последние строки журнала для live-отображения.</summary>
+    public void RefreshLog()
+    {
+        try
+        {
+            if (!File.Exists(LogFilePath))
+            {
+                LogText = string.Empty;
+                return;
+            }
+
+            var lines = File.ReadAllLines(LogFilePath);
+            const int maxLines = 200;
+            var tail = lines.Length > maxLines ? lines[^maxLines..] : lines;
+            LogText = string.Join(Environment.NewLine, tail);
+        }
+        catch
+        {
+            LogText = string.Empty;
+        }
+    }
+
+    /// <summary>Запускает периодическое обновление live-лога (пока открыт раздел).</summary>
+    public void StartLogTimer()
+    {
+        _logTimer ??= new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(800) };
+        _logTimer.Tick -= OnLogTimerTick;
+        _logTimer.Tick += OnLogTimerTick;
+        if (!_logTimer.IsEnabled)
+        {
+            _logTimer.Start();
+        }
+
+        RefreshLog();
+    }
+
+    public void StopLogTimer()
+    {
+        if (_logTimer is null)
+        {
+            return;
+        }
+
+        _logTimer.Stop();
+        _logTimer.Tick -= OnLogTimerTick;
+    }
+
+    [RelayCommand]
+    private void RefreshLogCommand() => RefreshLog();
+
+    private void OnLogTimerTick(object? sender, EventArgs e) => RefreshLog();
+
     /// <summary>Обновляет индикатор загрузки модели в статус-баре.</summary>
     public void SetModelDownload(string name, ModelDownloadProgress p) => UpdateModelUi(name, p);
 
@@ -451,7 +608,11 @@ public sealed partial class SettingsViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void CancelDownload() => DownloadCancelRequested?.Invoke();
+    private void CancelDownload()
+    {
+        _modelDownloadCts?.Cancel();
+        DownloadCancelRequested?.Invoke();
+    }
 
     /// <summary>
     /// Проверяет наличие обновления. При <c>auto = true</c> ошибки не выводятся разрушительно
@@ -532,14 +693,19 @@ public sealed partial class SettingsViewModel : ObservableObject
         }
 
         IsModalDialogOpen = true;
-        var confirm = System.Windows.MessageBox.Show(
-            Loc.Format("Update_Confirm", LatestVersion),
-            Loc.T("App_MessageBoxTitle"),
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Question);
-        IsModalDialogOpen = false;
+        bool confirmed;
+        try
+        {
+            confirmed = await _dialogService.ConfirmAsync(
+                Loc.Format("Update_Confirm", LatestVersion),
+                Loc.T("App_MessageBoxTitle"));
+        }
+        finally
+        {
+            IsModalDialogOpen = false;
+        }
 
-        if (confirm != MessageBoxResult.Yes)
+        if (!confirmed)
         {
             return;
         }
@@ -621,7 +787,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     }
 
     /// <summary>Обработка нажатой комбинации из окна настроек (для захвата).</summary>
-    public void SubmitCapturedHotkey(string combo)
+    public async Task SubmitCapturedHotkey(string combo)
     {
         if (!IsCapturing)
         {
@@ -632,14 +798,19 @@ public sealed partial class SettingsViewModel : ObservableObject
         EndCapture();
 
         IsModalDialogOpen = true;
-        var result = System.Windows.MessageBox.Show(
-            Loc.Format("Hotkeys_ConfirmDialog", combo),
-            Loc.T("App_MessageBoxTitle"),
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Question);
-        IsModalDialogOpen = false;
+        bool confirmed;
+        try
+        {
+            confirmed = await _dialogService.ConfirmAsync(
+                Loc.Format("Hotkeys_ConfirmDialog", combo),
+                Loc.T("App_MessageBoxTitle"));
+        }
+        finally
+        {
+            IsModalDialogOpen = false;
+        }
 
-        if (result == MessageBoxResult.Yes && HotkeyParser.TryParse(combo, out _))
+        if (confirmed && HotkeyParser.TryParse(combo, out _))
         {
             if (target == "record")
             {
@@ -727,14 +898,19 @@ public sealed partial class SettingsViewModel : ObservableObject
             if (binding is not null)
             {
                 IsModalDialogOpen = true;
-                var result = System.Windows.MessageBox.Show(
-                    Loc.Format("Gamepad_ConfirmDialog", GamepadBindingParser.ToDisplayString(binding)),
-                    Loc.T("App_MessageBoxTitle"),
-                    MessageBoxButton.YesNo,
-                    MessageBoxImage.Question);
-                IsModalDialogOpen = false;
+                bool confirmed;
+                try
+                {
+                    confirmed = await _dialogService.ConfirmAsync(
+                        Loc.Format("Gamepad_ConfirmDialog", GamepadBindingParser.ToDisplayString(binding)),
+                        Loc.T("App_MessageBoxTitle"));
+                }
+                finally
+                {
+                    IsModalDialogOpen = false;
+                }
 
-                if (result == MessageBoxResult.Yes)
+                if (confirmed)
                 {
                     var text = GamepadBindingParser.Format(binding);
                     if (target == "record")
@@ -813,20 +989,40 @@ public sealed partial class SettingsViewModel : ObservableObject
         ScheduleAutoSave();
     }
 
-    partial void OnRecordingModeChanged(RecordingMode value) => ScheduleAutoSave();
-    partial void OnLanguageChanged(RecognitionLanguage value) => ScheduleAutoSave();
+    partial void OnRecordingModeChanged(RecordingMode value)
+    {
+        OnPropertyChanged(nameof(SelectedRecordingMode));
+        ScheduleAutoSave();
+    }
+
+    partial void OnLanguageChanged(RecognitionLanguage value)
+    {
+        OnPropertyChanged(nameof(SelectedLanguage));
+        ScheduleAutoSave();
+    }
+
+    partial void OnThemeChanged(AppTheme value)
+    {
+        OnPropertyChanged(nameof(SelectedTheme));
+        ScheduleAutoSave();
+    }
+
+    partial void OnAppLanguageChanged(AppLanguage value)
+    {
+        OnPropertyChanged(nameof(SelectedUiLanguage));
+        ScheduleAutoSave();
+    }
+
     partial void OnAutoPasteEnabledChanged(bool value) => ScheduleAutoSave();
     partial void OnTermsDictionaryChanged(string value) => ScheduleAutoSave();
     partial void OnSilenceThresholdMsChanged(int value) => ScheduleAutoSave();
     partial void OnStartWithWindowsChanged(bool value) => ScheduleAutoSave();
     partial void OnStartMinimizedChanged(bool value) => ScheduleAutoSave();
-    partial void OnThemeChanged(AppTheme value) => ScheduleAutoSave();
     partial void OnHideOnFocusLossChanged(bool value) => ScheduleAutoSave();
     partial void OnSelectedMicrophoneChanged(MicrophoneDevice? value) => ScheduleAutoSave();
     partial void OnNoiseReductionEnabledChanged(bool value) => ScheduleAutoSave();
     partial void OnTemperatureChanged(double value) => ScheduleAutoSave();
     partial void OnConditionOnPreviousTextChanged(bool value) => ScheduleAutoSave();
-    partial void OnAppLanguageChanged(AppLanguage value) => ScheduleAutoSave();
 
     private void LoadFromSettings()
     {
@@ -849,6 +1045,11 @@ public sealed partial class SettingsViewModel : ObservableObject
         Temperature = s.Temperature;
         ConditionOnPreviousText = s.ConditionOnPreviousText;
         AppLanguage = s.AppLanguage;
+
+        // При старте partial-сеттеры не срабатывают, если значение не изменилось,
+        // поэтому хинты «Не назначено» инициализируем явно.
+        RecordGamepadButtonHint = GamepadDisplay(RecordGamepadButton);
+        CancelGamepadButtonHint = GamepadDisplay(CancelGamepadButton);
     }
 
     [RelayCommand]

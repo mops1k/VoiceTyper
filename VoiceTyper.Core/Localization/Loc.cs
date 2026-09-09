@@ -45,7 +45,10 @@ public sealed class Loc : INotifyPropertyChanged
         CultureInfo.DefaultThreadCurrentCulture = _culture;
         CultureInfo.DefaultThreadCurrentUICulture = _culture;
 
+        // WPF перечитывает индексаторные привязки по пустому имени, Avalonia — по "Item"
+        // (имя индексатора по умолчанию, см. ReflectionIndexerNode.ShouldUpdate). Шлём оба.
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("Item"));
     }
 
     private string GetString(string key) =>

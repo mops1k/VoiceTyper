@@ -5,8 +5,6 @@
         <TargetFramework>net10.0-windows</TargetFramework>
         <Nullable>enable</Nullable>
         <ImplicitUsings>enable</ImplicitUsings>
-        <UseWPF>true</UseWPF>
-        <UseWindowsForms>true</UseWindowsForms>
         <AssemblyName>VoiceTyper</AssemblyName>
         <RootNamespace>VoiceTyper.App</RootNamespace>
         <ApplicationIcon>Assets\voiceTyper.ico</ApplicationIcon>
@@ -17,9 +15,19 @@
         <AssemblyVersion>1.0.0.0</AssemblyVersion>
         <FileVersion>1.0.0.0</FileVersion>
         <InformationalVersion>1.0.0</InformationalVersion>
+        <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
     </PropertyGroup>
 
-    <!-- Оставляем только win-x64/win-x86 runtime-нативности и локализацию RU/EN -->
+    <!-- Старые WPF-файлы, ожидающие переноса на Avalonia, исключаем из компиляции. -->
+    <ItemGroup>
+        <Compile Remove="LegacyWpf\**" />
+        <Page Remove="LegacyWpf\**" />
+        <None Remove="LegacyWpf\**" />
+        <AvaloniaXaml Remove="LegacyWpf\**" />
+        <EmbeddedResource Remove="LegacyWpf\**" />
+    </ItemGroup>
+
+    <!-- Оставляем только win-x64 runtime-нативности и локализацию RU/EN -->
     <Target Name="TrimOutput" AfterTargets="Build;Publish">
         <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -Command &quot;$d='$(TargetDir)'; $rt=Join-Path $d 'runtimes'; if (Test-Path $rt) { Get-ChildItem $rt -Directory | Where-Object { $_.Name -notin @('win-x64','win-x86') } | Remove-Item -Recurse -Force }; if (Test-Path $d) { Get-ChildItem $d -Directory | Where-Object { $_.Name -notin @('ru','en','runtimes','Assets') -and $_.Name -match '^[a-z]{2}(-[A-Za-z]{2,4})?$' } | Remove-Item -Recurse -Force }&quot;" />
     </Target>
@@ -29,8 +37,12 @@
     </ItemGroup>
 
     <ItemGroup>
-      <Content Include="Assets\voiceTyper.ico" CopyToOutputDirectory="PreserveNewest" />
-      <Content Include="Assets\voiceTyper.png" CopyToOutputDirectory="PreserveNewest" />
+        <AvaloniaResource Include="Assets\**" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <Content Include="Assets\voiceTyper.ico" CopyToOutputDirectory="PreserveNewest" />
+        <Content Include="Assets\voiceTyper.png" CopyToOutputDirectory="PreserveNewest" />
     </ItemGroup>
 
     <ItemGroup>
@@ -38,12 +50,15 @@
     </ItemGroup>
 
     <ItemGroup>
-      <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
-      <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.11" />
-      <PackageReference Include="NHotkey.Wpf" Version="4.0.0" />
-      <PackageReference Include="Vortice.DirectInput" Version="3.8.3" />
-      <PackageReference Include="Vortice.XInput" Version="3.8.3" />
-      <PackageReference Include="WindowsInput" Version="6.4.1" />
+        <PackageReference Include="Avalonia" Version="11.3.21" />
+        <PackageReference Include="Avalonia.Desktop" Version="11.3.21" />
+        <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.21" />
+        <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.21" />
+        <PackageReference Include="Avalonia.Diagnostics" Version="11.3.21" Condition="'$(Configuration)' == 'Debug'" />
+        <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+        <PackageReference Include="Vortice.DirectInput" Version="3.8.3" />
+        <PackageReference Include="Vortice.XInput" Version="3.8.3" />
+        <PackageReference Include="WindowsInput" Version="6.4.1" />
     </ItemGroup>
 
 </Project>

@@ -280,6 +280,60 @@ public sealed class HotkeyService : IHotkeyService
         _ => null,
     };
 
+    /// <summary>
+    /// Обратное преобразование: виртуальный код Windows → имя клавиши в стиле
+    /// <c>System.Windows.Input.Key</c>. Возвращает <c>null</c>, если код не маппится.
+    /// </summary>
+    public static string? VirtualKeyToName(int vk) =>
+        VkToName.Value.TryGetValue(vk, out var name) ? name : null;
+
+    private static readonly Lazy<Dictionary<int, string>> VkToName = new(BuildVkToName);
+
+    private static Dictionary<int, string> BuildVkToName()
+    {
+        var map = new Dictionary<int, string>();
+
+        void Add(string name)
+        {
+            var vk = ToVirtualKey(name);
+            if (vk != 0 && !map.ContainsKey(vk))
+            {
+                map[vk] = name;
+            }
+        }
+
+        foreach (var name in new[]
+                 {
+                     "Space", "Enter", "Escape", "Tab", "Back", "Insert", "Delete",
+                     "Home", "End", "PageUp", "PageDown", "Left", "Up", "Right", "Down",
+                     "PrintScreen", "Scroll", "Pause", "CapsLock", "NumLock",
+                     "OemPlus", "OemMinus", "OemComma", "OemPeriod", "OemQuestion",
+                     "OemSemicolon", "OemQuotes", "OemOpenBrackets", "OemCloseBrackets",
+                     "OemPipe", "OemTilde",
+                 })
+        {
+            Add(name);
+        }
+
+        for (var i = 1; i <= 24; i++)
+        {
+            Add("F" + i);
+        }
+
+        for (var i = 0; i <= 9; i++)
+        {
+            Add("NumPad" + i);
+            Add("D" + i);
+        }
+
+        for (var c = 'A'; c <= 'Z'; c++)
+        {
+            Add(c.ToString());
+        }
+
+        return map;
+    }
+
     private static uint ToModifiers(HotkeyModifiers modifiers)
     {
         uint result = 0;

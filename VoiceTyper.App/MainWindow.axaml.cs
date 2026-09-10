@@ -2,6 +2,7 @@ using System;
 using System.ComponentModel;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -11,7 +12,6 @@ using Avalonia.Threading;
 using VoiceTyper.App.Services;
 using VoiceTyper.App.ViewModels;
 using VoiceTyper.Core.Localization;
-using VoiceTyper.Core.Models;
 using VoiceTyper.Core.Services;
 
 namespace VoiceTyper.App;
@@ -21,11 +21,17 @@ public partial class MainWindow : Window
 {
     private const int HideAfterMs = 300;
 
+    private readonly HotkeyCaptureHook _captureHook = new();
+
     public MainWindow()
     {
         InitializeComponent();
         Loc.Instance.PropertyChanged += OnLocChanged;
-        Closed += (_, _) => Loc.Instance.PropertyChanged -= OnLocChanged;
+        Closed += (_, _) =>
+        {
+            Loc.Instance.PropertyChanged -= OnLocChanged;
+            _captureHook.Dispose();
+        };
         PropertyChanged += OnWindowPropertyChanged;
     }
 
@@ -75,111 +81,69 @@ public partial class MainWindow : Window
     private void CaptureRecordHotkey_Click(object? sender, TappedEventArgs e)
     {
         Focus();
-        (DataContext as SettingsViewModel)?.CaptureRecordHotkeyCommand.Execute(null);
+        var vm = DataContext as SettingsViewModel;
+        vm?.CaptureRecordHotkeyCommand.Execute(null);
+        if (vm?.IsCapturing == true)
+        {
+            _ = CaptureHotkeyAsync(vm);
+        }
     }
 
     private void CaptureCancelHotkey_Click(object? sender, TappedEventArgs e)
     {
         Focus();
-        (DataContext as SettingsViewModel)?.CaptureCancelHotkeyCommand.Execute(null);
-    }
-
-    private void Window_PreviewKeyDown(object? sender, KeyEventArgs e)
-    {
         var vm = DataContext as SettingsViewModel;
-        if (vm?.IsCapturing != true)
+        vm?.CaptureCancelHotkeyCommand.Execute(null);
+        if (vm?.IsCapturing == true)
         {
-            return;
+            _ = CaptureHotkeyAsync(vm);
         }
-
-        var key = e.Key;
-
-        if (key == Key.Escape)
-        {
-            e.Handled = true;
-            vm.CancelCapture();
-            return;
-        }
-
-        if (IsModifierKey(key))
-        {
-            // Сам модификатор ещё не является комбинацией — ждём «главную» клавишу.
-            return;
-        }
-
-        e.Handled = true;
-
-        // Windows резервирует клавишу Win и не всегда отдаёт её в e.KeyModifiers,
-        // поэтому модификаторы читаем по физическому состоянию клавиш.
-        var mods = ReadPhysicalModifiers();
-        var isFunctionKey = key is >= Key.F1 and <= Key.F24;
-
-        if (mods == HotkeyModifiers.None && !isFunctionKey)
-        {
-            vm.NotifyHotkeyNeedsModifier();
-            return;
-        }
-
-        var keyName = NormalizeKeyName(key);
-        var combo = HotkeyParser.Format(new HotkeyGesture(mods, keyName));
-        _ = vm.SubmitCapturedHotkey(combo);
     }
 
-    /// <summary>Имя клавиши в формате HotkeyParser (например D1, Space, F12).</summary>
-    private static string NormalizeKeyName(Key key)
+    /// <summary>
+    /// Захват комбинации глобальным хуком клавиатуры. Хук не зависит от активации
+    /// окна, поэтому ловит и комбинации с Win (при нажатии Win окно теряет фокус
+    /// и «Пуск» перехватывает последующие клавиши).
+    /// </summary>
+    private async Task CaptureHotkeyAsync(SettingsViewModel vm)
     {
-        var name = key.ToString()!;
-        return name;
+        var gesture = await _captureHook.CaptureAsync(() =>
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (vm.IsCapturing)
+                {
+                    vm.NotifyHotkeyNeedsModifier();
+                }
+            }));
+
+        await Dispatcher.UIThread.InvokeAsync(async () =>
+        {
+            if (!vm.IsCapturing)
+            {
+                return;
+            }
+
+            if (gesture is null)
+            {
+                vm.CancelCapture();
+            }
+            else
+            {
+                await vm.SubmitCapturedHotkey(HotkeyParser.Format(gesture));
+            }
+        });
     }
-
-    /// <summary>Модификаторы по физическому состоянию клавиш (учитывает Win).</summary>
-    private HotkeyModifiers ReadPhysicalModifiers()
-    {
-        var mods = HotkeyModifiers.None;
-        if (IsDown(0x11) || IsDown(0xA2) || IsDown(0xA3)) // Ctrl
-        {
-            mods |= HotkeyModifiers.Control;
-        }
-
-        if (IsDown(0x12) || IsDown(0xA4) || IsDown(0xA5)) // Alt
-        {
-            mods |= HotkeyModifiers.Alt;
-        }
-
-        if (IsDown(0x10) || IsDown(0xA0) || IsDown(0xA1)) // Shift
-        {
-            mods |= HotkeyModifiers.Shift;
-        }
-
-        if (IsDown(0x5B) || IsDown(0x5C)) // LWin / RWin
-        {
-            mods |= HotkeyModifiers.Win;
-        }
-
-        return mods;
-    }
-
-    private static bool IsDown(int vk) => (GetAsyncKeyState(vk) & 0x8000) != 0;
-
-    [System.Runtime.InteropServices.DllImport("user32.dll")]
-    private static extern short GetAsyncKeyState(int vKey);
 
     private void Window_Deactivated(object? sender, EventArgs e)
     {
-        // Не сбрасываем захват: пользователь нажимает Win (открывается «Пуск»),
-        // окно деактивируется — но захват должен продолжаться, чтобы считать Win+Space.
+        // Захват клавиш идёт через глобальный хук и не зависит от активации окна.
+        // Отмена при деактивации нужна только для захвата кнопки геймпада.
         var vm = DataContext as SettingsViewModel;
         if (vm?.IsCapturing != true)
         {
             vm?.CancelGamepadCapture();
         }
     }
-
-    private static bool IsModifierKey(Key key) =>
-        key is Key.LeftCtrl or Key.RightCtrl
-            or Key.LeftAlt or Key.RightAlt
-            or Key.LeftShift or Key.RightShift
-            or Key.LWin or Key.RWin;
 
     private void LogSection_Loaded(object? sender, RoutedEventArgs e) =>
         (DataContext as SettingsViewModel)?.StartLogTimer();

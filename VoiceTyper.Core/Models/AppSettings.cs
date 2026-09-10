@@ -38,6 +38,25 @@ public enum ModelSize
     Large,
 }
 
+/// <summary>Движок распознавания речи.</summary>
+public enum TranscriptionEngine
+{
+    /// <summary>Whisper (whisper.cpp) — движок по умолчанию.</summary>
+    Whisper,
+
+    /// <summary>NVIDIA Parakeet (parakeet-tdt-0.6b-v3 через parakeet.cpp).</summary>
+    Parakeet,
+}
+
+/// <summary>Квант GGUF-модели Parakeet parakeet-tdt-0.6b-v3.</summary>
+public enum ParakeetModelSize
+{
+    Q4K,
+    Q5K,
+    Q6K,
+    Q8_0,
+}
+
 /// <summary>Язык распознавания.</summary>
 public enum RecognitionLanguage
 {
@@ -79,6 +98,12 @@ public sealed class AppSettings
     public RecognitionLanguage Language { get; set; } = RecognitionLanguage.Ru;
 
     public ModelSize ModelSize { get; set; } = ModelSize.Small;
+
+    /// <summary>Выбранный движок распознавания (по умолчанию — Whisper).</summary>
+    public TranscriptionEngine TranscriptionEngine { get; set; } = TranscriptionEngine.Whisper;
+
+    /// <summary>Квант модели Parakeet при выбранном движке Parakeet (по умолчанию — Q8_0).</summary>
+    public ParakeetModelSize ParakeetModelSize { get; set; } = ParakeetModelSize.Q8_0;
 
     /// <summary>Автоматически вставлять текст (Ctrl+V) после распознавания. По умолчанию — вкл.</summary>
     public bool AutoPasteEnabled { get; set; } = true;

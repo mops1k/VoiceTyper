@@ -2,6 +2,7 @@ using NAudio.Wave;
 using VoiceTyper.Core.Abstractions;
 using VoiceTyper.Core.Models;
 using VoiceTyper.Core.Services;
+using VoiceTyper.Core.Services.Transcription;
 
 namespace VoiceTyper.Tests.Services;
 
@@ -222,7 +223,7 @@ public class RecordingStateMachineTests
         }
     }
 
-    private sealed class FakeTranscription : ITranscriptionService
+    private sealed class FakeTranscription : ITranscriptionEngine
     {
         public string ModelPath => "fake-model";
         public int Calls { get; private set; }
@@ -241,6 +242,8 @@ public class RecordingStateMachineTests
         public void Warmup()
         {
         }
+
+        public Task WarmupAsync(CancellationToken ct = default) => Task.CompletedTask;
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }

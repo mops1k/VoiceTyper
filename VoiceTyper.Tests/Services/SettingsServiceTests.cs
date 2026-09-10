@@ -118,4 +118,52 @@ public class SettingsServiceTests : IDisposable
         Assert.Equal("F12", original.RecordHotkey);
         Assert.Equal("F11", copy.RecordHotkey);
     }
+
+    [Fact]
+    public void SaveThenLoad_RoundTripsEngineAndParakeetQuant()
+    {
+        var service = new SettingsService(_tempDir);
+        var expected = new AppSettings
+        {
+            TranscriptionEngine = TranscriptionEngine.Parakeet,
+            ParakeetModelSize = ParakeetModelSize.Q6K,
+        };
+
+        service.Save(expected);
+        var actual = service.Load();
+
+        Assert.Equal(TranscriptionEngine.Parakeet, actual.TranscriptionEngine);
+        Assert.Equal(ParakeetModelSize.Q6K, actual.ParakeetModelSize);
+    }
+
+    [Fact]
+    public void Load_LegacyJsonWithoutEngineFields_DefaultsToWhisperAndQ8()
+    {
+        // settings.json от старой версии: полей движка нет вообще.
+        File.WriteAllText(
+            Path.Combine(_tempDir, "settings.json"),
+            """{"recordingMode":"pushToTalk","modelSize":"small"}""");
+        var service = new SettingsService(_tempDir);
+
+        var settings = service.Load();
+
+        Assert.Equal(TranscriptionEngine.Whisper, settings.TranscriptionEngine);
+        Assert.Equal(ParakeetModelSize.Q8_0, settings.ParakeetModelSize);
+    }
+
+    [Fact]
+    public void Save_WritesCamelCaseEngineEnums()
+    {
+        var service = new SettingsService(_tempDir);
+        service.Save(new AppSettings
+        {
+            TranscriptionEngine = TranscriptionEngine.Parakeet,
+            ParakeetModelSize = ParakeetModelSize.Q4K,
+        });
+
+        var json = File.ReadAllText(service.SettingsFilePath);
+
+        Assert.Contains("\"transcriptionEngine\": \"parakeet\"", json);
+        Assert.Contains("\"parakeetModelSize\": \"q4K\"", json);
+    }
 }

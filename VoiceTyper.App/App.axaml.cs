@@ -13,6 +13,7 @@ using VoiceTyper.Core.Audio;
 using VoiceTyper.Core.Localization;
 using VoiceTyper.Core.Models;
 using VoiceTyper.Core.Services;
+using VoiceTyper.Core.Services.Transcription;
 using AppTrayIcon = VoiceTyper.App.Tray.TrayIcon;
 
 namespace VoiceTyper.App;
@@ -41,8 +42,12 @@ public partial class App : Application
     private bool _isQuitting;
 
     private IRecordingStateMachine? _stateMachine;
-    private ITranscriptionService? _transcription;
+    private ITranscriptionEngine? _transcription;
+    private IEngineManager? _engineManager;
+    private ISpeechSegmenter? _vadSegmenter;
+    private TranscriptionEngine _loadedEngine;
     private ModelSize _loadedModelSize;
+    private ParakeetModelSize _loadedParakeetSize;
     private string? _loadedMicrophoneId;
     private string? _vadPath;
     private RecordingMode _lastRecordingMode;
@@ -114,6 +119,7 @@ public partial class App : Application
 
         _modelManager = new ModelManager();
         _modelManager.CleanupLegacyModels();
+        _engineManager = new EngineManager(_logger);
         _microphoneService = new MicrophoneService();
         _updateService = new GithubUpdateService();
         ThemeManager.Apply(_currentSettings.Theme);
@@ -232,26 +238,75 @@ public partial class App : Application
 
             try
             {
-                // Модель (и VAD) грузим только при смене размера модели или первом запуске.
+                // Модель (и VAD) грузим только при смене движка/размера модели или первом запуске.
                 // При смене РЕЖИМА/ПОРОГА пересоздаём только конечный автомат — модель остаётся в памяти.
-                if (_transcription is null || _loadedModelSize != _currentSettings.ModelSize)
+                var engine = _currentSettings.TranscriptionEngine;
+                var engineReady = _transcription is not null && _loadedEngine == engine &&
+                    (engine != TranscriptionEngine.Whisper
+                        ? _loadedParakeetSize == _currentSettings.ParakeetModelSize
+                        : _loadedModelSize == _currentSettings.ModelSize);
+
+                if (!engineReady)
                 {
                     _logger.Info(Loc.T("Log_EngineInitModel"));
+                    _logger.Info(Loc.Format("Log_EngineSelected", engine));
                     _downloadCts = new CancellationTokenSource();
                     try
                     {
-                        var modelPath = await _modelManager!.EnsureModelAsync(_currentSettings.ModelSize,
-                            ModelDownloadProgress(Loc.T("Models_WhisperLabel")), _downloadCts.Token);
-                        _vadPath = await _modelManager.EnsureVadModelAsync(
+                        // Silero VAD нужен обоим движкам (режим VAD).
+                        _vadPath = await _modelManager!.EnsureVadModelAsync(
                             ModelDownloadProgress(Loc.T("Models_VadLabel")), _downloadCts.Token);
-                        _loadedModelSize = _currentSettings.ModelSize;
+
+                        string modelPath;
+                        if (engine == TranscriptionEngine.Parakeet)
+                        {
+                            if (!_engineManager!.IsAvailable(TranscriptionEngine.Parakeet))
+                            {
+                                // Явная ошибка, без фолбэка на Whisper (решение №7).
+                                throw new InvalidOperationException(Loc.T("Engine_ParakeetNativeMissing"));
+                            }
+
+                            modelPath = await _modelManager.EnsureParakeetModelAsync(_currentSettings.ParakeetModelSize,
+                                ModelDownloadProgress(Loc.T("Models_Label")), _downloadCts.Token);
+                            _loadedParakeetSize = _currentSettings.ParakeetModelSize;
+                        }
+                        else
+                        {
+                            modelPath = await _modelManager.EnsureModelAsync(_currentSettings.ModelSize,
+                                ModelDownloadProgress(Loc.T("Models_WhisperLabel")), _downloadCts.Token);
+                            _loadedModelSize = _currentSettings.ModelSize;
+                        }
+
+                        _loadedEngine = engine;
 
                         var oldTranscription = _transcription;
-                        _transcription = new WhisperTranscriptionService(modelPath);
+                        _transcription = _engineManager!.Create(engine, modelPath);
                         _transcription.Warmup();
                         await (oldTranscription?.DisposeAsync() ?? ValueTask.CompletedTask);
 
-                        _logger.Info(Loc.Format("Log_ModelWhisper", modelPath));
+                        // Глубокий прогрев в фоне: один короткий инференс, чтобы первая
+                        // реальная диктовка не включала инициализацию compute-пути.
+                        var forWarmup = _transcription;
+                        _ = Task.Run(async () =>
+                        {
+                            var sw = System.Diagnostics.Stopwatch.StartNew();
+                            try
+                            {
+                                await forWarmup.WarmupAsync(CancellationToken.None);
+                                _logger.Info(Loc.Format("Log_EngineWarmupDone", sw.ElapsedMilliseconds));
+                            }
+                            catch (OperationCanceledException)
+                            {
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.Warn($"Прогрев: {ex.Message}");
+                            }
+                        });
+
+                        _logger.Info(engine == TranscriptionEngine.Parakeet
+                            ? Loc.Format("Log_ModelParakeet", modelPath)
+                            : Loc.Format("Log_ModelWhisper", modelPath));
                         _logger.Info(Loc.Format("Log_ModelVad", _vadPath));
                     }
                     catch (OperationCanceledException)
@@ -274,6 +329,11 @@ public partial class App : Application
                 _logger.Info(
                     Loc.Format("Log_MicDevice", _currentSettings.MicrophoneDeviceId ?? Loc.T("Log_DefaultMic")));
 
+                if (_transcription is null)
+                {
+                    throw new InvalidOperationException("не инициализирован движок распознавания");
+                }
+
                 if (oldMachine is not null)
                 {
                     oldMachine.StateChanged -= OnStateChanged;
@@ -292,7 +352,9 @@ public partial class App : Application
                     _currentSettings.RecordingMode,
                     TimeSpan.FromMilliseconds(_currentSettings.SilenceThresholdMs),
                     GetTranscriptionOptions,
-                    () => new SileroSpeechSegmenter(_vadPath!),
+                    // Сегментер VAD кэшируется на всё время жизни приложения: модель
+                    // Silero не грузится заново на каждую сессию записи.
+                    () => GetOrCreateVadSegmenter(_vadPath!),
                     _logger);
 
                 machine.StateChanged += OnStateChanged;
@@ -300,6 +362,28 @@ public partial class App : Application
                 machine.Failed += OnEngineFailed;
 
                 _stateMachine = machine;
+
+                // Глубокий прогрев VAD в фоне (важно для режима VAD): один вызов детекции
+                // на коротком куске тишины инициализирует WhisperaufenVAD-контекст.
+                var vadPathSnapshot = _vadPath;
+                if (vadPathSnapshot is not null)
+                {
+                    _ = Task.Run(() =>
+                    {
+                        var sw = System.Diagnostics.Stopwatch.StartNew();
+                        try
+                        {
+                            var seg = GetOrCreateVadSegmenter(vadPathSnapshot);
+                            seg.DetectSpeechNoReset(new float[16000]); // 1 с тишины
+                            seg.ResetState();
+                            _logger.Info(Loc.Format("Log_VadWarmupDone", sw.ElapsedMilliseconds));
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.Warn($"VAD-прогрев: {ex.Message}");
+                        }
+                    });
+                }
 
                 _logger.Info(Loc.T("Log_EngineReady"));
                 _tray?.SetTooltip(Loc.T("App_TrayTooltipReady"));
@@ -397,7 +481,11 @@ public partial class App : Application
 
         _gamepad?.ApplySettings(_currentSettings);
 
-        var modelChanged = _currentSettings.ModelSize != _loadedModelSize;
+        var engineChanged = _currentSettings.TranscriptionEngine != _loadedEngine;
+        var activeChanged = _currentSettings.TranscriptionEngine == TranscriptionEngine.Whisper
+            ? _currentSettings.ModelSize != _loadedModelSize
+            : _currentSettings.ParakeetModelSize != _loadedParakeetSize;
+        var modelChanged = engineChanged || activeChanged;
         var micChanged = _currentSettings.MicrophoneDeviceId != _loadedMicrophoneId;
         var behaviorChanged = _currentSettings.RecordingMode != _lastRecordingMode
                               || _currentSettings.SilenceThresholdMs != _lastSilenceThresholdMs;
@@ -427,10 +515,14 @@ public partial class App : Application
 
     private void OnGamepadRecordPressed() => StartRecord(null);
 
+    private bool IsActiveModelDownloaded() =>
+        _currentSettings.TranscriptionEngine == TranscriptionEngine.Whisper
+            ? _modelManager!.IsModelDownloaded(_currentSettings.ModelSize)
+            : _modelManager!.IsParakeetModelDownloaded(_currentSettings.ParakeetModelSize);
+
     private void StartRecord(int? keyboardVk)
     {
-        if (_stateMachine is null || _engineInitializing ||
-            !_modelManager!.IsModelDownloaded(_currentSettings.ModelSize))
+        if (_stateMachine is null || _engineInitializing || !IsActiveModelDownloaded())
         {
             _tray?.ShowBalloon(Loc.T("App_MessageBoxTitle"), Loc.T("Status_ModelNotReady"));
             return;
@@ -477,8 +569,7 @@ public partial class App : Application
 
     private void OnTrayRecord()
     {
-        if (_stateMachine is null || _engineInitializing ||
-            !_modelManager!.IsModelDownloaded(_currentSettings.ModelSize))
+        if (_stateMachine is null || _engineInitializing || !IsActiveModelDownloaded())
         {
             _tray?.ShowBalloon(Loc.T("App_MessageBoxTitle"), Loc.T("Status_ModelNotReady"));
             return;
@@ -495,6 +586,21 @@ public partial class App : Application
         else
         {
             _stateMachine.Cancel();
+        }
+    }
+
+    /// <summary>Кэшированный VAD-сегментер: модель Silero грузится один раз за работу.</summary>
+    private ISpeechSegmenter GetOrCreateVadSegmenter(string vadPath)
+    {
+        lock (this)
+        {
+            if (_vadSegmenter is null)
+            {
+                _vadSegmenter = new SileroSpeechSegmenter(vadPath);
+                _logger.Info(Loc.Format("Log_VadModelLoaded", vadPath));
+            }
+
+            return _vadSegmenter;
         }
     }
 
@@ -574,6 +680,7 @@ public partial class App : Application
         _statusOverlay?.Close();
         _ = _stateMachine?.DisposeAsync() ?? ValueTask.CompletedTask;
         _ = _transcription?.DisposeAsync() ?? ValueTask.CompletedTask;
+        _vadSegmenter?.Dispose();
         _mainWindow?.Close();
         _mutex?.Dispose();
         if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)

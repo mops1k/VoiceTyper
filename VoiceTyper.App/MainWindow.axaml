@@ -369,7 +369,34 @@
                         <!-- Модели -->
                         <StackPanel IsVisible="{Binding SelectedNavItem, Converter={StaticResource NavVis}, ConverterParameter=Models}">
                             <TextBlock Classes="sectionTitle" Text="{Binding [Models_Title], Source={x:Static loc:Loc.Instance}}" />
-                            <Border Classes="card">
+
+                            <!-- Выбор движка распознавания -->
+                            <Border Classes="card" Margin="0,0,0,12">
+                                <StackPanel>
+                                    <Border Classes="row" BorderThickness="0">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="{Binding [Models_Engine_Title], Source={x:Static loc:Loc.Instance}}" Classes="rowLabel" />
+                                            <ComboBox Grid.Column="1" Width="220" ItemsSource="{Binding Engines}"
+                                                      SelectedItem="{Binding SelectedEngine}">
+                                                <ComboBox.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <TextBlock Text="{Binding Label}" />
+                                                    </DataTemplate>
+                                                </ComboBox.ItemTemplate>
+                                            </ComboBox>
+                                        </Grid>
+                                    </Border>
+                                    <TextBlock Classes="hint"
+                                               Text="{Binding [Models_Engine_Hint], Source={x:Static loc:Loc.Instance}}" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Модели Whisper -->
+                            <Border Classes="card" IsVisible="{Binding IsWhisperEngine}">
                                 <ItemsControl ItemsSource="{Binding ModelItems}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
@@ -409,6 +436,55 @@
                                                             VerticalAlignment="Center"
                                                             IsVisible="{Binding IsDownloaded}"
                                                             Command="{Binding DataContext.DeleteModelCommand, RelativeSource={RelativeSource AncestorType={x:Type Window}}}"
+                                                            CommandParameter="{Binding}" IsEnabled="{Binding CanDelete}" />
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </Border>
+
+                            <!-- Кванты модели Parakeet -->
+                            <Border Classes="card" IsVisible="{Binding IsParakeetEngine}">
+                                <ItemsControl ItemsSource="{Binding ParakeetModelItems}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Classes="row">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto" />
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <CheckBox Classes="toggle" Grid.Column="0" VerticalAlignment="Center"
+                                                              IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                                              Command="{Binding DataContext.SelectParakeetModelCommand, RelativeSource={RelativeSource AncestorType={x:Type Window}}}"
+                                                              CommandParameter="{Binding}"
+                                                              Margin="0,0,12,0" />
+                                                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,12,0">
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <TextBlock Text="{Binding Name}" Classes="rowLabel" />
+                                                            <TextBlock Text="{Binding ApproxSize}" Foreground="{DynamicResource Fg.Muted}"
+                                                                       FontSize="12" VerticalAlignment="Center" Margin="8,0,0,0" />
+                                                        </StackPanel>
+                                                        <TextBlock Text="{Binding Description}" Foreground="{DynamicResource Fg.Muted}"
+                                                                   FontSize="12" TextWrapping="Wrap" Margin="0,3,0,0" />
+                                                        <TextBlock Text="{Binding Speed}" Foreground="{DynamicResource Fg.Muted}"
+                                                                   FontSize="11" Margin="0,2,0,0" />
+                                                    </StackPanel>
+                                                    <Button Grid.Column="2" Classes="secondary"
+                                                            Content="{Binding [Models_Download], Source={x:Static loc:Loc.Instance}}"
+                                                            Padding="12,6" MinWidth="0" VerticalAlignment="Center"
+                                                            Margin="0,0,8,0"
+                                                            IsVisible="{Binding CanDownload}"
+                                                            Command="{Binding DataContext.DownloadParakeetModelCommand, RelativeSource={RelativeSource AncestorType={x:Type Window}}}"
+                                                            CommandParameter="{Binding}" />
+                                                    <Button Grid.Column="3" Classes="dangerIcon" Content="&#xE74D;"
+                                                            ToolTip.Tip="{Binding [Models_Delete_Tooltip], Source={x:Static loc:Loc.Instance}}"
+                                                            VerticalAlignment="Center"
+                                                            IsVisible="{Binding IsDownloaded}"
+                                                            Command="{Binding DataContext.DeleteParakeetModelCommand, RelativeSource={RelativeSource AncestorType={x:Type Window}}}"
                                                             CommandParameter="{Binding}" IsEnabled="{Binding CanDelete}" />
                                                 </Grid>
                                             </Border>

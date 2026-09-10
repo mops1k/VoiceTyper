@@ -29,6 +29,9 @@ everything is recognized locally.
 - **Russian + English** (multilingual model), automatic language detection.
 - **Model selection** in a dedicated section — a list of models with description, speed, quality,
   size, "Download" / "Delete from disk" buttons and a mutually exclusive selector.
+- **Engine selection** — Whisper (default) or NVIDIA Parakeet `parakeet-tdt-0.6b-v3`
+  (multilingual, 25 European languages incl. Russian; large-level accuracy at small-model speed;
+  offline CPU inference via [parakeet.cpp](https://github.com/mudler/parakeet.cpp)).
 - **Technical terms dictionary** — mixed into the model's initial prompt, improving recognition of
   "API", "CPU", "JSON", etc.
 - **Temperature** (0 — strict/deterministic … 0.8 — softer) — affects the "strictness" of
@@ -80,6 +83,23 @@ All models are **q8-quantized ggml** (Q8_0) — considerably smaller in memory a
 Models are stored in `%LOCALAPPDATA%\VoiceTyper\models` and are downloaded once.
 In the "Models" section they can be pre-downloaded and deleted from disk (to free up space).
 On update, obsolete fp16 and q5 files are automatically removed from disk.
+
+### Parakeet models (GGUF)
+
+Available when the **Parakeet** engine is selected in the "Models" section.
+Model `parakeet-tdt-0.6b-v3` (NVIDIA, CC-BY-4.0), quants from
+[mudler/parakeet-cpp-gguf](https://huggingface.co/mudler/parakeet-cpp-gguf):
+
+| Quant | File on disk | Size | Comment |
+|---|---|---|---|
+| q4_k | tdt-0.6b-v3-q4_k.gguf | ~644 MB | least memory |
+| q5_k | tdt-0.6b-v3-q5_k.gguf | ~708 MB | compromise |
+| q6_k | tdt-0.6b-v3-q6_k.gguf | ~775 MB | higher accuracy |
+| **q8_0 (default)** | tdt-0.6b-v3-q8_0.gguf | ~897 MB | best accuracy, ~1 GB RAM |
+
+Parakeet v3 auto-detects the language (no language setting needed for it);
+Whisper remains the default engine. Model weights are not bundled — they are
+downloaded once from HuggingFace; recognition afterwards is fully offline.
 
 ---
 

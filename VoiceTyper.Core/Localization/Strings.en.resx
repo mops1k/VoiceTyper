@@ -347,7 +347,7 @@ Apply?</value>
     <value>VoiceTyper is a voice-to-text program. Press the hotkey, speak, and the text will be recognized and inserted into the active field or copied to the clipboard.</value>
   </data>
   <data name="About_Description2" xml:space="preserve">
-    <value>Recognition runs locally (Whisper) — audio and text never leave your device.</value>
+    <value>Recognition runs locally (Whisper or Parakeet) — audio and text never leave the device. Model weights are fetched from HuggingFace: Parakeet v3 — NVIDIA, CC-BY-4.0.</value>
   </data>
   <data name="About_Version" xml:space="preserve">
     <value>Version</value>
@@ -591,5 +591,68 @@ Apply?</value>
   </data>
   <data name="Update_AvailableBalloon" xml:space="preserve">
     <value>Update {0} is available</value>
+  </data>
+  <data name="Models_Engine_Title" xml:space="preserve">
+    <value>Recognition engine</value>
+  </data>
+  <data name="Models_Engine_Hint" xml:space="preserve">
+    <value>Whisper — the classic engine (models 40–800 MB). Parakeet (NVIDIA, 0.6B) — multilingual (25 languages incl. Russian), large-level quality at small-model speed; model 0.6–0.9 GB.</value>
+  </data>
+  <data name="Enum_TranscriptionEngine_Whisper" xml:space="preserve">
+    <value>Whisper (whisper.cpp)</value>
+  </data>
+  <data name="Enum_TranscriptionEngine_Parakeet" xml:space="preserve">
+    <value>Parakeet (NVIDIA, v3)</value>
+  </data>
+  <data name="Enum_ParakeetModelSize_Q4K" xml:space="preserve">
+    <value>q4_k (compact)</value>
+  </data>
+  <data name="Enum_ParakeetModelSize_Q5K" xml:space="preserve">
+    <value>q5_k</value>
+  </data>
+  <data name="Enum_ParakeetModelSize_Q6K" xml:space="preserve">
+    <value>q6_k</value>
+  </data>
+  <data name="Enum_ParakeetModelSize_Q8_0" xml:space="preserve">
+    <value>q8_0 (default)</value>
+  </data>
+  <data name="Models_Parakeet_Q4K_Description" xml:space="preserve">
+    <value>Compact quant: less memory and disk, slightly lower accuracy.</value>
+  </data>
+  <data name="Models_Parakeet_Q5K_Description" xml:space="preserve">
+    <value>Balance of size and accuracy: slightly better than q4_k.</value>
+  </data>
+  <data name="Models_Parakeet_Q6K_Description" xml:space="preserve">
+    <value>Higher accuracy at a moderate file size.</value>
+  </data>
+  <data name="Models_Parakeet_Q8_0_Description" xml:space="preserve">
+    <value>Maximum accuracy (default). Requires ~1 GB of memory.</value>
+  </data>
+  <data name="Models_Parakeet_Speed" xml:space="preserve">
+    <value>Speed: very fast (small model with large-level quality)</value>
+  </data>
+  <data name="Models_Parakeet_Quality" xml:space="preserve">
+    <value>Quality: high (multilingual, 25 languages incl. Russian)</value>
+  </data>
+  <data name="Models_Label" xml:space="preserve">
+    <value>Parakeet v3 model</value>
+  </data>
+  <data name="Engine_ParakeetNativeMissing" xml:space="preserve">
+    <value>parakeet.dll not found next to the application. Reinstall VoiceTyper or switch to the Whisper engine.</value>
+  </data>
+  <data name="Log_EngineSelected" xml:space="preserve">
+    <value>Engine selected: {0}</value>
+  </data>
+  <data name="Log_EngineWarmupDone" xml:space="preserve">
+    <value>Deep engine warm-up finished in {0} ms.</value>
+  </data>
+  <data name="Log_VadWarmupDone" xml:space="preserve">
+    <value>Silero VAD warm-up finished in {0} ms.</value>
+  </data>
+  <data name="Log_VadModelLoaded" xml:space="preserve">
+    <value>Silero VAD model loaded (cached): {0}</value>
+  </data>
+  <data name="Log_ModelParakeet" xml:space="preserve">
+    <value>Parakeet model: {0}</value>
   </data>
 </root>

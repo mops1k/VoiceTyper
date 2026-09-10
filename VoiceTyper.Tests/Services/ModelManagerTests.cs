@@ -113,4 +113,51 @@ public class ModelManagerTests : IDisposable
 
         Assert.EndsWith(Path.Combine("VoiceTyper", "models"), manager.ModelsDirectory);
     }
+
+    [Theory]
+    [InlineData(ParakeetModelSize.Q4K, "tdt-0.6b-v3-q4_k.gguf")]
+    [InlineData(ParakeetModelSize.Q5K, "tdt-0.6b-v3-q5_k.gguf")]
+    [InlineData(ParakeetModelSize.Q6K, "tdt-0.6b-v3-q6_k.gguf")]
+    [InlineData(ParakeetModelSize.Q8_0, "tdt-0.6b-v3-q8_0.gguf")]
+    public void GetParakeetModelFileName_MapsQuants(ParakeetModelSize size, string expected)
+    {
+        Assert.Equal(expected, ModelManager.GetParakeetModelFileName(size));
+    }
+
+    [Theory]
+    [InlineData(ParakeetModelSize.Q4K, 675_200_864L)]
+    [InlineData(ParakeetModelSize.Q5K, 741_867_360L)]
+    [InlineData(ParakeetModelSize.Q6K, 812_700_512L)]
+    [InlineData(ParakeetModelSize.Q8_0, 940_663_680L)]
+    public void GetParakeetModelApproxSize_ReturnsGgufSizes(ParakeetModelSize size, long expected)
+    {
+        Assert.Equal(expected, ModelManager.GetParakeetModelApproxSize(size));
+    }
+
+    [Fact]
+    public async Task EnsureParakeetModelAsync_WhenFileExists_ReturnsWithoutDownload()
+    {
+        var manager = new ModelManager(_tempDir);
+        var path = Path.Combine(_tempDir, ModelManager.GetParakeetModelFileName(ParakeetModelSize.Q8_0));
+        Directory.CreateDirectory(_tempDir);
+        await File.WriteAllTextAsync(path, "fake-gguf");
+
+        var result = await manager.EnsureParakeetModelAsync(ParakeetModelSize.Q8_0);
+
+        Assert.Equal(path, result);
+        Assert.True(manager.IsParakeetModelDownloaded(ParakeetModelSize.Q8_0));
+    }
+
+    [Fact]
+    public void DeleteParakeetModel_RemovesFileAndReturnsFalseWhenMissing()
+    {
+        var manager = new ModelManager(_tempDir);
+        Directory.CreateDirectory(_tempDir);
+        var path = Path.Combine(_tempDir, ModelManager.GetParakeetModelFileName(ParakeetModelSize.Q5K));
+        File.WriteAllText(path, "gguf");
+
+        Assert.True(manager.DeleteParakeetModel(ParakeetModelSize.Q5K));
+        Assert.False(File.Exists(path));
+        Assert.False(manager.DeleteParakeetModel(ParakeetModelSize.Q5K));
+    }
 }

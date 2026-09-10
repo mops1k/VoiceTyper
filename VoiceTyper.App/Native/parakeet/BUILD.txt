@@ -1,0 +1,15 @@
+﻿Repo: https://github.com/mudler/parakeet.cpp
+Pinned commit: e75de9b6b9b688fd293aa22f7e27aa724ea286f8
+Date: 2026-09-10
+Toolchain: gcc.exe (MinGW-W64 x86_64-ucrt-mcf-seh, built by Brecht Sanders, r1) 16.1.0
+           cmake version 4.3.2
+CMake flags: PARAKEET_SHARED=ON, PARAKEET_BUILD_CLI/SERVER/TESTS=OFF,
+  GGML_NATIVE=OFF, GGML_LLAMAFILE=ON, GGML_OPENMP=OFF
+  CMAKE_SHARED_LINKER_FLAGS=-static -static-libgcc -static-libstdc++
+
+--- exports (parakeet_capi_*) ---
+	[1677] +base[1678]  068d parakeet_capi_abi_version 	[1678] +base[1679]  068e parakeet_capi_free 	[1679] +base[1680]  068f parakeet_capi_free_events 	[1680] +base[1681]  0690 parakeet_capi_free_logits 	[1681] +base[1682]  0691 parakeet_capi_free_string 	[1682] +base[1683]  0692 parakeet_capi_last_error 	[1683] +base[1684]  0693 parakeet_capi_load 	[1684] +base[1685]  0694 parakeet_capi_stream_begin 	[1685] +base[1686]  0695 parakeet_capi_stream_begin_lang 	[1686] +base[1687]  0696 parakeet_capi_stream_drain_events 	[1687] +base[1688]  0697 parakeet_capi_stream_feed 	[1688] +base[1689]  0698 parakeet_capi_stream_feed_json 	[1689] +base[1690]  0699 parakeet_capi_stream_finalize 	[1690] +base[1691]  069a parakeet_capi_stream_finalize_json 	[1691] +base[1692]  069b parakeet_capi_stream_free 	[1692] +base[1693]  069c parakeet_capi_transcribe_path 	[1693] +base[1694]  069d parakeet_capi_transcribe_path_json 	[1694] +base[1695]  069e parakeet_capi_transcribe_path_lang 	[1695] +base[1696]  069f parakeet_capi_transcribe_path_nbest_json 	[1696] +base[1697]  06a0 parakeet_capi_transcribe_pcm 	[1697] +base[1698]  06a1 parakeet_capi_transcribe_pcm_batch 	[1698] +base[1699]  06a2 parakeet_capi_transcribe_pcm_batch_json 	[1699] +base[1700]  06a3 parakeet_capi_transcribe_pcm_batch_json_lang 	[1700] +base[1701]  06a4 parakeet_capi_transcribe_pcm_batch_lang 	[1701] +base[1702]  06a5 parakeet_capi_transcribe_pcm_lang 	[1702] +base[1703]  06a6 parakeet_capi_transcribe_pcm_logits 	[1703] +base[1704]  06a7 parakeet_capi_transcribe_pcm_nbest_json
+
+--- dependents ---
+	DLL Name: ADVAPI32.dll 	DLL Name: KERNEL32.dll 	DLL Name: api-ms-win-crt-convert-l1-1-0.dll 	DLL Name: api-ms-win-crt-environment-l1-1-0.dll 	DLL Name: api-ms-win-crt-filesystem-l1-1-0.dll 	DLL Name: api-ms-win-crt-heap-l1-1-0.dll 	DLL Name: api-ms-win-crt-locale-l1-1-0.dll 	DLL Name: api-ms-win-crt-math-l1-1-0.dll 	DLL Name: api-ms-win-crt-private-l1-1-0.dll 	DLL Name: api-ms-win-crt-runtime-l1-1-0.dll 	DLL Name: api-ms-win-crt-stdio-l1-1-0.dll 	DLL Name: api-ms-win-crt-string-l1-1-0.dll 	DLL Name: api-ms-win-crt-time-l1-1-0.dll 	DLL Name: api-ms-win-crt-utility-l1-1-0.dll 	DLL Name: ntdll.dll
+- commit: e75de9b6b9b688fd293aa22f7e27aa724ea286f8 (v0.5.0-1-ge75de9b)

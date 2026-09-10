@@ -3,7 +3,7 @@ using VoiceTyper.Core.Models;
 
 namespace VoiceTyper.Core.Services;
 
-/// <summary>Загрузка и кэширование ggml-моделей Whisper и Silero VAD.</summary>
+/// <summary>Загрузка и кэширование ggml-моделей Whisper, Silero VAD и Parakeet.</summary>
 public interface IModelManager
 {
     string ModelsDirectory { get; }
@@ -22,6 +22,18 @@ public interface IModelManager
 
     /// <summary>Возвращает путь к модели Silero VAD, скачивая её при первом обращении.</summary>
     Task<string> EnsureVadModelAsync(IProgress<ModelDownloadProgress>? progress = null, CancellationToken ct = default);
+
+    /// <summary>Полный путь к GGUF-файлу модели Parakeet указанного кванта.</summary>
+    string GetParakeetModelPath(ParakeetModelSize size);
+
+    /// <summary>Скачан ли GGUF-файл модели Parakeet указанного кванта.</summary>
+    bool IsParakeetModelDownloaded(ParakeetModelSize size);
+
+    /// <summary>Удаляет GGUF-файл модели Parakeet. Возвращает true, если файл был удалён.</summary>
+    bool DeleteParakeetModel(ParakeetModelSize size);
+
+    /// <summary>Возвращает путь к модели Parakeet нужного кванта, скачивая её при первом обращении.</summary>
+    Task<string> EnsureParakeetModelAsync(ParakeetModelSize size, IProgress<ModelDownloadProgress>? progress = null, CancellationToken ct = default);
 
     /// <summary>Удаляет устаревшие (fp16) файлы моделей, ставшие ненужными после перехода на q5-квантизацию.</summary>
     void CleanupLegacyModels();
@@ -43,6 +55,9 @@ public sealed class ModelManager : IModelManager
 
     /// <summary>Базовый URL модели Silero VAD (репозиторий ggml-org/whisper-vad).</summary>
     private const string VadBaseUrl = "https://huggingface.co/ggml-org/whisper-vad/resolve/main/";
+
+    /// <summary>Базовый URL GGUF-моделей Parakeet (репозиторий mudler/parakeet-cpp-gguf).</summary>
+    public const string ParakeetBaseUrl = "https://huggingface.co/mudler/parakeet-cpp-gguf/resolve/main/";
 
     private readonly string _modelsDirectory;
     private readonly HttpClient _http;
@@ -119,6 +134,35 @@ public sealed class ModelManager : IModelManager
 
         var url = VadBaseUrl + VadModelFileName;
         return await DownloadAsync(url, path, VadModelApproxSize, progress, ct);
+    }
+
+    public string GetParakeetModelPath(ParakeetModelSize size) => Path.Combine(_modelsDirectory, GetParakeetModelFileName(size));
+
+    public bool IsParakeetModelDownloaded(ParakeetModelSize size) => File.Exists(GetParakeetModelPath(size));
+
+    public bool DeleteParakeetModel(ParakeetModelSize size)
+    {
+        var path = GetParakeetModelPath(size);
+        if (!File.Exists(path))
+        {
+            return false;
+        }
+
+        File.Delete(path);
+        return true;
+    }
+
+    public async Task<string> EnsureParakeetModelAsync(ParakeetModelSize size, IProgress<ModelDownloadProgress>? progress = null, CancellationToken ct = default)
+    {
+        Directory.CreateDirectory(_modelsDirectory);
+        var path = GetParakeetModelPath(size);
+        if (File.Exists(path))
+        {
+            return path;
+        }
+
+        var url = ParakeetBaseUrl + GetParakeetModelFileName(size);
+        return await DownloadAsync(url, path, GetParakeetModelApproxSize(size), progress, ct);
     }
 
     private async Task<string> DownloadAsync(string url, string path, long expectedSize,
@@ -227,6 +271,26 @@ public sealed class ModelManager : IModelManager
         "ggml-small-q5_1.bin",
         "ggml-medium-q5_0.bin",
         "ggml-large-v3-turbo-q5_0.bin",
+    };
+
+    /// <summary>Точный размер GGUF-файла модели Parakeet (байты) — для расчёта прогресса и ETA.</summary>
+    public static long GetParakeetModelApproxSize(ParakeetModelSize size) => size switch
+    {
+        ParakeetModelSize.Q4K => 675_200_864,
+        ParakeetModelSize.Q5K => 741_867_360,
+        ParakeetModelSize.Q6K => 812_700_512,
+        ParakeetModelSize.Q8_0 => 940_663_680,
+        _ => 0,
+    };
+
+    /// <summary>Имя файла GGUF-модели Parakeet на диске, например <c>tdt-0.6b-v3-q8_0.gguf</c>.</summary>
+    public static string GetParakeetModelFileName(ParakeetModelSize size) => size switch
+    {
+        ParakeetModelSize.Q4K => "tdt-0.6b-v3-q4_k.gguf",
+        ParakeetModelSize.Q5K => "tdt-0.6b-v3-q5_k.gguf",
+        ParakeetModelSize.Q6K => "tdt-0.6b-v3-q6_k.gguf",
+        ParakeetModelSize.Q8_0 => "tdt-0.6b-v3-q8_0.gguf",
+        _ => throw new ArgumentOutOfRangeException(nameof(size), size, null),
     };
 
     /// <summary>Имя файла Silero VAD на диске.</summary>

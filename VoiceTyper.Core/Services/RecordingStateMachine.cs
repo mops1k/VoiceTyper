@@ -3,6 +3,7 @@ using VoiceTyper.Core.Abstractions;
 using VoiceTyper.Core.Audio;
 using VoiceTyper.Core.Localization;
 using VoiceTyper.Core.Models;
+using VoiceTyper.Core.Services.Transcription;
 
 namespace VoiceTyper.Core.Services;
 
@@ -63,7 +64,7 @@ public sealed class RecordingStateMachine : IRecordingStateMachine
     private static readonly TimeSpan VadPollInterval = TimeSpan.FromMilliseconds(250);
 
     private readonly IAudioRecorder _recorder;
-    private readonly ITranscriptionService _transcription;
+    private readonly ITranscriptionEngine _transcription;
     private readonly ITextOutputService _output;
     private readonly Func<ISpeechSegmenter> _segmenterFactory;
     private readonly Func<TranscriptionOptions> _optionsProvider;
@@ -78,7 +79,7 @@ public sealed class RecordingStateMachine : IRecordingStateMachine
 
     public RecordingStateMachine(
         IAudioRecorder recorder,
-        ITranscriptionService transcription,
+        ITranscriptionEngine transcription,
         ITextOutputService output,
         RecordingMode mode,
         TimeSpan silenceThreshold,
@@ -146,8 +147,9 @@ public sealed class RecordingStateMachine : IRecordingStateMachine
         lock (_lock)
         {
             _sessionCts?.Cancel();
-            _segmenter?.Dispose();
-            _segmenter = null;
+            // Сегментер не освобождаем: им владеет композиционный корень (он кэшируется
+            // на всё время жизни приложения, чтобы не платить за загрузку VAD-модели
+            // на каждую сессию записи). Между сессиями мы его сбрасываем через ResetState.
             _sessionCts?.Dispose();
             _sessionCts = null;
             SetState(RecordingState.Idle);
@@ -177,7 +179,9 @@ public sealed class RecordingStateMachine : IRecordingStateMachine
 
         if (_mode == RecordingMode.Vad)
         {
-            _segmenter = _segmenterFactory();
+            // Сегментер создаётся один раз и переиспользуется между сессиями.
+            _segmenter ??= _segmenterFactory();
+            _segmenter.ResetState();
             var cts = _sessionCts;
             _ = Task.Run(() => BackgroundLoopAsync(cts.Token));
         }
@@ -193,8 +197,7 @@ public sealed class RecordingStateMachine : IRecordingStateMachine
                 _logger?.Info("[VAD] пустой захват: распознавать нечего");
             }
 
-            _segmenter?.Dispose();
-            _segmenter = null;
+            _segmenter?.ResetState();
             SetState(RecordingState.Idle);
             return;
         }
@@ -228,8 +231,8 @@ public sealed class RecordingStateMachine : IRecordingStateMachine
         {
             lock (_lock)
             {
-                _segmenter?.Dispose();
-                _segmenter = null;
+                // Сегментер переиспользуется: только сбрасываем его состояние VAD.
+                _segmenter?.ResetState();
                 _operation = null;
                 SetState(RecordingState.Idle);
             }

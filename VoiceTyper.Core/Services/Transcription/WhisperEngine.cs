@@ -2,38 +2,20 @@ using System.Text;
 using Whisper.net;
 using VoiceTyper.Core.Models;
 
-namespace VoiceTyper.Core.Services;
-
-/// <summary>Распознавание речи (speech-to-text) на базе Whisper.</summary>
-public interface ITranscriptionService : IAsyncDisposable
-{
-    /// <summary>Путь к используемой ggml-модели.</summary>
-    string ModelPath { get; }
-
-    /// <summary>
-    /// Транскрибирует WAV-файл (16 кГц / моно / 16 бит) в текст.
-    /// <paramref name="bestOf"/> — число кандидатов при жадном сэмплировании (1 — самый быстрый,
-    /// больше — точнее). Для финального результата можно задать 3–5, для быстрого предпросмотра — 1.
-    /// </summary>
-    Task<string> TranscribeAsync(byte[] wavBytes, RecognitionLanguage language, string prompt, CancellationToken ct = default,
-        float temperature = 0f, bool conditionOnPreviousText = false, int bestOf = 1);
-
-    /// <summary>Прогревает модель: принудительно грузит её в память, чтобы первая диктовка не ждала загрузку.</summary>
-    void Warmup();
-}
+namespace VoiceTyper.Core.Services.Transcription;
 
 /// <summary>
 /// Инференс Whisper на CPU через Whisper.net (whisper.cpp).
 /// Фабрика (и загруженная модель) кэшируется — создание processor'а на каждый вызов дешёво,
 /// а повторная загрузка модели (~1–3 сек) не выполняется.
 /// </summary>
-public sealed class WhisperTranscriptionService : ITranscriptionService
+public sealed class WhisperEngine : ITranscriptionEngine
 {
     private readonly int _threads;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private WhisperFactory? _factory;
 
-    public WhisperTranscriptionService(string modelPath)
+    public WhisperEngine(string modelPath)
     {
         ModelPath = modelPath;
         _threads = Math.Clamp(CpuCoreInfo.GetPhysicalCoreCount(), 1, 16);
@@ -49,6 +31,43 @@ public sealed class WhisperTranscriptionService : ITranscriptionService
     public void Warmup()
     {
         _factory ??= WhisperFactory.FromPath(ModelPath);
+    }
+
+    /// <summary>
+    /// Глубокий прогрев: один инференс на ~0.3 с тишины, чтобы прогрелись compute-пути
+    /// whisper.cpp (первый whisper_full заметно медленнее последующих).
+    /// </summary>
+    public async Task WarmupAsync(CancellationToken ct = default)
+    {
+        if (_factory is null)
+        {
+            Warmup();
+        }
+
+        await TranscribeAsync(BuildSilentWav(), RecognitionLanguage.Auto, prompt: "", ct, bestOf: 1);
+    }
+
+    /// <summary>Короткий WAV 16 кГц / моно / PCM16 из тишины (~0.3 с) для прогрева.</summary>
+    private static byte[] BuildSilentWav()
+    {
+        const int sampleRate = 16000;
+        const int samples = 4800; // 0.3 с
+        using var ms = new MemoryStream();
+        ms.Write("RIFF"u8);
+        ms.Write(BitConverter.GetBytes(36 + samples * 2));
+        ms.Write("WAVE"u8);
+        ms.Write("fmt "u8);
+        ms.Write(BitConverter.GetBytes(16));
+        ms.Write(BitConverter.GetBytes((short)1));
+        ms.Write(BitConverter.GetBytes((short)1));
+        ms.Write(BitConverter.GetBytes(sampleRate));
+        ms.Write(BitConverter.GetBytes(sampleRate * 2));
+        ms.Write(BitConverter.GetBytes((short)2));
+        ms.Write(BitConverter.GetBytes((short)16));
+        ms.Write("data"u8);
+        ms.Write(BitConverter.GetBytes(samples * 2));
+        ms.Write(new byte[samples * 2]); // тишина: все нули
+        return ms.ToArray();
     }
 
     public async Task<string> TranscribeAsync(byte[] wavBytes, RecognitionLanguage language, string prompt, CancellationToken ct = default,

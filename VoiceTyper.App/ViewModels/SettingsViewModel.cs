@@ -88,6 +88,12 @@ public sealed partial class SettingsViewModel : ObservableObject
     private ModelSize _modelSize;
 
     [ObservableProperty]
+    private TranscriptionEngine _transcriptionEngine = TranscriptionEngine.Whisper;
+
+    [ObservableProperty]
+    private ParakeetModelSize _parakeetModelSize;
+
+    [ObservableProperty]
     private bool _autoPasteEnabled = true;
 
     [ObservableProperty]
@@ -197,6 +203,29 @@ public sealed partial class SettingsViewModel : ObservableObject
     public IReadOnlyList<double> Temperatures { get; } = new[] { 0.0, 0.2, 0.4, 0.6, 0.8 };
 
     public IReadOnlyList<ModelListItem> ModelItems { get; private set; } = Array.Empty<ModelListItem>();
+
+    public IReadOnlyList<ParakeetModelListItem> ParakeetModelItems { get; private set; } = Array.Empty<ParakeetModelListItem>();
+
+    public IReadOnlyList<LocalizedOption<TranscriptionEngine>> Engines { get; private set; } = Array.Empty<LocalizedOption<TranscriptionEngine>>();
+
+    /// <summary>Выбранный движок распознавания (объект-опция для ComboBox SelectedItem).</summary>
+    public LocalizedOption<TranscriptionEngine>? SelectedEngine
+    {
+        get => Engines.FirstOrDefault(o => o.Value == TranscriptionEngine);
+        set
+        {
+            if (value is not null && value.Value != TranscriptionEngine)
+            {
+                TranscriptionEngine = value.Value;
+            }
+        }
+    }
+
+    /// <summary>Активен ли движок Whisper (видимость Whisper-моделей в UI).</summary>
+    public bool IsWhisperEngine => TranscriptionEngine == TranscriptionEngine.Whisper;
+
+    /// <summary>Активен ли движок Parakeet (видимость Parakeet-квантов в UI).</summary>
+    public bool IsParakeetEngine => TranscriptionEngine == TranscriptionEngine.Parakeet;
 
     public IReadOnlyList<LocalizedNavItem> NavItems { get; private set; } = Array.Empty<LocalizedNavItem>();
 
@@ -314,6 +343,12 @@ public sealed partial class SettingsViewModel : ObservableObject
         new LocalizedOption<AppLanguage>(AppLanguage.En, "Enum_AppLanguage_En"),
     };
 
+    private static IReadOnlyList<LocalizedOption<TranscriptionEngine>> BuildEngines() => new[]
+    {
+        new LocalizedOption<TranscriptionEngine>(TranscriptionEngine.Whisper, "Enum_TranscriptionEngine_Whisper"),
+        new LocalizedOption<TranscriptionEngine>(TranscriptionEngine.Parakeet, "Enum_TranscriptionEngine_Parakeet"),
+    };
+
     private void BuildModelItems()
     {
         ModelItems = new[]
@@ -332,6 +367,29 @@ public sealed partial class SettingsViewModel : ObservableObject
         if (ModelItems.Count > 0)
         {
             RefreshModelItems();
+        }
+
+        ScheduleAutoSave();
+    }
+
+    partial void OnTranscriptionEngineChanged(TranscriptionEngine value)
+    {
+        OnPropertyChanged(nameof(SelectedEngine));
+        OnPropertyChanged(nameof(IsWhisperEngine));
+        OnPropertyChanged(nameof(IsParakeetEngine));
+        if (ParakeetModelItems.Count > 0)
+        {
+            RefreshParakeetItems();
+        }
+
+        ScheduleAutoSave();
+    }
+
+    partial void OnParakeetModelSizeChanged(ParakeetModelSize value)
+    {
+        if (ParakeetModelItems.Count > 0)
+        {
+            RefreshParakeetItems();
         }
 
         ScheduleAutoSave();
@@ -425,7 +483,107 @@ public sealed partial class SettingsViewModel : ObservableObject
         }
     }
 
-    /// <summary>Извлекает версию приложения из сборки: InformationalVersion (обрезая "+sha") или AssemblyVersion.</summary>
+    private void BuildParakeetModelItems()
+    {
+        ParakeetModelItems = new[]
+        {
+            new ParakeetModelListItem(ParakeetModelSize.Q4K, "Parakeet v3 (q4_k)", "Models_Parakeet_Q4K_Description", "Models_Parakeet_Speed", "Models_Parakeet_Quality", 0.64),
+            new ParakeetModelListItem(ParakeetModelSize.Q5K, "Parakeet v3 (q5_k)", "Models_Parakeet_Q5K_Description", "Models_Parakeet_Speed", "Models_Parakeet_Quality", 0.71),
+            new ParakeetModelListItem(ParakeetModelSize.Q6K, "Parakeet v3 (q6_k)", "Models_Parakeet_Q6K_Description", "Models_Parakeet_Speed", "Models_Parakeet_Quality", 0.78),
+            new ParakeetModelListItem(ParakeetModelSize.Q8_0, "Parakeet v3 (q8_0)", "Models_Parakeet_Q8_0_Description", "Models_Parakeet_Speed", "Models_Parakeet_Quality", 0.90),
+        };
+        RefreshParakeetItems();
+    }
+
+    /// <summary>Синхронизирует состояние Parakeet-квантов (скачан / выбран) с диском и настройкой.</summary>
+    private void RefreshParakeetItems()
+    {
+        foreach (var item in ParakeetModelItems)
+        {
+            item.IsDownloaded = _modelManager.IsParakeetModelDownloaded(item.Size);
+            item.IsSelected = item.Size == ParakeetModelSize;
+        }
+    }
+
+    [RelayCommand]
+    private void SelectParakeetModel(ParakeetModelListItem item)
+    {
+        if (item.Size == ParakeetModelSize)
+        {
+            item.IsSelected = true;
+            return;
+        }
+
+        ParakeetModelSize = item.Size;
+        RefreshParakeetItems();
+    }
+
+    [RelayCommand]
+    private async Task DownloadParakeetModel(ParakeetModelListItem item)
+    {
+        if (item.IsDownloaded)
+        {
+            return;
+        }
+
+        _modelDownloadCts?.Cancel();
+        _modelDownloadCts?.Dispose();
+        _modelDownloadCts = new CancellationTokenSource();
+        var ct = _modelDownloadCts.Token;
+
+        try
+        {
+            IsDownloading = true;
+            var progress = new Progress<ModelDownloadProgress>(p => UpdateModelUi(item.Name, p));
+            await _modelManager.EnsureParakeetModelAsync(item.Size, progress, ct);
+            await Dispatcher.UIThread.InvokeAsync(() => item.IsDownloaded = true);
+        }
+        catch (OperationCanceledException)
+        {
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                IsDownloading = false;
+                DownloadInfo = string.Empty;
+                DownloadProgress = 0;
+                RefreshParakeetItems();
+            });
+        }
+        catch (Exception ex)
+        {
+            await Dispatcher.UIThread.InvokeAsync(() =>
+                ErrorMessage = Loc.Format("Models_DownloadError", item.Name, ex.Message));
+        }
+        finally
+        {
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                IsDownloading = false;
+                DownloadInfo = string.Empty;
+                DownloadProgress = 0;
+                RefreshParakeetItems();
+            });
+            _modelDownloadCts?.Dispose();
+            _modelDownloadCts = null;
+        }
+    }
+
+    [RelayCommand]
+    private void DeleteParakeetModel(ParakeetModelListItem item)
+    {
+        if (!item.CanDelete)
+        {
+            return;
+        }
+
+        if (_modelManager.DeleteParakeetModel(item.Size))
+        {
+            item.IsDownloaded = false;
+            RefreshParakeetItems();
+            ErrorMessage = Loc.Format("Models_DeleteSuccess", item.Name);
+        }
+    }
+
+    /// <summary>Извлекает версию приложения из сборки: InformationalVersion (обрезая "+sha") или AssemblyVersion.</summary></summary>
     private static string ResolveAppVersion()
     {
         var asm = typeof(SettingsViewModel).Assembly;
@@ -454,8 +612,10 @@ public sealed partial class SettingsViewModel : ObservableObject
             Languages = BuildLanguages();
             Themes = BuildThemes();
             UiLanguages = BuildUiLanguages();
+            Engines = BuildEngines();
             LoadFromSettings();
             BuildModelItems();
+            BuildParakeetModelItems();
             RefreshMicrophones();
         }
         finally
@@ -1034,6 +1194,8 @@ public sealed partial class SettingsViewModel : ObservableObject
         CancelGamepadButton = s.CancelGamepadButton ?? string.Empty;
         Language = s.Language;
         ModelSize = s.ModelSize;
+        TranscriptionEngine = s.TranscriptionEngine;
+        ParakeetModelSize = s.ParakeetModelSize;
         AutoPasteEnabled = s.AutoPasteEnabled;
         TermsDictionary = s.TermsDictionary;
         SilenceThresholdMs = s.SilenceThresholdMs;
@@ -1078,6 +1240,8 @@ public sealed partial class SettingsViewModel : ObservableObject
             CancelGamepadButton = string.IsNullOrWhiteSpace(CancelGamepadButton) ? null : CancelGamepadButton,
             Language = Language,
             ModelSize = ModelSize,
+            TranscriptionEngine = TranscriptionEngine,
+            ParakeetModelSize = ParakeetModelSize,
             AutoPasteEnabled = AutoPasteEnabled,
             TermsDictionary = TermsDictionary,
             SilenceThresholdMs = Math.Clamp(SilenceThresholdMs, 300, 10000),
@@ -1117,6 +1281,8 @@ public sealed partial class SettingsViewModel : ObservableObject
         CancelGamepadButton = defaults.CancelGamepadButton ?? string.Empty;
         Language = defaults.Language;
         ModelSize = defaults.ModelSize;
+        TranscriptionEngine = defaults.TranscriptionEngine;
+        ParakeetModelSize = defaults.ParakeetModelSize;
         AutoPasteEnabled = defaults.AutoPasteEnabled;
         TermsDictionary = defaults.TermsDictionary;
         SilenceThresholdMs = defaults.SilenceThresholdMs;

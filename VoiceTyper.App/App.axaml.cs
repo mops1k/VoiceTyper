@@ -173,15 +173,22 @@ public partial class App : Application
         _settingsViewModel.SetStatus(Loc.T("Status_Ready"));
         ThemeManager.ThemeApplied += () => _tray?.ApplyTheme(ThemeManager.IsSystemDark);
 
-        _mainWindow = new MainWindow();
-        _mainWindow.SetViewModel(_settingsViewModel);
-        desktop.MainWindow = _mainWindow;
+        var mainWindow = new MainWindow();
+        _mainWindow = mainWindow;
+        mainWindow.SetViewModel(_settingsViewModel);
 
-        // MainWindow создаём всегда: он нужен как TopLevel для буфера обмена.
-        // При запуске в трей окно остаётся невидимым до команды из трея.
-        if (!_currentSettings.StartMinimized)
+        if (_currentSettings.StartMinimized)
         {
-            _mainWindow.Show();
+            // ClassicDesktopStyleApplicationLifetime вызывает MainWindow.Show()
+            // после OnFrameworkInitializationCompleted. Поэтому на время инициализации
+            // оставляем lifetime без MainWindow, а после старта цикла dispatcher
+            // назначаем уже созданное скрытое окно для буфера обмена и трея.
+            Dispatcher.UIThread.Post(() => desktop.MainWindow = mainWindow);
+        }
+        else
+        {
+            desktop.MainWindow = mainWindow;
+            mainWindow.Show();
         }
 
         _ = _settingsViewModel.CheckForUpdatesAsync(auto: true);
@@ -444,14 +451,16 @@ public partial class App : Application
             return;
         }
 
-        if (_mainWindow is null || !_mainWindow.IsVisible)
+        if (_mainWindow is null)
         {
             _mainWindow = new MainWindow();
             _mainWindow.SetViewModel(_settingsViewModel!);
-            if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
-            {
-                desktop.MainWindow = _mainWindow;
-            }
+        }
+
+        if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop
+            && !ReferenceEquals(desktop.MainWindow, _mainWindow))
+        {
+            desktop.MainWindow = _mainWindow;
         }
 
         _mainWindow.Show();

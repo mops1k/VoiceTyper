@@ -177,14 +177,9 @@ public partial class App : Application
         _mainWindow.SetViewModel(_settingsViewModel);
         desktop.MainWindow = _mainWindow;
 
-        // Окно показываем всегда (хотя бы один раз), чтобы у приложения был
-        // рабочий TopLevel для буфера обмена. При StartMinimized сразу прячем.
-        if (_currentSettings.StartMinimized)
-        {
-            _mainWindow.Show();
-            _mainWindow.Hide();
-        }
-        else
+        // MainWindow создаём всегда: он нужен как TopLevel для буфера обмена.
+        // При запуске в трей окно остаётся невидимым до команды из трея.
+        if (!_currentSettings.StartMinimized)
         {
             _mainWindow.Show();
         }

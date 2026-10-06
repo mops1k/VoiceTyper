@@ -42,6 +42,7 @@
 #include <cstring>
 #include <iterator>
 #include <QApplication>
+#include <QWindow>
 #include <QTextEdit>
 #include <QTimer>
 #include <QVBoxLayout>
@@ -1358,6 +1359,25 @@ bool MainWindow::event(QEvent* event)
         hide();
     }
     return QMainWindow::event(event);
+}
+
+void MainWindow::bring_to_front()
+{
+    if (isMinimized()) {
+        // show() alone does not un-minimise, so the state is cleared first.
+        setWindowState(windowState() & ~Qt::WindowMinimized);
+    }
+    show();
+    raise();
+    // raise() only reorders the window inside the application; activateWindow() is what
+    // asks the system to give it the foreground and the keyboard focus.
+    activateWindow();
+    if (auto* handle = windowHandle(); handle != nullptr) {
+        // The documented second half: on Windows activation can be refused when the
+        // process is not the foreground one, and requesting it on the handle is the way
+        // Qt retries it without the stay-on-top hack.
+        handle->requestActivate();
+    }
 }
 
 void MainWindow::retranslate()

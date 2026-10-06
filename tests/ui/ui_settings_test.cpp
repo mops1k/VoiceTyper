@@ -7,6 +7,7 @@
 
 #include "app/application_font.hpp"
 #include "app/status_overlay.hpp"
+#include "app/tray_controller.hpp"
 #include "app/ui_text.hpp"
 #include "app/main_window.hpp"
 #include "app/settings_presenter.hpp"
@@ -15,6 +16,8 @@
 #include <QApplication>
 #include "app/toggle_switch.hpp"
 #include <QComboBox>
+#include <QMenu>
+#include <QSystemTrayIcon>
 #include <QImage>
 #include <QLabel>
 #include <QLineEdit>
@@ -985,6 +988,58 @@ private slots:
             qPrintable(QStringLiteral("light pill: %1").arg(pill->styleSheet())));
         QVERIFY2(text->styleSheet().contains(QStringLiteral("#1B1B1B")),
             qPrintable(QStringLiteral("light text: %1").arg(text->styleSheet())));
+    }
+
+    // Клик по иконке в трее должен выводить окно настроек на передний план. Здесь
+    // закрепляется та часть, которую видно без оконного менеджера: свёрнутое окно
+    // возвращается и снова видимо. Порядок окон на экране offscreen-платформа не
+    // сообщает, поэтому его проверяют на устройстве (клик по иконке).
+    void showing_the_window_from_the_tray_restores_it()
+    {
+        voicetyper::platform::PortableClock clock;
+        voicetyper::platform::PortableFileSystem file_system;
+        const auto path = std::filesystem::temp_directory_path() / "voicetyper-ui-showfromtray-test.json";
+        std::filesystem::remove(path);
+        voicetyper::app::SettingsPresenter presenter(path, file_system, clock);
+        static_cast<void>(presenter.load());
+
+        voicetyper::app::MainWindow window(presenter, voicetyper::app::WindowServices{});
+        window.resize(980, 640);
+        window.show();
+        QCoreApplication::processEvents();
+        QVERIFY(window.isVisible());
+
+        // An offscreen platform does not have to honour minimisation, so it is not
+        // assumed: where it happened, restoring is checked; the hidden-window path below
+        // is the one a tray click really meets when the window was closed to the tray.
+        window.showMinimized();
+        QCoreApplication::processEvents();
+        window.bring_to_front();
+        QCoreApplication::processEvents();
+        QVERIFY2(!window.isMinimized(), "окно осталось свёрнутым после показа из трея");
+        QVERIFY2(window.isVisible(), "окно не показалось после показа из трея");
+
+        window.hide();
+        QCoreApplication::processEvents();
+        QVERIFY2(!window.isVisible(), "окно не скрылось, проверка бессмысленна");
+        window.bring_to_front();
+        QCoreApplication::processEvents();
+        QVERIFY2(window.isVisible(), "скрытое окно не показалось по клику в трее");
+        std::filesystem::remove(path);
+    }
+
+    // В контекстном меню трея текст упирался в правый край: у пунктов должен быть
+    // запас справа (замечание Александра, 06.10.2026).
+    void the_tray_menu_keeps_room_on_the_right()
+    {
+        QSystemTrayIcon icon;
+        voicetyper::app::TrayController tray(icon);
+        QVERIFY2(tray.menu() != nullptr, "у контроллера трея нет меню");
+        const QString sheet = tray.menu()->styleSheet();
+        QVERIFY2(sheet.contains(QStringLiteral("QMenu::item")),
+            qPrintable(QStringLiteral("меню без правил для пунктов: %1").arg(sheet)));
+        QVERIFY2(sheet.contains(QStringLiteral("padding")),
+            qPrintable(QStringLiteral("у пунктов нет отступов: %1").arg(sheet)));
     }
 
     void record_button_is_disabled_without_a_backend()

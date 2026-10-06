@@ -31,6 +31,9 @@ public:
     /// state the main window shows.
     void set_status(const QString& text);
 
+    /// The context menu, for tests and for anything that needs to restyle it.
+    [[nodiscard]] QMenu* menu() const { return menu_; }
+
 signals:
     void show_requested();
     void record_requested();

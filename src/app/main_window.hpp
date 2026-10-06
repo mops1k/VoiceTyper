@@ -149,6 +149,12 @@ public:
     [[nodiscard]] QWidget* page_scroll(int index) const;
     /// Switches the visible page, exactly as clicking the navigation entry does.
     void show_page(int index);
+
+    /// Brings the window to the front and gives it the focus: what a click on the tray
+    /// icon must do. `show()` alone leaves the window behind whatever is active, which is
+    /// why the settings window used to open somewhere in the background.
+    void bring_to_front();
+
     /// Flushes pending changes; the window does this on close too.
     void save_now();
 
@@ -203,6 +209,7 @@ private:
     /// Re-applies every string from the table in the current language, in place: the
     /// window is never rebuilt for a language change.
     void retranslate();
+
     /// Wires the update controls on the About page.
     void bind_update_controls();
     /// A settings row whose left column is a live status label and whose right column

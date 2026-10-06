@@ -1148,8 +1148,9 @@ int run(int argc, char** argv)
     tray_icon.setIcon(app_icon);
     TrayController tray(tray_icon);
     const auto wire_tray_window = [&tray, &window] {
-        QObject::connect(&tray, &TrayController::show_requested, window.get(), &QMainWindow::show);
-        QObject::connect(&tray, &TrayController::show_requested, window.get(), &QWidget::raise);
+        // One slot instead of show() + raise(): a click on the tray icon must put the
+        // window in front of everything, not merely make it visible somewhere behind.
+        QObject::connect(&tray, &TrayController::show_requested, window.get(), &MainWindow::bring_to_front);
         QObject::connect(&tray, &TrayController::record_requested, window.get(),
             [weak = std::weak_ptr<MainWindow>(window)] {
                 if (const auto current = weak.lock()) {

@@ -43,7 +43,11 @@ voicetyper_check_portable_headers("${PROJECT_SOURCE_DIR}")
 
 if(VOICETYPER_BUILD_GUI)
     # Network is required by QLocalServer/QLocalSocket (the single-instance guard).
-    find_package(Qt6 6.11.2 EXACT REQUIRED COMPONENTS Core Gui Widgets Network)
+    # The floor is 6.9 rather than an exact local version: CI installs the newest
+    # PUBLISHED Qt (6.9.3, the local 6.11.2 is a private build), and an EXACT requirement
+    # made the release build fail with "Could not find a configuration file for package
+    # Qt6 that exactly matches". 6.9 is what both toolchains actually build.
+    find_package(Qt6 6.9 REQUIRED COMPONENTS Core Gui Widgets Network)
 endif()
 
 # Python is optional for C++ compilation but required for fixture verification
@@ -723,8 +727,12 @@ if(VOICETYPER_BUILD_TESTS)
     set_tests_properties(diagnostics-help PROPERTIES
         PASS_REGULAR_EXPRESSION "Usage: voicetyper-diagnostics"
     )
+    # Derived from the configured version instead of hard-coded: the literal
+    # "0.0.0-dev" went stale the moment the product version became 2.0.0, and the test
+    # then failed on Windows for a reason that had nothing to do with the tool.
+    string(REPLACE "." "\\." VOICETYPER_VERSION_REGEX "${VOICETYPER_VERSION}")
     set_tests_properties(diagnostics-version PROPERTIES
-        PASS_REGULAR_EXPRESSION "0\\.0\\.0-dev"
+        PASS_REGULAR_EXPRESSION "${VOICETYPER_VERSION_REGEX}"
     )
     set_tests_properties(diagnostics-json PROPERTIES
         PASS_REGULAR_EXPRESSION "\"name\":\"VoiceTyper"

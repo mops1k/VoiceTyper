@@ -69,7 +69,11 @@ jobs:
             Get-ChildItem "$env:IQTA_TOOLS" | ForEach-Object { Write-Host $_.Name }
             throw "no MinGW at $env:VOICETYPER_MINGW_ROOT"
           }
-          cmake --preset windows-mingw-release -DVOICETYPER_VERSION=${{ steps.version.outputs.value }}
+          # The quotes are load-bearing: in PowerShell an unquoted -D...=2.0.0 is
+          # parsed as an expression, the version is cut to "2" and ".0.0" is passed as
+          # a separate argument, which cmake then tries to use as the preset name
+          # ("Could not read presets from .../.0.0"). The same trap exists locally.
+          cmake --preset windows-mingw-release "-DVOICETYPER_VERSION=${{ steps.version.outputs.value }}"
           cmake --build --preset windows-mingw-release --target voicetyper-deploy
 
       - name: build the installer

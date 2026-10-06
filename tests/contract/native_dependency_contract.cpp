@@ -545,7 +545,7 @@ void check_parakeet_entry(const std::string& manifest, const fs::path& source_di
     }
 
     // The real C header must declare every symbol we bind.
-    const fs::path header = source_dir / "VoiceTyper.App/Native/parakeet/include/parakeet_capi.h";
+    const fs::path header = source_dir / "native/parakeet/include/parakeet_capi.h";
     const std::string header_text = read_file(header);
     check(!header_text.empty(), "parakeet_capi.h is present in the repository");
     if (!header_text.empty()) {
@@ -559,8 +559,8 @@ void check_parakeet_entry(const std::string& manifest, const fs::path& source_di
 
     // Shipped artifacts: bytes and SHA-256 must match exactly.
     const std::array<std::pair<std::string, std::string>, 2> artifacts = {
-        std::pair<std::string, std::string>{"parakeet.cpp", "VoiceTyper.App/Native/parakeet.dll"},
-        std::pair<std::string, std::string>{"mc_wasapi", "VoiceTyper.App/Native/mc_wasapi.dll"},
+        std::pair<std::string, std::string>{"parakeet.cpp", "native/parakeet.dll"},
+        std::pair<std::string, std::string>{"mc_wasapi", "native/mc_wasapi.dll"},
     };
     for (const auto& artifact : artifacts) {
         const std::string& dependency_id = artifact.first;
@@ -602,7 +602,7 @@ void check_parakeet_entry(const std::string& manifest, const fs::path& source_di
     }
 
     // Loader behaviour. Explicitly unavailable when the file is absent...
-    const fs::path absent = source_dir / "VoiceTyper.App/Native/parakeet-not-shipped-here.dll";
+    const fs::path absent = source_dir / "native/parakeet-not-shipped-here.dll";
     const auto missing = voicetyper::platform::probe_parakeet_runtime(absent);
     check(!missing.usable, "loader reports Parakeet unavailable when the DLL is absent");
     check(missing.reason == EngineAvailabilityReason::native_library_missing,
@@ -622,7 +622,7 @@ void check_parakeet_entry(const std::string& manifest, const fs::path& source_di
     }
 
     // ...and ABI 6 with all six symbols bound when the shipped DLL is present.
-    const fs::path shipped = source_dir / "VoiceTyper.App/Native/parakeet.dll";
+    const fs::path shipped = source_dir / "native/parakeet.dll";
     if (!fs::is_regular_file(shipped)) {
         skip("shipped parakeet.dll is not in this checkout; ABI probe not executed");
         return;

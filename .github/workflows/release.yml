@@ -53,14 +53,24 @@ jobs:
         shell: pwsh
         run: choco install innosetup -y --no-progress
 
+      # The same preset the developer machine uses. It carries the toolchain file, and
+      # the toolchain reads VOICETYPER_MINGW_ROOT / VOICETYPER_QT_ROOT from the
+      # environment, which is what the two variables below provide: QT_ROOT_DIR is
+      # exported by install-qt-action, and the MinGW 13.1 root sits under its tools
+      # directory. A hand-written cmake command without the toolchain fails with
+      # "Set VOICETYPER_MINGW_ROOT or MINGW_ROOT to a verified MinGW-w64 root".
       - name: build the deploy tree
         shell: pwsh
+        env:
+          VOICETYPER_QT_ROOT: ${{ env.QT_ROOT_DIR }}
+          VOICETYPER_MINGW_ROOT: ${{ env.IQTA_TOOLS }}\mingw1310_64
         run: |
-          cmake -S . -B build/windows-mingw-release -G Ninja `
-            -DCMAKE_BUILD_TYPE=Release `
-            -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ `
-            -DVOICETYPER_VERSION=${{ steps.version.outputs.value }}
-          cmake --build build/windows-mingw-release --target voicetyper-deploy
+          if (-not (Test-Path "$env:VOICETYPER_MINGW_ROOT\bin\g++.exe")) {
+            Get-ChildItem "$env:IQTA_TOOLS" | ForEach-Object { Write-Host $_.Name }
+            throw "no MinGW at $env:VOICETYPER_MINGW_ROOT"
+          }
+          cmake --preset windows-mingw-release -DVOICETYPER_VERSION=${{ steps.version.outputs.value }}
+          cmake --build --preset windows-mingw-release --target voicetyper-deploy
 
       - name: build the installer
         shell: pwsh

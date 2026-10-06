@@ -7,6 +7,7 @@
 
 #include "app/application_font.hpp"
 #include "app/status_overlay.hpp"
+#include "platform/api/status_overlay.hpp"
 #include "app/tray_controller.hpp"
 #include "app/ui_text.hpp"
 #include "app/main_window.hpp"
@@ -1040,6 +1041,58 @@ private slots:
             qPrintable(QStringLiteral("меню без правил для пунктов: %1").arg(sheet)));
         QVERIFY2(sheet.contains(QStringLiteral("padding")),
             qPrintable(QStringLiteral("у пунктов нет отступов: %1").arg(sheet)));
+    }
+
+    // Оверлей и меню трея не переводились вообще: их строки были заданы прямо в
+    // Qt-слое, поэтому смена языка их не касалась (Александр, 06.10.2026).
+    void the_status_overlay_follows_the_language()
+    {
+        voicetyper::app::QtStatusOverlay overlay;
+        QVERIFY(overlay.create().is_ok());
+        QWidget* pill = nullptr;
+        for (auto* widget : QApplication::topLevelWidgets()) {
+            if (widget->objectName() == QStringLiteral("statusOverlay")) {
+                pill = widget;
+            }
+        }
+        QVERIFY(pill != nullptr);
+        auto* text = pill->findChild<QLabel*>(QStringLiteral("statusOverlayText"));
+        QVERIFY(text != nullptr);
+
+        overlay.set_state(voicetyper::platform::OverlayState::recording);
+        QCOMPARE(text->text(), QStringLiteral("Захват"));
+        overlay.set_language(voicetyper::domain::AppLanguage::en);
+        QCOMPARE(text->text(), QStringLiteral("Capture"));
+        overlay.set_state(voicetyper::platform::OverlayState::processing);
+        QCOMPARE(text->text(), QStringLiteral("Recognizing"));
+        overlay.set_language(voicetyper::domain::AppLanguage::ru);
+        QCOMPARE(text->text(), QStringLiteral("Распознавание"));
+    }
+
+    void the_tray_menu_follows_the_language()
+    {
+        QSystemTrayIcon icon;
+        voicetyper::app::TrayController tray(icon);
+        const auto entries = [&tray] {
+            QStringList out;
+            for (auto* action : tray.menu()->actions()) {
+                out << action->text();
+            }
+            return out;
+        };
+        QVERIFY2(entries().contains(QStringLiteral("Открыть настройки")),
+            qPrintable(entries().join(QLatin1Char('|'))));
+        tray.set_language(voicetyper::domain::AppLanguage::en);
+        QVERIFY2(entries().contains(QStringLiteral("Open settings")),
+            qPrintable(entries().join(QLatin1Char('|'))));
+        QVERIFY2(entries().contains(QStringLiteral("Quit")),
+            qPrintable(entries().join(QLatin1Char('|'))));
+        tray.set_recording(true);
+        QVERIFY2(entries().contains(QStringLiteral("Stop")),
+            qPrintable(entries().join(QLatin1Char('|'))));
+        tray.set_language(voicetyper::domain::AppLanguage::ru);
+        QVERIFY2(entries().contains(QStringLiteral("Остановить")),
+            qPrintable(entries().join(QLatin1Char('|'))));
     }
 
     void record_button_is_disabled_without_a_backend()

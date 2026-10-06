@@ -17,6 +17,7 @@
 
 #include "app/application_font.hpp"
 #include "app/qt_http_client.hpp"
+#include "app/ui_text.hpp"
 #include "core/support/update_service.hpp"
 #include "platform/api/capture_guard.hpp"
 #include "platform/windows/win32_update_launcher.hpp"
@@ -63,6 +64,13 @@
 
 namespace voicetyper::app {
 namespace {
+
+/// The shell's status strings follow the interface language of the settings: the window
+/// re-letters itself, and these messages have to match it (Alexander, 06.10.2026).
+QString localized(UiKey key)
+{
+    return ui_text(key, current_language());
+}
 
 /// The marker an installer must carry to be allowed to update THIS build: the native
 /// package is published as VoiceTyper-<version>-win64-Setup.exe (the frozen asset regex
@@ -398,7 +406,8 @@ int run(int argc, char** argv)
                         "autostart entry belongs to another installation and was left alone",
                         "registry=\"" + platform::win32::to_log_text(current.value().command_line)
                             + "\" this=\"" + platform::win32::to_log_text(own_path.value())
-                            + "\" (change «Запускать вместе с Windows» to re-register it for this build)"));
+                            + "\" (" + localized(UiKey::k14).toStdString()
+                            + " to re-register it for this build)"));
                     return;
                 }
             }
@@ -509,6 +518,12 @@ int run(int argc, char** argv)
     // service that posts to it is destroyed first and can never call into a freed
     // overlay.
     QtStatusOverlay status_overlay;
+    // The language the shell speaks before the first change arrives.
+    set_current_language(presenter.settings().app_language);
+    /// Set once the tray exists: the menu is created later in this function, so the
+    /// language change reaches it through this hook (the same pattern used for the
+    /// window before the language was applied in place).
+    std::function<void(domain::AppLanguage)> apply_language_to_tray;
     // The pill has to be readable in both themes; the global stylesheet made it white
     // with light grey text in the light one.
     status_overlay.set_theme(presenter.settings().theme);
@@ -628,7 +643,8 @@ int run(int argc, char** argv)
             const std::string name = describe_state(state);
             static_cast<void>(logger.write(
                 platform::LogLevel::info, std::string("recording state=") + name));
-            status_channel->post(QStringLiteral("запись: ") + QString::fromStdString(name));
+            status_channel->post(localized(UiKey::k84) + QStringLiteral(": ")
+                + QString::fromStdString(name));
             // The overlay is the frameless "Захват"/"Распознавание" indicator.
             // post_state is queued onto the UI thread: this handler runs on the
             // recording worker, and a widget must never be touched from there.
@@ -647,10 +663,11 @@ int run(int argc, char** argv)
         // wasapi capture configuration", which tells the user nothing. Say what can be
         // acted on; the raw detail stays in the log and on the overlay.
         const bool device_problem = error.code() == domain::ErrorCode::io_failure;
-        const QString device_message = QStringLiteral("микрофон недоступен: устройство отключено или занято");
+        const QString device_message = localized(UiKey::k97);
         status_channel->post(device_problem
                 ? device_message
-                : QStringLiteral("ошибка: ") + QString::fromStdString(std::string(error_code_name(error.code()))));
+                : localized(UiKey::k85) + QStringLiteral(": ")
+                    + QString::fromStdString(std::string(error_code_name(error.code()))));
         // The overlay keeps this on screen until the next dictation, so a
         // missing model or a lost device is visible instead of silent.
         status_overlay.post_state(platform::OverlayState::error,
@@ -663,7 +680,7 @@ int run(int argc, char** argv)
             "text delivered",
             "characters=" + std::to_string(text.size())));
         static_cast<void>(text.size());
-        status_channel->post(QStringLiteral("текст передан"));
+        status_channel->post(localized(UiKey::k86));
     });
 
     machine.set_options_provider([&presenter] {
@@ -735,28 +752,30 @@ int run(int argc, char** argv)
         const auto snapshot = engine_host.state();
         switch (snapshot.readiness) {
         case asr::EngineReadiness::ready:
-            return QObject::tr("движок готов");
+            return localized(UiKey::k87);
         case asr::EngineReadiness::loading:
-            return QObject::tr("загрузка модели…");
+            return localized(UiKey::k88);
         case asr::EngineReadiness::warming:
-            return QObject::tr("прогрев модели…");
+            return localized(UiKey::k89);
         case asr::EngineReadiness::model_missing:
-            return QObject::tr("модель не выбрана");
+            return localized(UiKey::k90);
         case asr::EngineReadiness::unavailable:
-            return QObject::tr("движок недоступен: %1")
+            return localized(UiKey::k91) + QStringLiteral(": ")
                 .arg(QString::fromStdString(std::string(
                     platform::engine_availability_reason_name(snapshot.reason))));
         case asr::EngineReadiness::failed:
-            return QObject::tr("ошибка загрузки: %1").arg(QString::fromStdString(snapshot.last_error));
+            return localized(UiKey::k92) + QStringLiteral(": ")
+                + QString::fromStdString(snapshot.last_error);
         default:
-            return QObject::tr("движок не инициализирован");
+            return localized(UiKey::k93);
         }
     };
     services.record_hotkey_state = [&hotkeys, &presenter] {
         const auto& current = presenter.settings();
         return hotkeys.record_key_code() != 0
-            ? QObject::tr("хоткей: %1").arg(QString::fromStdString(current.record_hotkey))
-            : QObject::tr("хоткей не зарегистрирован");
+            ? localized(UiKey::k94) + QStringLiteral(": ")
+                + QString::fromStdString(current.record_hotkey)
+            : localized(UiKey::k95);
     };
     services.microphones = [&microphone] {
         std::vector<std::pair<std::string, std::string>> result;
@@ -818,7 +837,7 @@ int run(int argc, char** argv)
             }));
         }));
     };
-    services.update_install = [&logger, &update_executor, &ui_executor, &application](
+    services.update_install = [&logger, &update_executor, &ui_executor, &application, &presenter](
                                  std::function<void(int, QString, QString)> progress) {
         static_cast<void>(update_executor.post([&logger, &ui_executor, &application,
                                                    progress = std::move(progress)] {
@@ -839,7 +858,7 @@ int run(int argc, char** argv)
                     "the release carries no installer built for this application"));
                 static_cast<void>(ui_executor.post([progress] {
                     progress(-1, QStringLiteral("download"),
-                        QStringLiteral("сборка обновления для нативной версии ещё не опубликована"));
+                        localized(UiKey::k103));
                 }));
                 return;
             }
@@ -983,8 +1002,8 @@ int run(int argc, char** argv)
             : models_directory(paths) / parakeet_file_for(static_cast<domain::ParakeetModelSize>(size_index));
         const std::string name = file.filename().string();
         // Deleting a file is irreversible, so it is confirmed first.
-        const auto answer = QMessageBox::question(nullptr, QObject::tr("Удалить модель"),
-            QObject::tr("Удалить файл модели «%1» с диска?").arg(QString::fromStdString(name)),
+        const auto answer = QMessageBox::question(nullptr, localized(UiKey::k99),
+            localized(UiKey::k100).arg(QString::fromStdString(name)),
             QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
         if (answer != QMessageBox::Yes) {
             return false;
@@ -1031,6 +1050,12 @@ int run(int argc, char** argv)
     services.settings_applied = [&](const domain::AppSettings& updated) {
         // The overlay follows the theme: white on white was unreadable.
         status_overlay.set_theme(updated.theme);
+        status_overlay.set_language(updated.app_language);
+        // Every later status string is built in the language the user just chose.
+        set_current_language(updated.app_language);
+        if (apply_language_to_tray) {
+            apply_language_to_tray(updated.app_language);
+        }
 
         static_cast<void>(logger.write(
             platform::LogLevel::info,
@@ -1085,7 +1110,7 @@ int run(int argc, char** argv)
 
     services.log_text = [&logger] {
         const auto lines = logger.tail(200);
-        return lines.is_ok() ? QString::fromStdString(lines.value()) : QStringLiteral("журнал недоступен");
+        return lines.is_ok() ? QString::fromStdString(lines.value()) : localized(UiKey::k96);
     };
 
     if (selftest) {
@@ -1161,6 +1186,9 @@ int run(int argc, char** argv)
             });
     };
     wire_tray_window();
+    // The tray menu is built once, so it is told the language now and on every change.
+    apply_language_to_tray = [&tray](domain::AppLanguage language) { tray.set_language(language); };
+    tray.set_language(presenter.settings().app_language);
     QObject::connect(&tray, &TrayController::quit_requested, &application, &QCoreApplication::quit);
     if (QSystemTrayIcon::isSystemTrayAvailable()) {
         tray_icon.show();

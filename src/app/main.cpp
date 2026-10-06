@@ -26,6 +26,7 @@ int main(int argc, char** argv)
 #else
 #include "app/application_font.hpp"
 #include "app/main_window.hpp"
+#include "app/ui_text.hpp"
 #include "app/settings_presenter.hpp"
 #include "platform/portable/portable_runtime.hpp"
 
@@ -75,8 +76,11 @@ int main(int argc, char** argv)
     }
 
     voicetyper::app::WindowServices services;
-    services.engine_status = [] { return QObject::tr("движок не инициализирован (нет активного бэкенда)"); };
-    services.record_hotkey_state = [] { return QObject::tr("хоткеи не зарегистрированы"); };
+    // Read at call time, so these follow a language change like the rest of the window.
+    set_current_language(presenter.settings().app_language);
+    // Read at call time, so these follow a language change like the rest of the window.
+    services.engine_status = [] { return ui_text(UiKey::k101, current_language()); };
+    services.record_hotkey_state = [] { return ui_text(UiKey::k102, current_language()); };
 
     voicetyper::app::MainWindow window(presenter, std::move(services));
     window.show();

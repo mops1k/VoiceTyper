@@ -8,6 +8,8 @@
 
 #include <QIcon>
 #include <QObject>
+
+#include "domain/settings.hpp"
 #include <QString>
 
 class QAction;
@@ -31,6 +33,9 @@ public:
     /// state the main window shows.
     void set_status(const QString& text);
 
+    /// Re-letters the menu and keeps the record entry's wording in step with the state.
+    void set_language(domain::AppLanguage language);
+
     /// The context menu, for tests and for anything that needs to restyle it.
     [[nodiscard]] QMenu* menu() const { return menu_; }
 
@@ -44,6 +49,8 @@ private:
     QMenu* menu_ = nullptr;
     QAction* show_action_ = nullptr;
     QAction* record_action_ = nullptr;
+    domain::AppLanguage language_ = domain::AppLanguage::ru;
+    bool recording_ = false;
     QAction* quit_action_ = nullptr;
 };
 

@@ -2,6 +2,7 @@
 // implements; everything observable is asserted by tests/ui/ui_status_overlay_test.cpp.
 
 #include "app/status_overlay.hpp"
+#include "app/ui_text.hpp"
 
 #include <QCursor>
 #include <QFont>
@@ -19,6 +20,10 @@
 
 namespace voicetyper::app {
 namespace {
+
+/// The pill's text for a state, in the interface language (defined below the class
+/// methods; declared here because the constructor already asks for it).
+QString overlay_state_text(platform::OverlayState state, domain::AppLanguage language);
 
 using domain::ErrorCode;
 
@@ -207,7 +212,7 @@ void QtStatusOverlay::build()
     layout->addWidget(status_text_);
 
     set_accent(kOverlayRecordingAccent);
-    set_pill_text(std::string(kOverlayRecordingText));
+    set_pill_text(overlay_state_text(platform::OverlayState::recording, language_).toStdString());
     pill_->adjustSize();
 }
 
@@ -215,6 +220,12 @@ void QtStatusOverlay::apply_state(platform::OverlayState state, const std::strin
 {
     if (pill_ == nullptr) {
         return;
+    }
+    // The state itself is set where the original code set it: the idle branch below must
+    // see the *previous* state, because an error deliberately survives an idle transition
+    // (and an unconditional assignment here silently broke exactly that).
+    if (!detail.empty()) {
+        detail_ = detail;
     }
 
     if (state == platform::OverlayState::idle) {
@@ -232,17 +243,17 @@ void QtStatusOverlay::apply_state(platform::OverlayState state, const std::strin
 
     switch (state) {
     case platform::OverlayState::recording:
-        set_pill_text(std::string(kOverlayRecordingText));
+        set_pill_text(overlay_state_text(state, language_).toStdString());
         set_accent(kOverlayRecordingAccent);
         start_pulse();
         break;
     case platform::OverlayState::processing:
-        set_pill_text(std::string(kOverlayProcessingText));
+        set_pill_text(overlay_state_text(state, language_).toStdString());
         set_accent(kOverlayProcessingAccent);
         stop_pulse();
         break;
     case platform::OverlayState::error:
-        set_pill_text(detail.empty() ? std::string(kOverlayErrorText) : detail);
+        set_pill_text(detail.empty() ? overlay_state_text(state, language_).toStdString() : detail);
         set_accent(kOverlayErrorAccent);
         stop_pulse();
         break;
@@ -299,6 +310,31 @@ void QtStatusOverlay::apply_colours()
                             .arg(dot_colour_)
                             .arg(kOverlayDotSizePx / 2));
     status_text_->setStyleSheet(QStringLiteral("color: %1; background: transparent;").arg(text_colour_));
+}
+
+namespace {
+/// The pill's text for a state, in the interface language.
+QString overlay_state_text(platform::OverlayState state, domain::AppLanguage language)
+{
+    switch (state) {
+    case platform::OverlayState::recording:
+        return ui_text(UiKey::k77, language);
+    case platform::OverlayState::processing:
+        return ui_text(UiKey::k78, language);
+    case platform::OverlayState::error:
+        return ui_text(UiKey::k79, language);
+    case platform::OverlayState::idle:
+        break;
+    }
+    return QString();
+}
+} // namespace
+
+void QtStatusOverlay::set_language(domain::AppLanguage language)
+{
+    language_ = language;
+    // Same state, new words: nothing else about the pill changes.
+    apply_state(state_, detail_);
 }
 
 void QtStatusOverlay::set_theme(domain::AppTheme theme)

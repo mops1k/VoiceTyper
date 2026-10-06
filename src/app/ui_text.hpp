@@ -90,6 +90,40 @@ enum class UiKey : int {
     k74,
     k75,
     k76,
+
+    /// Оверлей.
+    k77,
+    k78,
+    k79,
+    /// Меню трея.
+    k80,
+    k81,
+    k82,
+    k83,
+    /// Статусы в футере и сообщения движка.
+    k84,
+    k85,
+    k86,
+    k87,
+    k88,
+    k89,
+    k90,
+    k91,
+    k92,
+    k93,
+    k94,
+    k95,
+    k96,
+    k97,
+    k98,
+    /// Диалог удаления модели.
+    k99,
+    k100,
+    /// Сообщения при неудачном старте.
+    k101,
+    k102,
+    /// Отказ установки обновления.
+    k103,
     /// Not a string: the number of keys. The table is checked against it at compile
     /// time, so a key without an entry (or an entry without a key - which silently
     /// shifts every later label, as happened once) cannot survive a build.
@@ -98,6 +132,15 @@ enum class UiKey : int {
 
 /// The text of `key` in `language`. An unknown language falls back to Russian, which
 /// is what the product ships first.
+/// The language the interface is currently in.
+///
+/// The composition sets it at startup and on every language change. It plays the role
+/// CultureInfo.CurrentUICulture played in the .NET build: status strings are produced in
+/// many lambdas that own no settings presenter, and threading the language through each
+/// of them would mean a capture in every one - and a silent mistake in the first missed.
+void set_current_language(domain::AppLanguage language);
+[[nodiscard]] domain::AppLanguage current_language();
+
 [[nodiscard]] QString ui_text(UiKey key, domain::AppLanguage language);
 
 } // namespace voicetyper::app

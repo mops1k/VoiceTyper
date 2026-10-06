@@ -112,14 +112,16 @@ private slots:
 
         const double first = opacity_of(dot);
         QVERIFY2(first == 1.0 || first == 0.35, "the pulse only ever uses the two frozen opacities");
-        QTest::qWait(voicetyper::platform::kOverlayPulsePeriod.count() + 60);
-        const double second = opacity_of(dot);
-        QVERIFY2(second != first, "the recording indicator must pulse");
-
-        // Two more periods bring it back, which also proves the timer keeps
-        // running for as long as the state does.
-        QTest::qWait(voicetyper::platform::kOverlayPulsePeriod.count() + 60);
-        QCOMPARE(opacity_of(dot), first);
+        // The tick is awaited rather than assumed to land inside one period: the timer is
+        // coarse and the suite runs other tests beside this one, so under load a sample
+        // could be taken twice in the same phase - which is exactly how this failed once
+        // on Windows while passing on its own.
+        QTRY_VERIFY_WITH_TIMEOUT(opacity_of(dot) != first,
+            voicetyper::platform::kOverlayPulsePeriod.count() + 600);
+        // Coming back to the very first value also proves the timer keeps running for as
+        // long as the state does.
+        QTRY_VERIFY_WITH_TIMEOUT(opacity_of(dot) == first,
+            3 * voicetyper::platform::kOverlayPulsePeriod.count() + 600);
     }
 
     void processing_changes_the_accent_and_stops_the_pulse()

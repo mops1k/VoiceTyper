@@ -12,7 +12,7 @@ struct Entry {
 };
 
 /// One row per UiKey, in the same order as the enum.
-constexpr std::array<Entry, 77> kTexts{{
+constexpr std::array<Entry, 104> kTexts{{
     Entry{" мс", " ms"},
     Entry{"%1 (недоступен)", "%1 (unavailable)"},
     Entry{"%1 · Скорость: %2 · Качество: %3", "%1 · Speed: %2 · Quality: %3"},
@@ -93,6 +93,37 @@ constexpr std::array<Entry, 77> kTexts{{
     Entry{"Распознавание выполняется локально; данные никуда не отправляются.",
         "Recognition runs locally; nothing is sent anywhere."},
     Entry{"Обновление", "Update"},
+    Entry{"Захват", "Capture"},
+    Entry{"Распознавание", "Recognizing"},
+    Entry{"Ошибка", "Error"},
+    Entry{"Открыть настройки", "Open settings"},
+    Entry{"Записать", "Record"},
+    Entry{"Остановить", "Stop"},
+    Entry{"Выход", "Quit"},
+    Entry{"запись", "recording"},
+    Entry{"ошибка", "error"},
+    Entry{"текст передан", "text pasted"},
+    Entry{"движок готов", "engine ready"},
+    Entry{"загрузка модели…", "loading the model…"},
+    Entry{"прогрев модели…", "warming the model up…"},
+    Entry{"модель не выбрана", "no model selected"},
+    Entry{"движок недоступен", "engine unavailable"},
+    Entry{"ошибка загрузки", "load failed"},
+    Entry{"движок не инициализирован", "the engine is not initialised"},
+    Entry{"хоткей", "hotkey"},
+    Entry{"хоткей не зарегистрирован", "the hotkey is not registered"},
+    Entry{"журнал недоступен", "the log is unavailable"},
+    Entry{"микрофон недоступен: устройство отключено или занято",
+        "microphone unavailable: the device is disconnected or busy"},
+    Entry{"не удалось зарегистрировать запуск вместе с Windows",
+        "could not register the run-at-Windows-startup entry"},
+    Entry{"Удалить модель", "Delete model"},
+    Entry{"Удалить файл модели «%1» с диска?", "Delete the model file \u201c%1\u201d from disk?"},
+    Entry{"движок не инициализирован (нет активного бэкенда)",
+        "the engine is not initialised (no active backend)"},
+    Entry{"хоткеи не зарегистрированы", "the hotkeys are not registered"},
+    Entry{"сборка обновления для нативной версии ещё не опубликована",
+        "the update build for the native version is not published yet"},
 }};
 
 } // namespace
@@ -100,6 +131,20 @@ constexpr std::array<Entry, 77> kTexts{{
 // The single guard that makes the table and the enum impossible to drift apart.
 static_assert(kTexts.size() == static_cast<std::size_t>(UiKey::kCount),
     "ui_text: every UiKey needs exactly one table entry, in the same order");
+
+namespace {
+domain::AppLanguage g_current_language = domain::AppLanguage::ru;
+} // namespace
+
+void set_current_language(domain::AppLanguage language)
+{
+    g_current_language = language;
+}
+
+domain::AppLanguage current_language()
+{
+    return g_current_language;
+}
 
 QString ui_text(UiKey key, domain::AppLanguage language)
 {

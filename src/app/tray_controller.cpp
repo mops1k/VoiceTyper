@@ -7,6 +7,7 @@
 //     second recorder that would fight over the microphone and the clipboard.
 
 #include "app/tray_controller.hpp"
+#include "app/ui_text.hpp"
 
 #include <QApplication>
 #include <QAction>
@@ -91,13 +92,13 @@ TrayController::TrayController(QSystemTrayIcon& icon, QObject* parent)
     // устраивало (уточнение Александра, 06.10.2026 - вертикальные отступы он просил
     // не в меню трея, а в списке разделов внутри окна настроек).
     menu_->setStyleSheet(QStringLiteral("QMenu::item { padding-right: 26px; }"));
-    show_action_ = menu_->addAction(tr("Открыть настройки"));
+    show_action_ = menu_->addAction(ui_text(UiKey::k80, language_));
     QObject::connect(show_action_, &QAction::triggered, this, &TrayController::show_requested);
     menu_->addSeparator();
-    record_action_ = menu_->addAction(tr("Записать"));
+    record_action_ = menu_->addAction(ui_text(UiKey::k81, language_));
     QObject::connect(record_action_, &QAction::triggered, this, &TrayController::record_requested);
     menu_->addSeparator();
-    quit_action_ = menu_->addAction(tr("Выход"));
+    quit_action_ = menu_->addAction(ui_text(UiKey::k83, language_));
     QObject::connect(quit_action_, &QAction::triggered, this, &TrayController::quit_requested);
     icon_.setContextMenu(menu_);
     QObject::connect(&icon_, &QSystemTrayIcon::activated, this, [this](QSystemTrayIcon::ActivationReason reason) {
@@ -107,9 +108,18 @@ TrayController::TrayController(QSystemTrayIcon& icon, QObject* parent)
     });
 }
 
+void TrayController::set_language(domain::AppLanguage language)
+{
+    language_ = language;
+    show_action_->setText(ui_text(UiKey::k80, language_));
+    record_action_->setText(ui_text(recording_ ? UiKey::k82 : UiKey::k81, language_));
+    quit_action_->setText(ui_text(UiKey::k83, language_));
+}
+
 void TrayController::set_recording(bool recording)
 {
-    record_action_->setText(recording ? tr("Остановить") : tr("Записать"));
+    recording_ = recording;
+    record_action_->setText(ui_text(recording_ ? UiKey::k82 : UiKey::k81, language_));
     record_action_->setEnabled(true);
 }
 

@@ -34,6 +34,7 @@
 // (migration plan, Phase E "Перенести localization, theme и log view"), and the
 // constants below are the single place that task has to touch.
 
+#include "app/ui_text.hpp"
 #include "domain/settings.hpp"
 #include "platform/api/status_overlay.hpp"
 
@@ -59,6 +60,8 @@ inline constexpr int kOverlayDotSizePx = 11;
 /// pill across the screen.
 inline constexpr int kOverlayMaxTextWidthPx = 560;
 
+/// The .NET overlay's Russian texts, kept as the parity reference. What is shown comes
+/// from the string table (ui_text), so the pill follows the interface language.
 inline constexpr std::string_view kOverlayRecordingText = "Захват";
 inline constexpr std::string_view kOverlayProcessingText = "Распознавание";
 inline constexpr std::string_view kOverlayErrorText = "Ошибка";
@@ -91,6 +94,10 @@ public:
     /// UI thread only. Failure codes: invalid_state (wrong thread, or after
     /// destroy), unavailable (no QGuiApplication).
     platform::Status create() override;
+
+    /// Re-letters the pill in the given interface language, keeping the state that is
+    /// currently shown.
+    void set_language(domain::AppLanguage language);
 
     /// Recolours the pill for the current application theme.
     ///
@@ -147,6 +154,9 @@ private:
     /// post_state(), so it is atomic rather than a plain bool.
     std::atomic<bool> shutdown_{false};
     platform::OverlayState state_ = platform::OverlayState::idle;
+    /// The state shown now, with its detail, so a language change can repeat it.
+    std::string detail_;
+    domain::AppLanguage language_ = domain::AppLanguage::ru;
 };
 
 } // namespace voicetyper::app

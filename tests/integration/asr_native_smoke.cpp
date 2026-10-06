@@ -1,0 +1,147 @@
+// Real-model ASR smoke test. It is opt-in by data, not by build: when the model
+// file is absent it prints a skip reason and passes, so CI without models stays
+// green while a developer with a model gets real evidence.
+//
+// What it proves: the whole chain works on this machine — EngineRegistry ->
+// model load -> deep warm-up -> one full transcription — and it reports the
+// timings the performance-parity task needs. What it does NOT prove: recognition
+// quality. Every checked-in WAV fixture is sine or silence, so a non-empty
+// transcript is not a quality claim; a real speech clip is a physical-smoke input.
+
+#include "asr/engine_parameters.hpp"
+#include "asr/native_engine_registry.hpp"
+#include "asr/native_transcribers.hpp"
+#include "domain/audio_wav.hpp"
+
+#include <chrono>
+#include <cstdlib>
+#include <filesystem>
+#include <iomanip>
+#include <iostream>
+#include <string>
+
+namespace {
+
+std::string environment(const char* name)
+{
+    const auto* value = std::getenv(name);
+    return value == nullptr ? std::string() : std::string(value);
+}
+
+void report(const std::string& key, const std::string& value)
+{
+    std::cout << "  \"" << key << "\": \"" << value << "\",\n";
+}
+
+} // namespace
+
+int main()
+{
+    const auto model = environment("VOICETYPER_WHISPER_MODEL");
+    const auto fixture = environment("VOICETYPER_ASR_FIXTURE");
+    if (model.empty() || !std::filesystem::is_regular_file(model)) {
+        std::cout << "asr-native-smoke: SKIP (set VOICETYPER_WHISPER_MODEL to a ggml model file)\n";
+        return 0;
+    }
+    if (fixture.empty() || !std::filesystem::is_regular_file(fixture)) {
+        std::cout << "asr-native-smoke: SKIP (set VOICETYPER_ASR_FIXTURE to a 16 kHz mono PCM16 WAV)\n";
+        return 0;
+    }
+
+    const auto raw = voicetyper::domain::read_wav_file(fixture);
+    if (raw.is_error()) {
+        std::cerr << "asr-native-smoke: FAIL fixture is not a 16 kHz mono PCM16 WAV: "
+                  << raw.error().message() << '\n';
+        return 1;
+    }
+
+    voicetyper::asr::NativeEngineRegistryOptions options;
+    options.whisper_available = true;
+    options.whisper_factory = [](const std::filesystem::path& path) {
+        return voicetyper::asr::make_whisper_engine(path);
+    };
+    options.parakeet_factory = [](const std::filesystem::path&, const std::filesystem::path&) {
+        return voicetyper::asr::make_parakeet_engine({}, {});
+    };
+    options.parakeet_probe = [](voicetyper::domain::TranscriptionEngine engine, const std::filesystem::path&) {
+        voicetyper::platform::EngineAvailability state;
+        state.engine = engine;
+        state.available = false;
+        state.reason = voicetyper::platform::EngineAvailabilityReason::platform_unsupported;
+        return state;
+    };
+
+    voicetyper::asr::NativeEngineRegistry registry(std::move(options));
+    const auto registered = registry.set_model_path(voicetyper::domain::TranscriptionEngine::whisper, model);
+    if (registered.is_error()) {
+        std::cerr << "asr-native-smoke: FAIL could not register the model path\n";
+        return 1;
+    }
+    const auto availability = registry.availability(voicetyper::domain::TranscriptionEngine::whisper);
+    if (!availability.available) {
+        std::cerr << "asr-native-smoke: FAIL whisper reported unavailable for a present model\n";
+        return 1;
+    }
+
+    const auto load_started = std::chrono::steady_clock::now();
+    auto engine = registry.create(voicetyper::domain::TranscriptionEngine::whisper, {});
+    if (engine.is_error()) {
+        std::cerr << "asr-native-smoke: FAIL create: " << engine.error().message() << '\n';
+        return 1;
+    }
+    const auto load_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - load_started).count();
+
+    if (!engine.value()->is_ready()) {
+        std::cerr << "asr-native-smoke: FAIL the engine is not ready after create\n";
+        return 1;
+    }
+
+    const voicetyper::domain::CancellationToken none;
+    const auto warm_started = std::chrono::steady_clock::now();
+    const auto warm = engine.value()->deep_warmup(none);
+    const auto warm_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - warm_started).count();
+    if (warm.is_error()) {
+        std::cerr << "asr-native-smoke: FAIL deep warm-up: " << warm.error().message() << '\n';
+        return 1;
+    }
+
+    std::string wav_bytes;
+    const auto written = voicetyper::domain::write_wav_pcm16(raw.value(), wav_bytes);
+    if (written.is_error()) {
+        std::cerr << "asr-native-smoke: FAIL could not encode the fixture\n";
+        return 1;
+    }
+    std::vector<std::byte> wav_data(wav_bytes.size());
+    for (std::size_t i = 0; i < wav_bytes.size(); ++i) {
+        wav_data[i] = static_cast<std::byte>(static_cast<unsigned char>(wav_bytes[i]));
+    }
+
+    voicetyper::platform::TranscriptionRequest request;
+    request.language = voicetyper::domain::RecognitionLanguage::ru;
+    request.best_of = 3;
+
+    const auto transcribe_started = std::chrono::steady_clock::now();
+    const auto transcript = engine.value()->transcribe(
+        voicetyper::domain::WavAudio(std::move(wav_data)), request, none);
+    const auto transcribe_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - transcribe_started).count();
+    if (transcript.is_error()) {
+        std::cerr << "asr-native-smoke: FAIL transcribe: " << transcript.error().message() << '\n';
+        return 1;
+    }
+
+    std::cout << "{\n";
+    report("model", model);
+    report("fixture", fixture);
+    report("fixture_seconds", std::to_string(static_cast<double>(raw.value().size()) / 16000.0));
+    report("load_ms", std::to_string(load_ms));
+    report("deep_warmup_ms", std::to_string(warm_ms));
+    report("transcribe_ms", std::to_string(transcribe_ms));
+    report("transcript", transcript.value());
+    std::cout << "  \"note\": \"pipeline evidence only; every checked-in fixture is sine or silence, so this is not a quality claim\"\n";
+    std::cout << "}\n";
+    std::cout << "asr-native-smoke: OK\n";
+    return 0;
+}

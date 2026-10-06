@@ -1,0 +1,23 @@
+{
+  "recordingMode": "pushToTalk",
+  "recordHotkey": "Ctrl\u002BAlt\u002BSpace",
+  "cancelHotkey": "Ctrl\u002BAlt\u002BEscape",
+  "recordGamepadButton": null,
+  "cancelGamepadButton": null,
+  "language": "ru",
+  "modelSize": "small",
+  "transcriptionEngine": "whisper",
+  "parakeetModelSize": "q8_0",
+  "autoPasteEnabled": true,
+  "termsDictionary": "API,CPU,GPU,ASR,STT,TTS,LLM,JSON,IDE,SQL",
+  "silenceThresholdMs": 1200,
+  "startWithWindows": false,
+  "startMinimized": false,
+  "theme": "system",
+  "hideOnFocusLoss": false,
+  "appLanguage": "ru",
+  "noiseReductionEnabled": false,
+  "temperature": 0,
+  "conditionOnPreviousText": false,
+  "microphoneDeviceId": null
+}

@@ -1,0 +1,383 @@
+#include "domain/settings_json.hpp"
+
+#include <algorithm>
+#include <chrono>
+#include <cmath>
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <iterator>
+#include <limits>
+#include <string>
+
+namespace {
+
+static_assert(
+    voicetyper::domain::kAppSettingsPropertyCount == 21,
+    "settings.json schema changed: the 21-property contract is frozen in settings.hpp");
+
+int failures = 0;
+
+void check(bool condition, const std::string& message)
+{
+    if (!condition) {
+        ++failures;
+        std::cerr << "FAIL " << message << '\n';
+    }
+}
+
+std::string read_file(const std::filesystem::path& path)
+{
+    std::ifstream input(path, std::ios::binary);
+    return std::string((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+}
+
+bool has_diagnostic(const voicetyper::domain::SettingsLoadResult& result, voicetyper::domain::SettingsDiagnosticKind kind, const std::string& field)
+{
+    for (const auto& diagnostic : result.diagnostics) {
+        if (diagnostic.kind == kind && diagnostic.field == field) {
+            return true;
+        }
+    }
+    return false;
+}
+
+std::filesystem::path unique_directory()
+{
+    const auto unique = std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
+    return std::filesystem::temp_directory_path() / ("voicetyper-settings-" + unique);
+}
+
+void check_defaults()
+{
+    using namespace voicetyper::domain;
+    const auto defaults = AppSettings::defaults();
+    const auto text = SettingsCodec::serialize(defaults);
+    const auto fixture = read_file(std::filesystem::path(VOICETYPER_SOURCE_DIR) / "tests/fixtures/migration/settings/settings-defaults.json");
+    check(text == fixture, "serialized defaults are byte-identical to the .NET fixture");
+    check(text.find("\r\n") != std::string::npos, "default serialization uses CRLF");
+    check(!text.empty() && text.back() == '}', "default serialization has no trailing newline");
+
+    // One line per persisted property, plus the line after the opening brace.
+    const auto line_count = static_cast<std::size_t>(std::count(text.begin(), text.end(), '\n'));
+    check(line_count == voicetyper::domain::kAppSettingsPropertyCount + 1,
+        "defaults serialize exactly kAppSettingsPropertyCount properties");
+
+    const auto loaded = SettingsCodec::load(fixture);
+    check(!loaded.used_defaults, "default fixture loads without fallback");
+    check(loaded.settings.recording_mode == RecordingMode::push_to_talk, "default recording mode");
+    check(loaded.settings.language == RecognitionLanguage::ru, "default language");
+    check(loaded.settings.transcription_engine == TranscriptionEngine::whisper, "default engine");
+    check(loaded.settings.parakeet_model_size == ParakeetModelSize::q8_0, "default parakeet quant");
+    check(!loaded.settings.microphone_device_id.has_value(), "default microphone id is null");
+}
+
+void check_all_fields()
+{
+    using namespace voicetyper::domain;
+    const auto path = std::filesystem::path(VOICETYPER_SOURCE_DIR) / "tests/fixtures/migration/settings/settings-all-fields.json";
+    const auto loaded = SettingsCodec::load(read_file(path));
+    check(!loaded.used_defaults, "all-fields fixture loads without fallback");
+    const auto& value = loaded.settings;
+    check(value.recording_mode == RecordingMode::vad, "vad mode round-trips");
+    check(value.record_hotkey == "F12" && value.cancel_hotkey == "F11", "hotkeys round-trip");
+    check(value.record_gamepad_button == std::optional<std::string>("XInput|A"), "XInput binding round-trips");
+    check(value.cancel_gamepad_button == std::optional<std::string>("DInput|Logitech|3"), "DirectInput binding round-trips");
+    check(value.language == RecognitionLanguage::en, "language round-trips");
+    check(value.model_size == ModelSize::medium, "model size round-trips");
+    check(value.transcription_engine == TranscriptionEngine::parakeet, "engine round-trips");
+    check(value.parakeet_model_size == ParakeetModelSize::q4k, "Parakeet quant round-trips");
+    check(!value.auto_paste_enabled, "auto paste round-trips");
+    check(value.terms_dictionary.find("Клавиатура") != std::string::npos, "unicode escape decodes");
+    check(value.silence_threshold_ms == 900, "silence threshold round-trips");
+    check(value.start_with_windows && value.start_minimized, "startup flags round-trip");
+    check(value.theme == AppTheme::dark, "theme round-trips");
+    check(value.hide_on_focus_loss, "hide on focus loss round-trips");
+    check(value.app_language == AppLanguage::en, "app language round-trips");
+    check(value.noise_reduction_enabled, "noise reduction round-trips");
+    check(value.temperature == 0.7, "temperature round-trips");
+    check(value.condition_on_previous_text, "previous-text flag round-trips");
+    check(value.microphone_device_id.has_value() && value.microphone_device_id->find("wasapi:") == 0, "microphone id is preserved");
+
+    const auto round_trip = SettingsCodec::serialize(value);
+    {
+        // A byte mismatch is useless without the line that differs; print the first one.
+        const std::string expected = read_file(path);
+        if (round_trip == expected) {
+            check(true, "all-fields fixture round-trips byte-for-byte");
+        } else {
+            std::size_t line = 1;
+            std::size_t index = 0;
+            while (index < round_trip.size() && index < expected.size() && round_trip[index] == expected[index]) {
+                line += round_trip[index] == '\n' ? 1U : 0U;
+                ++index;
+            }
+            std::string actual_line;
+            std::string expected_line;
+            for (std::size_t i = index; i < round_trip.size() && round_trip[i] != '\n'; ++i) {
+                actual_line.push_back(round_trip[i]);
+            }
+            for (std::size_t i = index; i < expected.size() && expected[i] != '\n'; ++i) {
+                expected_line.push_back(expected[i]);
+            }
+            check(false, "all-fields fixture round-trips byte-for-byte: first difference on line "
+                    + std::to_string(line) + ": wrote \"" + actual_line + "\", fixture has \""
+                    + expected_line + "\"");
+        }
+    }
+}
+
+void check_legacy_and_pascal()
+{
+    using namespace voicetyper::domain;
+    const auto root = std::filesystem::path(VOICETYPER_SOURCE_DIR) / "tests/fixtures/migration/settings";
+    const auto legacy = SettingsCodec::load(read_file(root / "settings-legacy-missing-engine.json"));
+    check(!legacy.used_defaults, "legacy fixture loads without fallback");
+    check(legacy.settings.transcription_engine == TranscriptionEngine::whisper, "legacy engine defaults to Whisper");
+    check(legacy.settings.parakeet_model_size == ParakeetModelSize::q8_0, "legacy quant defaults to q8_0");
+
+    const auto pascal = SettingsCodec::load(read_file(root / "settings-pascal-unknown.json"));
+    check(!pascal.used_defaults, "PascalCase/unknown fixture loads");
+    check(pascal.settings.recording_mode == RecordingMode::vad, "case-insensitive property binding");
+    check(pascal.settings.temperature == 0.7, "case-insensitive value round-trip");
+}
+
+void check_invalid_and_numeric()
+{
+    using namespace voicetyper::domain;
+    const auto path = std::filesystem::path(VOICETYPER_SOURCE_DIR) / "tests/fixtures/migration/settings/settings-invalid-and-numeric-enums.json";
+    const auto result = SettingsCodec::load(read_file(path));
+    check(result.used_defaults, "invalid enum string falls back document-wide to defaults");
+    check(result.settings.recording_mode == RecordingMode::push_to_talk, "fallback resets recording mode");
+    check(has_diagnostic(result, SettingsDiagnosticKind::warning, "recordingMode"), "numeric enum warning is retained");
+    check(has_diagnostic(result, SettingsDiagnosticKind::error, "modelSize"), "invalid enum error is retained");
+
+    const auto numeric = SettingsCodec::load("{\"recordingMode\":1,\"transcriptionEngine\":1,\"parakeetModelSize\":2}");
+    check(!numeric.used_defaults, "in-range numeric enums do not force defaults");
+    check(numeric.settings.recording_mode == RecordingMode::toggle, "numeric enum maps to value");
+    check(numeric.diagnostics.size() == 3, "each numeric enum produces a warning");
+
+    const auto out_of_range = SettingsCodec::load("{\"recordingMode\":99,\"modelSize\":-1}");
+    check(out_of_range.settings.recording_mode == RecordingMode::push_to_talk, "out-of-range enum uses default");
+    check(out_of_range.diagnostics.size() == 2, "out-of-range enums warn without document fallback");
+}
+
+void check_file_round_trip()
+{
+    using namespace voicetyper::domain;
+    const auto directory = unique_directory();
+    const auto path = directory / "settings.json";
+    const auto value = AppSettings::defaults();
+    const auto saved = SettingsCodec::save_file(path, value);
+    check(saved.is_ok(), "atomic save succeeds");
+    const auto loaded = SettingsCodec::load_file(path);
+    check(!loaded.used_defaults, "saved file loads without fallback");
+    check(SettingsCodec::serialize(loaded.settings) == SettingsCodec::serialize(value), "saved file round-trips");
+    std::error_code error;
+    std::filesystem::remove_all(directory, error);
+    check(!error, "temporary settings directory is cleaned");
+}
+
+/// Finding 1: a JSON null for a non-nullable string is accepted, stored empty
+/// and warned about, matching the measured System.Text.Json behavior of still
+/// loading the document.
+void check_null_non_nullable_string()
+{
+    using namespace voicetyper::domain;
+    const auto result = SettingsCodec::load("{\"recordHotkey\":null,\"cancelHotkey\":\"F9\"}");
+    check(!result.used_defaults, "null non-nullable string does not force document fallback");
+    check(result.settings.record_hotkey.empty(), "null recordHotkey becomes the empty string");
+    check(result.settings.cancel_hotkey == "F9", "sibling properties keep their values");
+    check(has_diagnostic(result, SettingsDiagnosticKind::warning, "recordHotkey"), "null string emits a warning");
+    check(!has_diagnostic(result, SettingsDiagnosticKind::error, "recordHotkey"), "null string is not an error");
+
+    // A nullable property keeps the plain System.Text.Json "null means unset".
+    const auto nullable = SettingsCodec::load("{\"microphoneDeviceId\":null}");
+    check(!nullable.settings.microphone_device_id.has_value(), "null microphoneDeviceId stays unset");
+    check(nullable.diagnostics.empty(), "null nullable string is silent");
+
+    // The empty string that the policy produces round-trips without a warning.
+    const auto round_trip = SettingsCodec::load(SettingsCodec::serialize(result.settings));
+    check(round_trip.settings.record_hotkey.empty(), "empty hotkey round-trips");
+    check(round_trip.diagnostics.empty(), "saved empty hotkey reloads without diagnostics");
+}
+
+/// Finding 2: save_file must not gate on AppSettings::validate(), so a
+/// document that loaded with out-of-range UI values is re-saved verbatim.
+void check_out_of_range_save()
+{
+    using namespace voicetyper::domain;
+    auto value = AppSettings::defaults();
+    value.silence_threshold_ms = 99999;   // above kSilenceThresholdMsMax
+    value.temperature = -0.5;            // validate() rejects both
+    check(!value.validate().is_ok(), "out-of-range values are rejected by AppSettings::validate");
+
+    const auto directory = unique_directory();
+    const auto path = directory / "settings.json";
+    const auto saved = SettingsCodec::save_file(path, value);
+    check(saved.is_ok(), "out-of-range settings are saved like C# SettingsService.Save");
+    const auto loaded = SettingsCodec::load_file(path);
+    check(!loaded.used_defaults, "out-of-range save reloads without fallback");
+    check(loaded.settings.silence_threshold_ms == 99999, "out-of-range silenceThresholdMs round-trips");
+    check(loaded.settings.temperature == -0.5, "out-of-range temperature round-trips");
+    check(read_file(path) == SettingsCodec::serialize(value), "out-of-range file is byte-exact");
+    std::error_code error;
+    std::filesystem::remove_all(directory, error);
+}
+
+/// Finding 3: a number literal too large for int64 must not be cast to
+/// std::int64_t (undefined behaviour) and must keep its own reader's verdict.
+void check_large_number_literals()
+{
+    using namespace voicetyper::domain;
+    const auto huge = SettingsCodec::load("{\"temperature\":1e300}");
+    check(!huge.used_defaults, "1e300 is a valid double and does not force fallback");
+    check(huge.settings.temperature == 1e300, "1e300 keeps its double value");
+
+    // Not integral: an int property and a numeric enum both reject it.
+    const auto as_int = SettingsCodec::load("{\"silenceThresholdMs\":1e300}");
+    check(as_int.used_defaults, "1e300 in an int property falls back document-wide");
+    check(has_diagnostic(as_int, SettingsDiagnosticKind::error, "silenceThresholdMs"), "1e300 int read is an error");
+
+    const auto as_enum = SettingsCodec::load("{\"recordingMode\":1e300}");
+    check(as_enum.used_defaults, "1e300 numeric enum falls back document-wide");
+    check(!has_diagnostic(as_enum, SettingsDiagnosticKind::warning, "recordingMode"), "1e300 enum is an error, not a warning");
+
+    // Fractional literals in an int property are rejected the same way.
+    const auto fractional = SettingsCodec::load("{\"silenceThresholdMs\":12.5}");
+    check(fractional.used_defaults, "fractional int literal falls back document-wide");
+
+    // A literal beyond double range is a parse failure, like System.Text.Json.
+    const auto overflow = SettingsCodec::load("{\"temperature\":1e400}");
+    check(overflow.used_defaults, "1e400 is rejected as out of range");
+}
+
+/// Finding 4: astral code points must serialize as a UTF-16 surrogate pair.
+void check_astral_unicode()
+{
+    using namespace voicetyper::domain;
+    auto value = AppSettings::defaults();
+    const std::string smile = "\xF0\x9F\x98\x80";  // U+1F600
+    const std::string ceiling = "\xF4\x8F\xBF\xBF"; // U+10FFFF
+    value.terms_dictionary = smile + "," + ceiling;
+    value.record_hotkey = "Ctrl+" + smile;
+
+    const auto text = SettingsCodec::serialize(value);
+    check(text.find("\\uD83D\\uDE00") != std::string::npos, "U+1F600 is written as a surrogate pair");
+    check(text.find("\\uDBFF\\uDFFF") != std::string::npos, "U+10FFFF is written as a surrogate pair");
+    check(text.find("\\u01F600") == std::string::npos, "no 5-digit escape is emitted");
+    check(text.find("\\u10FFFF") == std::string::npos, "no 6-digit escape is emitted");
+
+    const auto reloaded = SettingsCodec::load(text);
+    check(!reloaded.used_defaults, "astral document loads without fallback");
+    check(reloaded.settings.terms_dictionary == value.terms_dictionary, "astral termsDictionary round-trips");
+    check(reloaded.settings.record_hotkey == value.record_hotkey, "astral hotkey round-trips");
+    check(SettingsCodec::serialize(reloaded.settings) == text, "astral document is stable across a re-save");
+}
+
+/// Finding 5: duplicate keys, including case-only duplicates, are resolved
+/// last-wins before validation, like System.Text.Json object binding.
+void check_duplicate_keys()
+{
+    using namespace voicetyper::domain;
+    const auto result = SettingsCodec::load("{\"recordingMode\":\"nonsense\",\"recordHotkey\":\"F9\",\"recordingMode\":\"vad\"}");
+    check(!result.used_defaults, "an invalid earlier duplicate does not force document fallback");
+    check(result.settings.recording_mode == RecordingMode::vad, "the last duplicate wins");
+    check(result.settings.record_hotkey == "F9", "sibling properties are unaffected");
+    check(result.diagnostics.empty(), "a superseded duplicate is never validated, so it emits nothing");
+
+    const auto cased = SettingsCodec::load("{\"recordingMode\":99,\"RECORDINGMODE\":2,\"recordingmode\":\"vad\"}");
+    check(!cased.used_defaults, "case-only duplicates are de-duplicated too");
+    check(cased.settings.recording_mode == RecordingMode::vad, "the last case-insensitive duplicate wins");
+    check(cased.diagnostics.empty(), "out-of-range superseded duplicates emit no warning");
+
+    const auto bool_duplicate = SettingsCodec::load("{\"autoPasteEnabled\":\"no\",\"autoPasteEnabled\":false}");
+    check(!bool_duplicate.used_defaults, "an invalid earlier boolean duplicate is superseded");
+    check(!bool_duplicate.settings.auto_paste_enabled, "the last boolean duplicate wins");
+}
+
+/// Finding 6: atomic replace over an existing file, and a failed save that
+/// leaves the old target alone with no .tmp residue.
+void check_overwrite_and_failed_save()
+{
+    using namespace voicetyper::domain;
+    const auto directory = unique_directory();
+    const auto path = directory / "settings.json";
+    const auto temporary = std::filesystem::path(path.string() + ".tmp");
+
+    auto first = AppSettings::defaults();
+    first.theme = AppTheme::light;
+    check(SettingsCodec::save_file(path, first).is_ok(), "initial save succeeds");
+
+    auto second = first;
+    second.theme = AppTheme::dark;
+    check(SettingsCodec::save_file(path, second).is_ok(), "save over an existing file succeeds");
+    const auto overwritten = SettingsCodec::load_file(path);
+    check(!overwritten.used_defaults, "overwritten file loads without fallback");
+    check(overwritten.settings.theme == AppTheme::dark, "the overwrite is visible");
+    check(read_file(path) == SettingsCodec::serialize(second), "overwrite is byte-exact");
+    std::error_code error;
+    check(!std::filesystem::exists(temporary, error), "a successful save leaves no .tmp");
+
+    // Force a portable replace failure: the target path is an existing
+    // non-empty directory, so the atomic replace cannot succeed on any OS.
+    const auto blocked = directory / "blocked.json";
+    std::filesystem::create_directories(blocked / "child", error);
+    check(!error, "the blocking directory is created");
+    const auto failed = SettingsCodec::save_file(blocked, second);
+    check(!failed.is_ok(), "replacing a directory target fails");
+    check(failed.is_error() && !failed.message().empty(), "the failure carries a diagnostic message");
+    check(std::filesystem::is_directory(blocked / "child", error), "the old target is left intact");
+    check(!std::filesystem::exists(std::filesystem::path(blocked.string() + ".tmp"), error), "a failed save leaves no .tmp");
+
+    // A missing file is a first-run state, not a diagnostic.
+    const auto missing = SettingsCodec::load_file(directory / "does-not-exist.json");
+    check(missing.used_defaults, "a missing file returns defaults");
+    check(missing.settings.temperature == AppSettings::defaults().temperature, "a missing file returns the defaults");
+    check(missing.diagnostics.empty(), "a missing file emits no diagnostic");
+
+    std::filesystem::remove_all(directory, error);
+    check(!error, "temporary settings directory is cleaned");
+}
+
+/// Low-risk item: a non-finite temperature cannot be written as JSON, so the
+/// serializer normalizes it to 0 instead of throwing like System.Text.Json.
+void check_non_finite_temperature()
+{
+    using namespace voicetyper::domain;
+    for (const double value : {std::numeric_limits<double>::quiet_NaN(),
+                              std::numeric_limits<double>::infinity(),
+                              -std::numeric_limits<double>::infinity()}) {
+        auto settings = AppSettings::defaults();
+        settings.temperature = value;
+        const auto text = SettingsCodec::serialize(settings);
+        check(text.find("\"temperature\": 0,") != std::string::npos, "a non-finite temperature serializes as 0");
+        const auto reloaded = SettingsCodec::load(text);
+        check(!reloaded.used_defaults, "the normalized document still loads");
+        check(reloaded.settings.temperature == 0.0, "a non-finite temperature reloads as 0");
+    }
+}
+
+} // namespace
+
+int main()
+{
+    check_defaults();
+    check_all_fields();
+    check_legacy_and_pascal();
+    check_invalid_and_numeric();
+    check_null_non_nullable_string();
+    check_duplicate_keys();
+    check_large_number_literals();
+    check_astral_unicode();
+    check_non_finite_temperature();
+    check_file_round_trip();
+    check_out_of_range_save();
+    check_overwrite_and_failed_save();
+    if (failures != 0) {
+        std::cerr << "settings-json-contract: " << failures << " check(s) failed\n";
+        return 1;
+    }
+    std::cout << "settings-json-contract: OK\n";
+    return 0;
+}

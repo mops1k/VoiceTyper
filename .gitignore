@@ -18,6 +18,25 @@ publish/
 artifacts/
 dist/
 
+## C++/CMake build outputs
+build/
+cmake-build-*/
+CMakeUserPresets.json
+
 ## Local models and runtime data
 *.bin
 *.ggml
+*.gguf
+
+## Migration fixtures are tracked even when they use model/audio extensions
+!tests/fixtures/
+!tests/fixtures/**
+
+## Python cache from deterministic fixture generators
+__pycache__/
+
+## Agent state (plans live in the store; the exported markdown is generated)
+.dsh/
+
+## Local scratch from debugging sessions
+probe.tar.gz

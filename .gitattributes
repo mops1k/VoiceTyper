@@ -1,0 +1,4 @@
+# Migration fixtures are byte-exact oracles. Preserve their recorded bytes
+# (settings JSON is intentionally CRLF from the Windows .NET serializer) on
+# every platform and with every core.autocrlf setting.
+tests/fixtures/** -text

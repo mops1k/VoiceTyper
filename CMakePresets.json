@@ -1,0 +1,233 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 28,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "linux-arch-debug",
+      "displayName": "Arch Linux Debug (Unix Makefiles)",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build/linux-arch-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_PREFIX_PATH": "/usr",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "VOICETYPER_BUILD_GUI": "ON",
+        "VOICETYPER_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "linux-arch-release",
+      "displayName": "Arch Linux Release (Unix Makefiles)",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build/linux-arch-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_PREFIX_PATH": "/usr",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "VOICETYPER_BUILD_GUI": "ON",
+        "VOICETYPER_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "linux-arch-debug-asan",
+      "displayName": "Arch Linux Debug ASan + UBSan",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build/linux-arch-debug-asan",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_PREFIX_PATH": "/usr",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "VOICETYPER_BUILD_GUI": "ON",
+        "VOICETYPER_BUILD_TESTS": "ON",
+        "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer",
+        "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address,undefined -fno-sanitize-recover=undefined"
+      }
+    },
+    {
+      "name": "linux-arch-debug-ubsan",
+      "displayName": "Arch Linux Debug UBSan",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build/linux-arch-debug-ubsan",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_PREFIX_PATH": "/usr",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "VOICETYPER_BUILD_GUI": "ON",
+        "VOICETYPER_BUILD_TESTS": "ON",
+        "CMAKE_CXX_FLAGS": "-fsanitize=undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer",
+        "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=undefined -fno-sanitize-recover=undefined"
+      }
+    },
+    {
+      "name": "linux-arch-debug-tsan",
+      "displayName": "Arch Linux Debug TSan",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build/linux-arch-debug-tsan",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_PREFIX_PATH": "/usr",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "VOICETYPER_BUILD_GUI": "ON",
+        "VOICETYPER_BUILD_TESTS": "ON",
+        "CMAKE_CXX_FLAGS": "-fsanitize=thread -fno-omit-frame-pointer",
+        "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=thread"
+      }
+    },
+    {
+      "name": "linux-arch-native-gui-off",
+      "displayName": "Arch Linux Release, GUI off, pinned native ASR dependency ON (fetches whisper.cpp once)",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build/linux-arch-native-gui-off",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_PREFIX_PATH": "/usr",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "VOICETYPER_BUILD_GUI": "OFF",
+        "VOICETYPER_BUILD_ASR": "ON",
+        "VOICETYPER_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "windows-mingw-debug",
+      "displayName": "Windows MinGW Debug",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/windows-mingw-debug",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/mingw-x86_64.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "VOICETYPER_BUILD_GUI": "ON",
+        "VOICETYPER_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "windows-mingw-release",
+      "displayName": "Windows MinGW Release",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/windows-mingw-release",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/mingw-x86_64.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "VOICETYPER_BUILD_GUI": "ON",
+        "VOICETYPER_BUILD_TESTS": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "linux-arch-debug",
+      "configurePreset": "linux-arch-debug"
+    },
+    {
+      "name": "linux-arch-release",
+      "configurePreset": "linux-arch-release"
+    },
+    {
+      "name": "linux-arch-debug-asan",
+      "configurePreset": "linux-arch-debug-asan"
+    },
+    {
+      "name": "linux-arch-debug-ubsan",
+      "configurePreset": "linux-arch-debug-ubsan"
+    },
+    {
+      "name": "linux-arch-debug-tsan",
+      "configurePreset": "linux-arch-debug-tsan"
+    },
+    {
+      "name": "linux-arch-native-gui-off",
+      "configurePreset": "linux-arch-native-gui-off"
+    },
+    {
+      "name": "windows-mingw-debug",
+      "configurePreset": "windows-mingw-debug"
+    },
+    {
+      "name": "windows-mingw-release",
+      "configurePreset": "windows-mingw-release"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "linux-arch-debug",
+      "configurePreset": "linux-arch-debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-arch-release",
+      "configurePreset": "linux-arch-release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-arch-debug-asan",
+      "configurePreset": "linux-arch-debug-asan",
+      "environment": {
+        "ASAN_OPTIONS": "halt_on_error=1:abort_on_error=1",
+        "UBSAN_OPTIONS": "halt_on_error=1:abort_on_error=1:print_stacktrace=1"
+      },
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-arch-debug-ubsan",
+      "configurePreset": "linux-arch-debug-ubsan",
+      "environment": {
+        "UBSAN_OPTIONS": "halt_on_error=1:abort_on_error=1:print_stacktrace=1"
+      },
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-arch-debug-tsan",
+      "configurePreset": "linux-arch-debug-tsan",
+      "environment": {
+        "TSAN_OPTIONS": "halt_on_error=1:abort_on_error=1"
+      },
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-arch-native-gui-off",
+      "configurePreset": "linux-arch-native-gui-off",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "windows-mingw-debug",
+      "configurePreset": "windows-mingw-debug",
+      "output": {
+        "outputOnFailure": true
+      },
+      "environment": {
+        "PATH": "$env{VOICETYPER_QT_ROOT}\\bin;$penv{PATH}",
+        "QT_PLUGIN_PATH": "$env{VOICETYPER_QT_ROOT}\\plugins",
+        "QT_QPA_PLATFORM": "offscreen"
+      }
+    },
+    {
+      "name": "windows-mingw-release",
+      "configurePreset": "windows-mingw-release",
+      "output": {
+        "outputOnFailure": true
+      },
+      "environment": {
+        "PATH": "$env{VOICETYPER_QT_ROOT}\\bin;$penv{PATH}",
+        "QT_PLUGIN_PATH": "$env{VOICETYPER_QT_ROOT}\\plugins",
+        "QT_QPA_PLATFORM": "offscreen"
+      }
+    }
+  ]
+}

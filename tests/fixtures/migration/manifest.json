@@ -1,0 +1,360 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "fc7d69c1a32be71a19634c16904d0a29a24135b0",
+  "purpose": "Manifest of reproducible cross-language fixtures for the C++ migration. No audio, model, or user data is embedded in this manifest.",
+  "materializationPolicy": "Create only license-safe, deterministic fixtures; record checksums and generation commands before marking a fixture ready.",
+  "fixtures": [
+    {
+      "id": "settings-defaults",
+      "kind": "settings-json",
+      "status": "ready-materialized",
+      "source": "VoiceTyper.Core/Models/AppSettings.cs; VoiceTyper.Core/Services/SettingsService.cs; VoiceTyper.Tests/Services/SettingsServiceTests.cs",
+      "expected": "Exact UTF-8 output for a default AppSettings: 21 properties, declaration order, camelCase names, q4K/q8_0 enum spellings, nullable nulls, indentation and numeric temperature.",
+      "materialized": {
+        "path": "tests/fixtures/migration/settings/settings-defaults.json",
+        "bytes": 694,
+        "sha256": "24e2601ce76abfea95c3bd826589fa55ba04ea2151bb0ab71397f9cfbe6cc961",
+        "generationCommand": "tools/generate-settings-fixtures/generate.sh",
+        "generator": "tools/generate-settings-fixtures/Program.cs",
+        "format": "utf-8 no BOM, CRLF, 2-space indent, no trailing newline, 22 lines",
+        "verifiedNet": "SettingsService.Load() on the generated file returns exactly new AppSettings()",
+        "serializationNotes": "Written by the real SettingsService.JsonOptions; the default JavaScriptEncoder escapes '+' as \\u002B, so recordHotkey/cancelHotkey carry \\u002B instead of a literal plus; double 0.0 is written as 0, not 0.0"
+      }
+    },
+    {
+      "id": "settings-all-fields",
+      "kind": "settings-json",
+      "status": "ready-materialized",
+      "source": "VoiceTyper.Tests/Services/SettingsServiceTests.cs",
+      "expected": "Roundtrip with every field non-default and both nullable strings populated. Every enum member is non-default, so a C++ parser that drops a field is observable.",
+      "materialized": {
+        "path": "tests/fixtures/migration/settings/settings-all-fields.json",
+        "bytes": 748,
+        "sha256": "955d0e1c5e8b9955c4232b20b0bdac43ccc89877ec9d4dbd64db8825b9a3ba7d",
+        "generationCommand": "tools/generate-settings-fixtures/generate.sh",
+        "generator": "tools/generate-settings-fixtures/Program.cs",
+        "format": "utf-8 no BOM, CRLF, 2-space indent, no trailing newline, 22 lines",
+        "verifiedNet": "SettingsService.Load() returns the written values, not defaults: Vad/F12/F11/XInput|A/DInput|Logitech|3/En/Medium/Parakeet/Q4K/autoPaste=false/900/startWithWindows=true/startMinimized=true/Dark/hideOnFocusLoss=true/appLanguage=En/noiseReduction=true/temperature=0.7/conditionOnPreviousText=true/mic=wasapi:{0.0.0.00000000}{6e8f2c11-4b2a-4c3d-9e55-0a1b2c3d4e5f}",
+        "serializationNotes": "termsDictionary carries a Cyrillic term that the default encoder writes as \\u041A\\u043B\\u0430\\u0432\\u0438\\u0430\\u0442\\u0443\\u0440\\u0430; temperature 0.7 proves shortest round-trip double formatting"
+      }
+    },
+    {
+      "id": "settings-legacy-missing-engine",
+      "kind": "settings-json",
+      "status": "ready-materialized",
+      "source": "VoiceTyper.Tests/Services/SettingsServiceTests.cs",
+      "expected": "Legacy JSON without engine fields loads as Whisper and Parakeet q8_0 defaults.",
+      "materialized": {
+        "path": "tests/fixtures/migration/settings/settings-legacy-missing-engine.json",
+        "bytes": 601,
+        "sha256": "c03348d588db7cc669d7917c5d5f952b2300d508c6e425c0d9f05ec0a20ac7a7",
+        "generationCommand": "tools/generate-settings-fixtures/generate.sh",
+        "generator": "tools/generate-settings-fixtures/Program.cs",
+        "format": "utf-8 no BOM, CRLF, 2-space indent, no trailing newline, 20 lines",
+        "verifiedNet": "SettingsService.Load() returns the 19 legacy values with transcriptionEngine=Whisper and parakeetModelSize=Q8_0",
+        "serializationNotes": "19 properties in declaration order; the property list was diffed against git 1163045^:VoiceTyper.Core/Models/AppSettings.cs (the commit that introduced the engine) and is identical - no transcriptionEngine/parakeetModelSize members exist; cancelGamepadButton is null, matching files older than the gamepad feature"
+      }
+    },
+    {
+      "id": "settings-pascal-unknown",
+      "kind": "settings-json",
+      "status": "ready-materialized",
+      "source": "VoiceTyper.Core/Services/SettingsService.cs",
+      "expected": "Case-insensitive properties and unknown properties are accepted according to the current serializer policy.",
+      "materialized": {
+        "path": "tests/fixtures/migration/settings/settings-pascal-unknown.json",
+        "bytes": 912,
+        "sha256": "7908901beaff3a03d77434f09a6b8fff6715c0ef8f8dc3792a84432182d8e466",
+        "generationCommand": "tools/generate-settings-fixtures/generate.sh",
+        "generator": "tools/generate-settings-fixtures/Program.cs",
+        "format": "utf-8 no BOM, CRLF, 2-space indent, no trailing newline, 32 lines",
+        "verifiedNet": "SettingsService.Load() returns exactly the settings-all-fields values: the 21 PascalCase keys bind case-insensitively and the three unknown members (UnknownScalar=42, futureFlag=true, UnknownObject) are ignored without error",
+        "serializationNotes": "Values are byte-identical to settings-all-fields.json, so the C++ test can assert parsed(pascal-unknown) == parsed(all-fields) field by field; enum values stay camelCase strings"
+      }
+    },
+    {
+      "id": "settings-invalid-and-numeric-enums",
+      "kind": "settings-json",
+      "status": "ready-materialized",
+      "source": "VoiceTyper.Core/Services/SettingsService.cs",
+      "expected": "Decision: numeric enum values are accepted, normalized to the canonical camelCase name on the next save and reported with a warning; an invalid enum string falls back to defaults. C# reference behaviour verified on this file: JsonStringEnumConverter throws JsonException on the invalid string, SettingsService.Load catches it and returns new AppSettings(), so the fallback is document-wide. The file holds numeric recordingMode=1, transcriptionEngine=1, parakeetModelSize=2 and the invalid string modelSize='colossal', while every other field is non-default, so a document-wide fallback is observable. C++ assertions: all 21 fields equal the defaults, and the diagnostics report the three numeric-valued enums as warnings plus modelSize as an invalid-enum error - the C# reference has no warning channel, so that assertion is C++-only.",
+      "materialized": {
+        "path": "tests/fixtures/migration/settings/settings-invalid-and-numeric-enums.json",
+        "bytes": 615,
+        "sha256": "6ab7cd719fa27b96e4f8b7ec23f88bdfa0c508dd5867facb20fe90269510f627",
+        "generationCommand": "tools/generate-settings-fixtures/generate.sh",
+        "generator": "tools/generate-settings-fixtures/Program.cs",
+        "format": "utf-8 no BOM, CRLF, 2-space indent, no trailing newline, 22 lines",
+        "verifiedNet": "SettingsService.Load() on the generated file returns exactly new AppSettings()",
+        "notCovered": "Out-of-range numeric enum values (verified in .NET: 99 and -1 deserialize silently into an undefined enum value without an error, while 1.0 and values beyond Int64 throw). No fixture covers this; a decision is needed before the C++ parser treats it."
+      }
+    },
+    {
+      "id": "settings-atomic-failure",
+      "kind": "filesystem-contract",
+      "status": "pending-materialization",
+      "source": "VoiceTyper.Core/Services/SettingsService.cs",
+      "expected": "Old settings survive write/move/permission failure; .tmp residue and exception behavior are recorded."
+    },
+    {
+      "id": "hotkey-grammar",
+      "kind": "string-contract",
+      "status": "ready-as-source-reference",
+      "source": "VoiceTyper.Tests/Services/HotkeyParserTests.cs; VoiceTyper.Core/Services/HotkeyParser.cs",
+      "expected": "Canonical Ctrl/Alt/Shift/Win order, aliases, F1-F24, numpad, OEM and invalid modifier cases."
+    },
+    {
+      "id": "gamepad-grammar",
+      "kind": "string-contract",
+      "status": "ready-as-source-reference",
+      "source": "VoiceTyper.Tests/Services/GamepadBindingParserTests.cs; VoiceTyper.Core/Services/GamepadBindingParser.cs",
+      "expected": "XInput|Button and DInput|Product|zeroBasedIndex parse/format/display behavior."
+    },
+    {
+      "id": "model-catalog",
+      "kind": "metadata-contract",
+      "status": "ready-as-source-reference",
+      "source": "VoiceTyper.Core/Services/ModelManager.cs; VoiceTyper.Tests/Services/ModelManagerTests.cs",
+      "expected": "Whisper q8, Silero and Parakeet q4_k/q5_k/q6_k/q8_0 filename, URL, exact expected bytes and legacy cleanup list."
+    },
+    {
+      "id": "model-http-behavior",
+      "kind": "http-contract",
+      "status": "pending-materialization",
+      "source": "VoiceTyper.Core/Services/ModelManager.cs",
+      "expected": "Fake HTTP 200/206/404/cancel/short body, Content-Length progress, .download cleanup and existing-file short circuit."
+    },
+    {
+      "id": "wav-sine-44k-mono",
+      "kind": "synthetic-pcm",
+      "status": "ready-materialized",
+      "source": "VoiceTyper.Tests/Audio/WavBuilderTests.cs",
+      "expected": "Deterministic 440 Hz PCM16 mono 44.1 kHz sine, 1 second; output 16 kHz mono PCM16 WAV.",
+      "materialized": {
+        "path": "tests/fixtures/migration/wav/wav-sine-44k-mono.wav",
+        "bytes": 88244,
+        "sha256": "c5f3a19cd7e043147381667a0c2d50106b7dbeb25671ab61ca628f3d9426988c",
+        "generationCommand": "python3 tools/generate-wav-fixtures/generate_wav_fixtures.py",
+        "generator": "tools/generate-wav-fixtures/generate_wav_fixtures.py",
+        "format": "canonical 44-byte-header RIFF/WAVE PCM16: audioFormat=1, channels=1, sampleRate=44100, bitsPerSample=16, blockAlign=2, byteRate=88200, 44100 frames (1.000 s), 88200 data bytes",
+        "expectedOutcome": "Per ConvertTo16KHzMonoWav_FromMono44K_Returns16KHzMono16Bit (derived by reading the C# sources, NOT executed by .NET): 16000 Hz mono PCM16, TotalTime in [0.95, 1.05] s. The tone has no inactive frames, so SilenceTrimmer keeps every sample and the duration is preserved.",
+        "synthesisNotes": "Samples are trunc(sin(2*pi*440*i/44100) * 16383.5), which is literally WavBuilderTests.GenerateSinePcm16: (short)(Math.Sin(2*PI*440*i/sr) * short.MaxValue * 0.5) with short.MaxValue=32767. Truncation toward zero matches the C# (short) cast.",
+        "notCovered": "Sample values are bit-comparable with a C# run but are NOT guaranteed bit-identical to System.Math.Sin, whose libm has no specified accuracy. The generator therefore avoids math.sin entirely (see generator docstring) and computes the tone in decimal.Decimal."
+      }
+    },
+    {
+      "id": "wav-sine-48k-stereo",
+      "kind": "synthetic-pcm",
+      "status": "ready-materialized",
+      "source": "VoiceTyper.Tests/Audio/WavBuilderTests.cs",
+      "expected": "Deterministic 440 Hz PCM16 stereo 48 kHz sine, 0.5 second; downmix/resample output format and duration.",
+      "materialized": {
+        "path": "tests/fixtures/migration/wav/wav-sine-48k-stereo.wav",
+        "bytes": 96044,
+        "sha256": "5a657ea9a9ab363366adde226ca96a9c709aa3268ce0c1e3eaeef2b097bd631a",
+        "generationCommand": "python3 tools/generate-wav-fixtures/generate_wav_fixtures.py",
+        "generator": "tools/generate-wav-fixtures/generate_wav_fixtures.py",
+        "format": "canonical 44-byte-header RIFF/WAVE PCM16: audioFormat=1, channels=2, sampleRate=48000, bitsPerSample=16, blockAlign=4, byteRate=192000, 24000 frames (0.500 s), 96000 data bytes",
+        "expectedOutcome": "Per ConvertTo16KHzMonoWav_FromStereo48K_ReturnsMono16KHz and ConvertTo16KHzMonoFloats_LengthMatchesDuration (read, NOT executed): 16000 Hz mono PCM16, TotalTime in [0.45, 0.55] s, float count in [7200, 8800].",
+        "synthesisNotes": "Interleaved L,R with the identical value in both channels, so NAudio's StereoToMonoSampleProvider average is the identity and a C++ downmix that averages is directly comparable. Same 16383.5 scaling as wav-sine-44k-mono.",
+        "notCovered": "A phase-offset or unequal-channel stereo case (where the downmix is not the identity) has no fixture; the manifest's hotkey/WAV contract covers only the average path."
+      }
+    },
+    {
+      "id": "wav-silence-speech-silence",
+      "kind": "synthetic-pcm",
+      "status": "ready-materialized",
+      "source": "VoiceTyper.Tests/Audio/WavBuilderTests.cs; VoiceTyper.Tests/Audio/SilenceTrimmerTests.cs",
+      "expected": "Leading/trailing silence and quiet speech survive adaptive trim.",
+      "materialized": {
+        "path": "tests/fixtures/migration/wav/wav-silence-speech-silence.wav",
+        "bytes": 64044,
+        "sha256": "4bf3d099cccf51eef3601e3761290e99552442d439717f8d9218d1d3ced4378b",
+        "generationCommand": "python3 tools/generate-wav-fixtures/generate_wav_fixtures.py",
+        "generator": "tools/generate-wav-fixtures/generate_wav_fixtures.py",
+        "format": "canonical 44-byte-header RIFF/WAVE PCM16: audioFormat=1, channels=1, sampleRate=16000, bitsPerSample=16, blockAlign=2, byteRate=32000, 32000 frames (2.000 s); 0.5 s exact zeros + 1.0 s of 440 Hz tone at amplitude 0.5 + 0.5 s exact zeros",
+        "expectedOutcome": "Per Trim_RemovesLeadingAndTrailingSilence (read, NOT executed): trimming keeps samples [4000, 28000) = 24000 samples = exactly 1.500 s (1.0 s of speech plus the 0.25 s MarginSeconds on each side); the C# test asserts [1.4, 1.6] s. The same shape drives ConvertTo16KHzMonoWav_TrimsLeadingAndTrailingSilence, whose 1.0/0.5/1.0 s variant asserts [0.7, 1.2] s.",
+        "synthesisNotes": "Speech samples are trunc(sin * 0.5 * 32768) = trunc(sin * 16384). SilenceTrimmerTests feeds float arrays directly and never goes through PCM16, so the 32768 scaling is the inverse of WavPcmReader's int16/32768 conversion; the round trip reproduces the intended float amplitude to within 1 LSB (3.05e-5), four orders of magnitude below the 0.005 threshold under test.",
+        "notCovered": "The quiet-speech half of this entry's expected text has no sample content here; see the separate wav-silence-quietspeech-silence entry."
+      }
+    },
+    {
+      "id": "wav-silence-quietspeech-silence",
+      "kind": "synthetic-pcm",
+      "status": "ready-materialized",
+      "source": "VoiceTyper.Tests/Audio/SilenceTrimmerTests.cs",
+      "expected": "Quiet speech below the retired fixed 0.01 threshold but above the noise floor is not cut by the adaptive threshold.",
+      "materialized": {
+        "path": "tests/fixtures/migration/wav/wav-silence-quietspeech-silence.wav",
+        "bytes": 51244,
+        "sha256": "31d7196586a11bc94bba70d1756d2c49502b51eea721cafa05844ea3601ccd5c",
+        "generationCommand": "python3 tools/generate-wav-fixtures/generate_wav_fixtures.py",
+        "generator": "tools/generate-wav-fixtures/generate_wav_fixtures.py",
+        "format": "canonical 44-byte-header RIFF/WAVE PCM16: audioFormat=1, channels=1, sampleRate=16000, bitsPerSample=16, blockAlign=2, byteRate=32000, 25600 frames (1.600 s); 0.3 s exact zeros + 1.0 s of 440 Hz tone at amplitude 0.005 + 0.3 s exact zeros",
+        "expectedOutcome": "Per Trim_QuietSpeech_BelowFixedThreshold_IsNotCut (read, NOT executed): the result is non-empty and trimming keeps samples [800, 24800) = 24000 samples = 1.500 s; the C# test asserts [1.0, 1.8] s. SilenceTrimmerTests.QuietSpeech is Tone(seconds, 0.005f), whose peak float amplitude of 0.005 becomes int16 163 here.",
+        "synthesisNotes": "Samples are trunc(sin * 0.005 * 32768) = trunc(sin * 163.84), so the peak is 163 and reads back as 163/32768 = 0.004974 - still below the retired 0.01 fixed threshold (FallbackThreshold is 0.005) and far above SilenceTrimmer.AbsoluteFloor of 1e-6, which is the property under test.",
+        "notCovered": "Added while materializing wav-silence-speech-silence, whose expected text names quiet speech but whose samples do not contain it. Not one of the four ids requested by the Phase 2 task; drop this entry if unwanted."
+      }
+    },
+    {
+      "id": "wav-long-internal-pause",
+      "kind": "synthetic-pcm",
+      "status": "ready-materialized",
+      "source": "VoiceTyper.Tests/Audio/SilenceTrimmerTests.cs",
+      "expected": "Two speech phrases separated by long silence remain present and the gap is compressed.",
+      "materialized": {
+        "path": "tests/fixtures/migration/wav/wav-long-internal-pause.wav",
+        "bytes": 544044,
+        "sha256": "dc4e3e038e976f3b9f1f498cebfd2e6a7ded6b0d0f2ee0b388f2e1043ae0384e",
+        "generationCommand": "python3 tools/generate-wav-fixtures/generate_wav_fixtures.py",
+        "generator": "tools/generate-wav-fixtures/generate_wav_fixtures.py",
+        "format": "canonical 44-byte-header RIFF/WAVE PCM16: audioFormat=1, channels=1, sampleRate=16000, bitsPerSample=16, blockAlign=2, byteRate=32000, 272000 frames (17.000 s); 5 s exact zeros + 1.0 s of 440 Hz tone at amplitude 0.5 + 5 s exact zeros + the same 1.0 s tone + 5 s exact zeros",
+        "expectedOutcome": "Per Trim_LongInternalPause_KeepsBothPhrasesAndCompressesGap (read, NOT executed): the kept window is samples [76000, 196000); the 5 s internal pause exceeds MaxSilenceSeconds 0.6 and is compressed to the 0.3 s GapSilenceSeconds, leaving 4000 + 16000 + 4800 + 16000 + 4000 = 44800 samples = exactly 2.800 s. The C# test asserts [2.4, 3.2] s, and Trim_LongInternalPause_DoesNotContainTheLongPause requires under 4.0 s.",
+        "synthesisNotes": "Phase restarts at 0 for each phrase, exactly like SilenceTrimmerTests.Tone, so the two speech segments are byte-identical and a diff of the two phrases is empty. Same 0.5 * 32768 = 16384 scaling as wav-silence-speech-silence.",
+        "notCovered": "The 0.2/1.0/5.0/1.0/0.2 s variant of Trim_LongInternalPause_DoesNotContainTheLongPause has no file; it differs from this one only in the outer silence lengths and is trivial to derive from the same generator."
+      }
+    },
+    {
+      "id": "wav-noncanonical-chunks",
+      "kind": "synthetic-pcm",
+      "status": "ready-materialized",
+      "source": "VoiceTyper.Tests/WavPcmReaderTests.cs",
+      "expected": "Strict PCM16 mono 16 kHz parser handles chunk padding/LIST metadata and rejects invalid formats.",
+      "materialized": {
+        "path": "tests/fixtures/migration/wav/wav-noncanonical-chunks.wav",
+        "bytes": 66,
+        "sha256": "f43b7f9d85d167425bf2946c8b928c11534a43b95ac9a9f26c3d3b486b19c044",
+        "generationCommand": "python3 tools/generate-wav-fixtures/generate_wav_fixtures.py",
+        "generator": "tools/generate-wav-fixtures/generate_wav_fixtures.py",
+        "format": "non-canonical RIFF/WAVE: RIFF size 58 covering the full 66 bytes; chunk order LIST(4, 'INFO') at offset 12, then fmt (16, audioFormat=1, channels=1, sampleRate=16000, bitsPerSample=16, blockAlign=2) at 24, then data(2, single sample -16384) at 48, then 8 trailing zero bytes at 58 that a chunk walker reads as one zero-size chunk with a zero id. fmt  arrives after LIST instead of first.",
+        "expectedOutcome": "Per To16KHzMonoFloats_ParsesNonCanonicalChunks (read, NOT executed): WavPcmReader walks all chunks, accepts audioFormat=1/channels=1/16000 Hz/16-bit, and returns exactly one float, -0.5. Reproduced byte for byte from the C# test's MemoryStream writes, including the trailing zeros.",
+        "synthesisNotes": "Reproduced byte for byte from the C# test's MemoryStream writes, including the 8 bytes it leaves past data. What makes the file non-canonical is the metadata chunk before fmt  and the zero-id zero-size trailer, not a wrong RIFF size: 58 + 8 == 66, so the container is self-consistent and a strict parser must simply skip what it does not recognize.",
+        "notCovered": "The LIST chunk here has an even size of 4, so the chunkSize & 1 padding rule is not exercised; see wav-noncanonical-oddpad-chunk. The two rejection cases have their own entries: wav-reject-stereo and wav-reject-nonpcm-format28."
+      }
+    },
+    {
+      "id": "wav-noncanonical-oddpad-chunk",
+      "kind": "synthetic-pcm",
+      "status": "ready-materialized",
+      "source": "VoiceTyper.Core/Audio/WavPcmReader.cs; VoiceTyper.Tests/WavPcmReaderTests.cs",
+      "expected": "The chunk cursor steps by 8 + size + (size & 1), so a 3-byte chunk consumes one pad byte; the pad must be present before the next chunk both at the head and at the tail of the file.",
+      "materialized": {
+        "path": "tests/fixtures/migration/wav/wav-noncanonical-oddpad-chunk.wav",
+        "bytes": 76,
+        "sha256": "5b3d8af1bf79b86f3f8f3cde28f575fa4ff75c9d150a14551e99c29f33b6d7a8",
+        "generationCommand": "python3 tools/generate-wav-fixtures/generate_wav_fixtures.py",
+        "generator": "tools/generate-wav-fixtures/generate_wav_fixtures.py",
+        "format": "non-canonical RIFF/WAVE: RIFF size 68 covering the full 76 bytes; JUNK(3, 'abc' at 12 plus a pad byte at 23), fmt (16, audioFormat=1, channels=1, sampleRate=16000, bitsPerSample=16) at 24, data(8, samples 32767, -32768, 0, 16384) at 48, then a trailing JUNK(3, 0x010203 at 64 plus a pad byte at 75). Both odd-sized chunks force the word-alignment rule.",
+        "expectedOutcome": "Per the cursor arithmetic in WavPcmReader.To16KHzMonoFloats (read, NOT executed): the parser skips both pad bytes and returns four floats, 0.99996948, -1.0, 0.0, 0.5, matching To16KHzMonoFloats_ConvertsPlusMinusFullScale. A parser that forgets the (size & 1) term lands on the wrong chunk and fails.",
+        "synthesisNotes": "Data samples are the full-scale quadruple of To16KHzMonoFloats_ConvertsPlusMinusFullScale, so the same file pins both the padding rule and the int16/32768 conversion.",
+        "notCovered": "Added while materializing wav-noncanonical-chunks, whose expected text names chunk padding but whose single chunk is even-sized. Not one of the four ids requested by the Phase 2 task; drop this entry if unwanted."
+      }
+    },
+    {
+      "id": "wav-reject-stereo",
+      "kind": "synthetic-pcm",
+      "status": "ready-materialized",
+      "source": "VoiceTyper.Tests/WavPcmReaderTests.cs",
+      "expected": "A structurally valid 16 kHz PCM16 WAV with channels=2 is rejected, because WavPcmReader accepts mono only.",
+      "materialized": {
+        "path": "tests/fixtures/migration/wav/wav-reject-stereo.wav",
+        "bytes": 48,
+        "sha256": "67f0d0c5cba545d3ade96dcb134751c277dc6088964b470b98a16f5c693d5bbc",
+        "generationCommand": "python3 tools/generate-wav-fixtures/generate_wav_fixtures.py",
+        "generator": "tools/generate-wav-fixtures/generate_wav_fixtures.py",
+        "format": "negative fixture, canonical 44-byte-header RIFF/WAVE PCM16: audioFormat=1, channels=2, sampleRate=16000, bitsPerSample=16, blockAlign=4, byteRate=64000, data(4, four zero bytes). The container itself is well formed; only the channel count is wrong.",
+        "expectedOutcome": "Per To16KHzMonoFloats_RejectsStereo (read, NOT executed): a parser matching the C# reference must throw NotSupportedException with the message 'Требуется моно WAV.' Reproduced byte for byte from the C# test. The file is valid only as a negative case and must never be fed to a transcription path.",
+        "synthesisNotes": "tools/verify-migration-fixtures.py honours containerExpectation=reject by asserting the fixture's structural validity and inverting only the audioFormat check, so the negative file is verified rather than skipped."
+      }
+    },
+    {
+      "id": "wav-reject-nonpcm-format28",
+      "kind": "synthetic-pcm",
+      "status": "ready-materialized",
+      "source": "VoiceTyper.Tests/WavPcmReaderTests.cs",
+      "expected": "audioFormat=28 (MPEG ADPCM) with a 16-bit sample width is rejected, because WavPcmReader accepts audioFormat=1 only.",
+      "materialized": {
+        "path": "tests/fixtures/migration/wav/wav-reject-nonpcm-format28.wav",
+        "bytes": 48,
+        "sha256": "43841d94edbbaa70fcbae91579b17a7fd7a966c410237b21386dd0d43e7556b5",
+        "generationCommand": "python3 tools/generate-wav-fixtures/generate_wav_fixtures.py",
+        "generator": "tools/generate-wav-fixtures/generate_wav_fixtures.py",
+        "format": "negative fixture, canonical 44-byte-header RIFF/WAVE: audioFormat=28 (MPEG ADPCM), channels=1, sampleRate=16000, blockAlign=2, byteRate=32000, bitsPerSample=16, data(4, four zero bytes). The width contradicts the codec on purpose.",
+        "expectedOutcome": "Per To16KHzMonoFloats_RejectsNonPcmFormat (read, NOT executed): a parser matching the C# reference must throw NotSupportedException with the message 'Требуется PCM-формат WAV (audioFormat=1).' before the bitsPerSample, channels and sampleRate checks are reached. Reproduced byte for byte from the C# test.",
+        "synthesisNotes": "The rejection order is observable: a C++ parser that checks bitsPerSample first, or that only validates 16-bit/mono/16 kHz without the codec field, accepts this file and is observably wrong.",
+        "notCovered": "float32 (audioFormat=3) and WAVE_FORMAT_EXTENSIBLE (0xFFFE) are not pinned as fixtures; only the two rejection cases the C# test file already names.",
+        "expectedAudioFormat": 28
+      }
+    },
+    {
+      "id": "vad-scenarios",
+      "kind": "state-scenario",
+      "status": "ready-as-source-reference",
+      "source": "VoiceTyper.Tests/Audio/SilenceAutoStopDetectorTests.cs; VoiceTyper.Tests/Services/RecordingStateMachineTests.cs",
+      "expected": "No speech, trailing silence, continuous quiet speech, energy speech and absolute VAD segment time cases."
+    },
+    {
+      "id": "whisper-speech-corpus",
+      "kind": "speech-and-transcript",
+      "status": "missing-license-safe-corpus",
+      "source": "No current real-speech golden fixture found",
+      "expected": "Frozen RU/EN utterances, model/version, normalized transcript and WER/CER threshold."
+    },
+    {
+      "id": "parakeet-speech-corpus",
+      "kind": "speech-and-transcript",
+      "status": "missing-license-safe-corpus",
+      "source": "No current real-speech golden fixture found",
+      "expected": "Frozen multilingual utterances, GGUF quant, ABI v6, normalized transcript and quality threshold."
+    },
+    {
+      "id": "update-release-json",
+      "kind": "json-contract",
+      "status": "pending-materialization",
+      "source": "VoiceTyper.Tests/Services/UpdateServiceTests.cs",
+      "expected": "Valid/invalid assets, 404/403/429/500, malformed JSON, SHA256/SHA-256, missing URL and prerelease/version cases."
+    },
+    {
+      "id": "update-download",
+      "kind": "http-filesystem-contract",
+      "status": "pending-materialization",
+      "source": "VoiceTyper.Tests/Services/UpdateServiceTests.cs",
+      "expected": "Matching/mismatching/missing SHA, cancellation, HTTP failure, old target preservation, temp cleanup and progress bounds."
+    },
+    {
+      "id": "logger-rotation",
+      "kind": "logging-contract",
+      "status": "pending-materialization",
+      "source": "VoiceTyper.Core/Services/FileLogger.cs",
+      "expected": "Line regex, clear-current-only behavior, 999999/1000000 boundary, archive order and swallowed errors."
+    },
+    {
+      "id": "localization-keys",
+      "kind": "resource-contract",
+      "status": "pending-materialization",
+      "source": "VoiceTyper.Core/Localization/Strings.resx; VoiceTyper.Core/Localization/Strings.en.resx",
+      "expected": "Exactly 214 keys in each language, identical key/placeholder sets, unknown-key fallback and live switch."
+    },
+    {
+      "id": "pactl-sources",
+      "kind": "text-fixture",
+      "status": "ready-as-source-reference",
+      "source": "feature/multiplatform-core-split: VoiceTyper.Tests.Linux/Services/PactlSourceParserTests.cs",
+      "expected": "Monitor sources are excluded, source IDs/descriptions are preserved, malformed lines are handled deterministically."
+    },
+    {
+      "id": "kdeglobals-theme",
+      "kind": "text-fixture",
+      "status": "ready-as-source-reference",
+      "source": "feature/multiplatform-core-split: VoiceTyper.Tests.Linux/Services/KdeGlobalsParserTests.cs",
+      "expected": "ColorScheme and BackgroundNormal parse to deterministic light/dark result."
+    },
+    {
+      "id": "xdg-paths",
+      "kind": "environment-fixture",
+      "status": "pending-materialization",
+      "source": "feature/multiplatform-core-split: VoiceTyper.Core.Linux",
+      "expected": "XDG_CONFIG_HOME, XDG_DATA_HOME, XDG_CACHE_HOME, XDG_RUNTIME_DIR and HOME override behavior."
+    }
+  ]
+}

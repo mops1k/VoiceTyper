@@ -1,0 +1,198 @@
+{
+  "schemaVersion": 1,
+  "title": "VoiceTyper C++ native ASR dependency manifest",
+  "purpose": "Machine-readable pin, license, ABI and artifact contract for the native ASR dependencies of the C++/Qt port. cmake/NativeAsr.cmake reads this file, so the build cannot silently drift from the documented pin. tests/contract/native_dependency_contract.cpp re-checks it at ctest time.",
+  "baseline": {
+    "csharpCommit": "fc7d69c1a32be71a19634c16904d0a29a24135b0",
+    "migrationPlan": "p_312b2ec83985",
+    "phase": "C (ASR and model lifecycle)",
+    "task": "t_c6a6b0ce9685"
+  },
+  "telemetry": {
+    "networkAtRecognition": false,
+    "downloadsAtRecognition": false,
+    "statement": "No VoiceTyper native ASR component opens a network connection, sends telemetry, analytics or crash reports, or downloads anything while recognizing. Both engines are local CPU inference: whisper.cpp is compiled into the binary as a static library, and parakeet.cpp is a locally shipped DLL reached through LoadLibraryW. Model files are only ever fetched by the explicit in-app model store (Phase C task t_dde60b29a779), never by the engine, the loader or any CTest.",
+    "verification": "PRIV-01 in docs/migration/cpp/parity-ledger.md; the CTest suite never downloads a model."
+  },
+  "dependencies": [
+    {
+      "id": "whisper.cpp",
+      "role": "asr-whisper",
+      "kind": "source-build",
+      "repository": "https://github.com/ggml-org/whisper.cpp",
+      "pinnedCommit": "d09f61a708f3487afa956ff578e60eae5e7a233c",
+      "pinnedTag": null,
+      "upstreamVersion": "1.9.4",
+      "commitDate": "2026-09-24T10:29:15+02:00",
+      "license": "MIT",
+      "licenseHolder": "Copyright (c) 2023-2026 The ggml authors",
+      "licenseFile": "https://github.com/ggml-org/whisper.cpp/blob/d09f61a708f3487afa956ff578e60eae5e7a233c/LICENSE",
+      "abiVersion": null,
+      "abiNote": "whisper.cpp has no C ABI version. The pin is the contract: FetchContent re-verifies the fetched HEAD against pinnedCommit and fails configure on mismatch.",
+      "linkage": "static",
+      "integration": {
+        "module": "cmake/NativeAsr.cmake",
+        "function": "voicetyper_fetch_whisper_cpp",
+        "fetch": "FetchContent URL (GitHub commit archive) + URL_HASH SHA256; content-addressed pin, no git required on the build machine",
+        "exposedTarget": "voicetyper_whisper_native",
+        "wrapperTarget": "voicetyper_asr_whisper",
+        "wrapperSources": [
+          "src/asr/whisper_native.cpp"
+        ],
+        "publicHeader": "whisper.h (upstream, from the pinned archive)",
+        "archive": {
+          "url": "https://github.com/ggml-org/whisper.cpp/archive/d09f61a708f3487afa956ff578e60eae5e7a233c.tar.gz",
+          "bytes": 9519792,
+          "sha256": "750655899a32d5bb5b04bbde9afa430f851d46718f53812a4ec086537fee3ef8",
+          "topLevelDirectory": "whisper.cpp-d09f61a708f3487afa956ff578e60eae5e7a233c",
+          "fetchMethodRationale": "GIT_SHALLOW is documented by CMake as incompatible with a commit hash as GIT_TAG ('works only with branch names and tags'), and a full 48 MB history clone is 2m34s on the Arch/WSL side and much slower on NTFS. The commit archive is 9.5 MB, its URL embeds the commit, and URL_HASH pins the bytes exactly, so the build is content-addressed and needs no git on PATH."
+        },
+        "offlineEscapeHatch": {
+          "cacheVariable": "VOICETYPER_WHISPER_PREFETCHED_DIR",
+          "effect": "FetchContent uses this pre-fetched tree instead of downloading.",
+          "verification": "unchanged - the contentPins above are still re-hashed against the supplied tree, so it is accepted only when it is byte-identical to the pinned commit",
+          "whyItExists": "a Windows curl without a usable CA store cannot verify github.com (libcurl code 60), and air-gapped CI runners have no network at all"
+        },
+        "toolchainDeviations": {
+          "windowsApiLevel": {
+            "value": "_WIN32_WINNT=0x0601 for the vendored ggml/whisper targets only",
+            "cacheVariable": "VOICETYPER_WHISPER_WINDOWS_API_LEVEL",
+            "reason": "MinGW-w64 13.1 does not ship THREAD_POWER_THROTTLING_STATE, which ggml-cpu.c uses inside '#if _WIN32_WINNT >= 0x0602'; the MinGW13 default of 0xa00 therefore fails to compile the pinned whisper.cpp. The type is absent from mingw1310_64's headers and present in the newer WinLibs headers, so this is a MinGW13 gap, not a VoiceTyper one.",
+            "consequence": "only ggml's 'ask Windows not to throttle this thread' optimisation is skipped; possible throughput difference on Windows 11 with more than four threads, no correctness change",
+            "rejectedAlternative": "compiling the ASR archive with a different GCC than the application would mix libstdc++ ABIs"
+          }
+        },
+        "contentPins": {
+          "comment": "SHA-256 of files inside the archive, taken from an independent `git fetch --depth 1 origin d09f61a708f3487afa956ff578e60eae5e7a233c` checkout of the same commit. cmake/NativeAsr.cmake re-hashes them after extraction, so the archive is proven to be that commit's tree and not a re-cut tag.",
+          "include/whisper.h": "a7d19f7feb5be52426628ff07e0602de28a30dc4312d0d0603e1e536753f76dd",
+          "src/whisper.cpp": "c5a519d618d3084b4a6c904930df78cf16f1069ebfa7431294776c90d7bc2f8b",
+          "ggml/CMakeLists.txt": "c118116572c8e5bc8d9302d44cc6806ce69a31face60f2cefdb36801fdf72fd3"
+        },
+        "cmakeOptions": {
+          "BUILD_SHARED_LIBS": "OFF",
+          "WHISPER_BUILD_TESTS": "OFF",
+          "WHISPER_BUILD_EXAMPLES": "OFF",
+          "WHISPER_BUILD_SERVER": "OFF",
+          "WHISPER_BUILD_IS_DEV": "OFF",
+          "WHISPER_CURL": "OFF",
+          "WHISPER_SDL2": "OFF",
+          "WHISPER_USE_SYSTEM_GGML": "OFF",
+          "WHISPER_ALL_WARNINGS": "OFF",
+          "GGML_NATIVE": "OFF",
+          "GGML_OPENMP": "OFF",
+          "GGML_LTO": "OFF",
+          "GGML_CCACHE": "OFF",
+          "GGML_BACKEND_DL": "OFF",
+          "GGML_ACCELERATE": "OFF",
+          "GGML_BLAS": "OFF",
+          "GGML_RPC": "OFF",
+          "GGML_CUDA": "OFF",
+          "GGML_VULKAN": "OFF",
+          "GGML_METAL": "OFF",
+          "GGML_WASM_SINGLE_FILE": "OFF"
+        },
+        "optionsNotPresentAtPin": {
+          "GGML_WASM": "not an option at d09f61a7; the WASM backend is only added under EMSCRIPTEN, which VoiceTyper never enables",
+          "GGML_SPEECHD": "no speech-dispatcher target exists anywhere in the tree at d09f61a7 (the last espeak/speechd integration was removed upstream long before this pin)",
+          "WHISPER_BUILD_TOOLS": "not an option at d09f61a7; every command-line tool of that era lives under examples/, which is switched off by WHISPER_BUILD_EXAMPLES=OFF",
+          "parakeet target": "src/CMakeLists.txt at d09f61a7 also declares an unconditional C++ target named parakeet (include/parakeet.h, no ABI versioning). VoiceTyper must never bind it: the supported Parakeet surface is the shipped parakeet.dll C API below."
+        }
+      },
+      "artifacts": [
+        {
+          "name": "libwhisper (static)",
+          "producedBy": "FetchContent sub-build of the pinned checkout",
+          "note": "No prebuilt whisper.cpp binary is shipped or downloaded; the sources are compiled from the pinned commit on every native build."
+        }
+      ]
+    },
+    {
+      "id": "parakeet.cpp",
+      "role": "asr-parakeet",
+      "kind": "prebuilt-dll",
+      "repository": "https://github.com/mudler/parakeet.cpp",
+      "pinnedCommit": "e75de9b6b9b688fd293aa22f7e27aa724ea286f8",
+      "pinnedTag": "v0.5.0-1-ge75de9b",
+      "pinnedDate": "2026-09-10",
+      "license": "MIT",
+      "licenseHolder": "Copyright (c) 2026 the parakeet.cpp authors",
+      "licenseFile": "VoiceTyper.App/Native/parakeet/LICENSE",
+      "abiVersion": 6,
+      "abiSource": "VoiceTyper.App/Native/parakeet/include/parakeet_capi.h",
+      "abiConstant": "src/platform/api/engine_registry.hpp kParakeetAbiVersion = 6",
+      "toolchain": "gcc.exe (MinGW-W64 x86_64-ucrt-mcf-seh, Brecht Sanders r1) 16.1.0, cmake 4.3.2, PARAKEET_SHARED=ON, GGML_NATIVE=OFF, GGML_LLAMAFILE=ON, GGML_OPENMP=OFF, CMAKE_SHARED_LINKER_FLAGS=-static -static-libgcc -static-libstdc++",
+      "buildNotes": "VoiceTyper.App/Native/parakeet/BUILD.txt",
+      "integration": {
+        "module": "src/platform/windows/parakeet_runtime.hpp + .cpp",
+        "loader": "LoadLibraryW / GetProcAddress (Win32) — no link-time dependency, no import library",
+        "requiredSymbols": [
+          "parakeet_capi_abi_version",
+          "parakeet_capi_load",
+          "parakeet_capi_free",
+          "parakeet_capi_transcribe_pcm_lang",
+          "parakeet_capi_free_string",
+          "parakeet_capi_last_error"
+        ],
+        "symbolPolicy": "Only the six symbols above are resolved. A missing or differently-ABI'd library is an explicit error (engine_unavailable / abi_mismatch), never a silent Whisper fallback. The context handle is an opaque void*: no parakeet_capi type crosses into portable code.",
+        "assertion": "parakeet_capi_abi_version() must equal 6; any other value fails the open with EngineAvailabilityReason::abi_mismatch."
+      },
+      "artifacts": [
+        {
+          "path": "VoiceTyper.App/Native/parakeet.dll",
+          "bytes": 5682591,
+          "sha256": "85c7c65bfd8d467799d6cb43bd3cfac884e27dce27680189b56edc5594ec932b"
+        }
+      ]
+    },
+    {
+      "id": "mc_wasapi",
+      "role": "audio-capture",
+      "kind": "prebuilt-dll",
+      "status": "deferred-to-phase-D",
+      "usedByThisTask": false,
+      "license": "see VoiceTyper repository LICENSE and installer notices; no upstream build record is bundled in the repository",
+      "abiVersion": null,
+      "abiNote": "No C header for mc_wasapi is present in the repository; its C ABI is the deliverable of Phase D task t_bec8c2127352 and must be recovered or reimplemented before it is bound. Recorded here so the artifact is pinned and hash-checked, not to imply an existing contract.",
+      "integration": {
+        "module": "not written yet (Phase D)",
+        "loader": "planned LoadLibraryW / GetProcAddress, same seam as parakeet_runtime"
+      },
+      "artifacts": [
+        {
+          "path": "VoiceTyper.App/Native/mc_wasapi.dll",
+          "bytes": 114213,
+          "sha256": "4f97ea7fed7670e91a99cc7ba233efc86f04de9e8cfb9e8f8da5bc08d16944e0"
+        }
+      ]
+    }
+  ],
+  "models": {
+    "cacheDirectoryWindows": "%LOCALAPPDATA%/VoiceTyper/models",
+    "downloadedByTests": false,
+    "downloadedByEngines": false,
+    "note": "Model bytes are a user-visible, separately licensed artifact. Tests and the engine layer never download a model; they only check that a path exists and that the engine reports model_not_ready / corrupt_data for a missing or wrong file.",
+    "files": [
+      {
+        "id": "whisper-small-q8_0",
+        "engine": "whisper",
+        "file": "ggml-small-q8_0.bin",
+        "bytes": 264464607,
+        "source": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small-q8_0.bin",
+        "license": "model card of the upstream repository (see THIRD_PARTY_NOTICES.md)"
+      },
+      {
+        "id": "parakeet-tdt-0.6b-v3-q8_0",
+        "engine": "parakeet",
+        "file": "tdt-0.6b-v3-q8_0.gguf",
+        "bytes": 940663680,
+        "source": "https://huggingface.co/mudler/parakeet-cpp-gguf/resolve/main/tdt-0.6b-v3-q8_0.gguf",
+        "license": "CC-BY-4.0 (NVIDIA parakeet-tdt-0.6b-v3)"
+      }
+    ]
+  },
+  "claims": {
+    "recognitionQuality": "not claimed by this manifest or by t_c6a6b0ce9685",
+    "latencyOrRamParity": "not claimed; see t_2d453cc0fd84",
+    "differentialTranscriptParity": "not claimed; see the ASR gate t_14a24cb19c23"
+  }
+}

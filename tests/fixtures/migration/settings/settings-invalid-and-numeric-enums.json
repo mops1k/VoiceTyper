@@ -1,0 +1,23 @@
+{
+  "recordingMode": 1,
+  "recordHotkey": "F9",
+  "cancelHotkey": "F10",
+  "recordGamepadButton": "XInput|B",
+  "cancelGamepadButton": "XInput|Y",
+  "language": "auto",
+  "modelSize": "colossal",
+  "transcriptionEngine": 1,
+  "parakeetModelSize": 2,
+  "autoPasteEnabled": false,
+  "termsDictionary": "ZZZ",
+  "silenceThresholdMs": 500,
+  "startWithWindows": true,
+  "startMinimized": true,
+  "theme": "light",
+  "hideOnFocusLoss": true,
+  "appLanguage": "en",
+  "noiseReductionEnabled": true,
+  "temperature": 0.25,
+  "conditionOnPreviousText": true,
+  "microphoneDeviceId": "fixture-device"
+}

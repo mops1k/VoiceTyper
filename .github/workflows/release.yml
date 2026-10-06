@@ -1,73 +1,69 @@
-name: Release
+# Builds and publishes a native VoiceTyper release: the runnable tree plus the Inno
+# Setup installer the application's updater downloads.
+#
+# Trigger: pushing a tag like v1.2.0. The tag (without its 'v') becomes the product
+# version, so the About page and the update check always agree with the release.
+#
+# The asset is named VoiceTyper-<version>-win64-Setup.exe: the frozen asset pattern in
+# src/core/support/update_manifest.hpp matches it, and the "win64" marker is what
+# src/app/windows_application.cpp requires before it lets an installer run.
+
+name: release
 
 on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build (without the leading v)'
+        required: true
 
 permissions:
   contents: write
 
 jobs:
-  release:
+  windows-native:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: version
+        id: version
+        shell: pwsh
+        run: |
+          $version = if ('${{ github.event_name }}' -eq 'workflow_dispatch') { '${{ github.event.inputs.version }}' } else { '${{ github.ref_name }}'.TrimStart('v') }
+          if ([string]::IsNullOrWhiteSpace($version)) { throw 'no version to build' }
+          "value=$version" >> $env:GITHUB_OUTPUT
+
+      - name: install Qt
+        uses: jurplel/install-qt-action@v4
         with:
-          fetch-depth: 0
+          version: '6.11.2'
+          arch: win64_mingw
+          tools: tools_mingw1310
+          cache: true
 
-      - name: Resolve version from tag
+      - name: install Inno Setup
+        shell: pwsh
+        run: choco install innosetup -y --no-progress
+
+      - name: build the deploy tree
         shell: pwsh
         run: |
-          $tag = $env:GITHUB_REF_NAME
-          $tag = $tag.TrimStart('v')
-          "VERSION=$tag" | Out-File -FilePath $env:GITHUB_ENV -Append
+          cmake -S . -B build/windows-mingw-release -G Ninja `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ `
+            -DVOICETYPER_VERSION=${{ steps.version.outputs.value }}
+          cmake --build build/windows-mingw-release --target voicetyper-deploy
 
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
-
-      - name: Restore
-        run: dotnet restore VoiceTyper.slnx
-
-      - name: Build
-        run: dotnet build VoiceTyper.slnx -c Release --no-restore -p:Version=${{ env.VERSION }} -p:AssemblyVersion=${{ env.VERSION }}.0 -p:FileVersion=${{ env.VERSION }}.0 -p:InformationalVersion=${{ env.VERSION }}
-
-      - name: Test
-        run: dotnet test VoiceTyper.Tests -c Release --no-build
-
-      - name: Publish
-        run: dotnet publish VoiceTyper.App -c Release -r win-x64 --self-contained true -p:Version=${{ env.VERSION }} -p:AssemblyVersion=${{ env.VERSION }}.0 -p:FileVersion=${{ env.VERSION }}.0 -p:InformationalVersion=${{ env.VERSION }} -o artifacts\publish
-
-      - name: Build installer (Inno Setup)
+      - name: build the installer
         shell: pwsh
-        run: |
-          & 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' `
-            installer\installer.iss `
-            /DAppVersion=${{ env.VERSION }} `
-            /DSourceDir=..\artifacts\publish `
-            /DOutputDir=..\artifacts\installer
+        run: pwsh installer/build-native-installer.ps1 -Version ${{ steps.version.outputs.value }}
 
-      - name: Compute SHA-256 of installer
-        shell: pwsh
-        run: |
-          $hash = (Get-FileHash "artifacts\installer\VoiceTyper-${{ env.VERSION }}-Setup.exe" -Algorithm SHA256).Hash
-          "SHA256=$hash" | Out-File -FilePath $env:GITHUB_ENV -Append
-
-      - name: Create GitHub Release and upload artifacts
+      - name: publish the release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          name: VoiceTyper ${{ env.VERSION }}
+          files: build/windows-mingw-release/VoiceTyper-${{ steps.version.outputs.value }}-win64-Setup.exe
           generate_release_notes: true
-          files: |
-            artifacts\installer\VoiceTyper-${{ env.VERSION }}-Setup.exe
-
-      - name: Append SHA-256 to release body
-        shell: pwsh
-        run: |
-          $notes = (gh release view ${{ github.ref_name }} --json body --jq '.body') -join [Environment]::NewLine
-          $newBody = $notes + "`n`nSHA256: ${{ env.SHA256 }}"
-          gh release edit ${{ github.ref_name }} --notes "$newBody"
-        env:
-          GH_TOKEN: ${{ github.token }}

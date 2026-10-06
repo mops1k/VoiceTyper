@@ -1,0 +1,21 @@
+{
+  "recordingMode": "toggle",
+  "recordHotkey": "Ctrl\u002BShift\u002BF9",
+  "cancelHotkey": "Ctrl\u002BShift\u002BF10",
+  "recordGamepadButton": "DInput|Microsoft|0",
+  "cancelGamepadButton": null,
+  "language": "auto",
+  "modelSize": "large",
+  "autoPasteEnabled": true,
+  "termsDictionary": "CPU,GPU",
+  "silenceThresholdMs": 1500,
+  "startWithWindows": false,
+  "startMinimized": true,
+  "theme": "light",
+  "hideOnFocusLoss": false,
+  "appLanguage": "en",
+  "noiseReductionEnabled": true,
+  "temperature": 0,
+  "conditionOnPreviousText": false,
+  "microphoneDeviceId": null
+}

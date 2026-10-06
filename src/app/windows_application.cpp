@@ -527,6 +527,10 @@ int run(int argc, char** argv)
     // The pill has to be readable in both themes; the global stylesheet made it white
     // with light grey text in the light one.
     status_overlay.set_theme(presenter.settings().theme);
+    // At startup as well, not only on a change: an interface already in English was
+    // showing the Russian "Захват" because the overlay only heard about the language when
+    // it happened to change (Alexander, 06.10.2026).
+    status_overlay.set_language(presenter.settings().app_language);
     asr::NativeEngineRegistryOptions registry_options;
     registry_options.whisper_available = true;
     registry_options.whisper_factory = [](const std::filesystem::path& model) {

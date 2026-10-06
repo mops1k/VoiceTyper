@@ -258,6 +258,16 @@ private:
     QWidget* whisper_models_card_ = nullptr;
     /// The page title band (like the reference: the title sits on its own strip and
     /// does not scroll away with the rows).
+    /// The texts of one model card, so a language change re-letters it in place.
+    struct ModelCardLabels {
+        QLabel* name = nullptr;
+        QLabel* meta = nullptr;
+        QLabel* description = nullptr;
+        bool whisper = false;
+        int index = -1;
+    };
+    std::vector<ModelCardLabels> model_card_labels_;
+
     /// The update controls (About page).
     QLabel* update_version_ = nullptr;
     QPushButton* update_check_ = nullptr;

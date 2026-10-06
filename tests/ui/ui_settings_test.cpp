@@ -1095,6 +1095,67 @@ private slots:
             qPrintable(entries().join(QLatin1Char('|'))));
     }
 
+    // Страница «Модели» держала свои тексты (размер, скорость, точность, описание) прямо
+    // в таблице кода, поэтому в английском интерфейсе оставалась русской (Александр,
+    // 06.10.2026). Проверяется и то, что до переключения русский там есть, - иначе тест
+    // ничего не доказывал бы.
+    void the_models_page_follows_the_language()
+    {
+        voicetyper::platform::PortableClock clock;
+        voicetyper::platform::PortableFileSystem file_system;
+        const auto path = std::filesystem::temp_directory_path() / "voicetyper-ui-models-language-test.json";
+        std::filesystem::remove(path);
+        voicetyper::app::SettingsPresenter presenter(path, file_system, clock);
+        static_cast<void>(presenter.load());
+
+        voicetyper::app::MainWindow window(presenter, voicetyper::app::WindowServices{});
+        window.resize(980, 640);
+        window.show();
+        QCoreApplication::processEvents();
+
+        const auto has_cyrillic = [](const QString& text) {
+            for (const QChar character : text) {
+                if (character.script() == QChar::Script_Cyrillic) {
+                    return true;
+                }
+            }
+            return false;
+        };
+        const auto card_texts = [&window] {
+            QStringList out;
+            auto* card = window.findChild<QWidget*>(QStringLiteral("whisperModelsCard"));
+            if (card != nullptr) {
+                for (auto* label : card->findChildren<QLabel*>()) {
+                    out << label->text();
+                }
+            }
+            return out;
+        };
+        const auto any_cyrillic = [&has_cyrillic](const QStringList& texts) {
+            for (const QString& text : texts) {
+                if (has_cyrillic(text)) {
+                    return true;
+                }
+            }
+            return false;
+        };
+        QVERIFY2(any_cyrillic(card_texts()), "до переключения на английский русский текст обязан быть");
+
+        auto* combo = window.findChild<QComboBox*>(QStringLiteral("appLanguageCombo"));
+        QVERIFY(combo != nullptr);
+        combo->setCurrentIndex(1); // English
+        QCoreApplication::processEvents();
+
+        const QStringList after = card_texts();
+        QVERIFY(!after.isEmpty());
+        QVERIFY2(!any_cyrillic(after), qPrintable(after.join(QLatin1Char('|'))));
+        auto* hint = window.findChild<QLabel*>(QStringLiteral("engineHint"));
+        QVERIFY(hint != nullptr);
+        QVERIFY2(!has_cyrillic(hint->text()), qPrintable(hint->text()));
+        window.hide();
+        std::filesystem::remove(path);
+    }
+
     void record_button_is_disabled_without_a_backend()
     {        voicetyper::platform::PortableClock clock;
         voicetyper::platform::PortableFileSystem file_system;

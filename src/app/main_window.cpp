@@ -233,6 +233,65 @@ constexpr NavEntry kNavigation[] = {
     {"\uE7C3", "Журнал", UiKey::k9, "Log"},
     {"\uE946", "О программе", UiKey::k22, "About"},
 };
+/// A model row of the Models page, in both interface languages. The .NET page kept these
+/// in Models.cs and Strings.resx; the port keeps them here because they are presentation
+/// data, not labels: names stay as they are and the size unit follows the language.
+struct ModelRow {
+    const char* name;
+    const char* size_ru;
+    const char* size_en;
+    const char* speed_ru;
+    const char* speed_en;
+    const char* quality_ru;
+    const char* quality_en;
+    const char* description_ru;
+    const char* description_en;
+};
+
+constexpr ModelRow kWhisperModelRows[] = {
+    {"Tiny (q8)", "≈ 42 МБ", "≈ 42 MB", "Очень быстро", "Very fast", "Низкое", "Low",
+        "Минимальная модель (q8). Быстро распознаёт, экономна по памяти.",
+        "Smallest model (q8). Recognizes quickly and is easy on memory."},
+    {"Base (q8)", "≈ 78 МБ", "≈ 78 MB", "Быстро", "Fast", "Среднее", "Medium",
+        "Базовая модель (q8). Хороший баланс скорости и качества на CPU.",
+        "Base model (q8). A good balance of speed and quality on the CPU."},
+    {"Small (q8)", "≈ 252 МБ", "≈ 252 MB", "Средне", "Medium", "Высокое", "High",
+        "Рекомендуемая модель (q8). Точное распознавание, умеренная нагрузка.",
+        "The recommended model (q8). Accurate recognition at a moderate load."},
+    {"Medium (q8)", "≈ 785 МБ", "≈ 785 MB", "Медленно", "Slow", "Очень высокое", "Very high",
+        "Качественное распознавание (q8), заметно медленнее на CPU.",
+        "Accurate recognition (q8), noticeably slower on the CPU."},
+    {"Large (turbo, q8)", "≈ 834 МБ", "≈ 834 MB", "Очень медленно", "Very slow",
+        "Максимальное", "Maximum",
+        "Максимальное качество (q8, turbo). Для мощных процессоров.",
+        "The best quality (q8, turbo). For powerful processors."},
+};
+
+constexpr ModelRow kParakeetModelRows[] = {
+    {"Parakeet v3 (q4_k)", "≈ 0.64 ГБ", "≈ 0.64 GB", "Очень быстро", "Very fast",
+        "Высокое", "High",
+        "Компактный квант: меньше памяти и диска, немного ниже точность.",
+        "A compact quant: less memory and disk, slightly lower accuracy."},
+    {"Parakeet v3 (q5_k)", "≈ 0.71 ГБ", "≈ 0.71 GB", "Очень быстро", "Very fast",
+        "Высокое", "High",
+        "Баланс размера и точности: чуть выше качество, чем у q4_k.",
+        "A balance of size and accuracy: a little better than q4_k."},
+    {"Parakeet v3 (q6_k)", "≈ 0.78 ГБ", "≈ 0.78 GB", "Очень быстро", "Very fast",
+        "Высокое", "High",
+        "Повышенная точность при умеренном размере файла.",
+        "Higher accuracy at a moderate file size."},
+    {"Parakeet v3 (q8_0)", "≈ 0.9 ГБ", "≈ 0.9 GB", "Очень быстро", "Very fast",
+        "Высокое", "High",
+        "Максимальная точность кванта при самом большом размере файла.",
+        "The most accurate quant, at the largest file size."},
+};
+
+/// The field of a row for the language being shown.
+[[nodiscard]] inline const char* model_field(const char* ru, const char* en, AppLanguage language)
+{
+    return language == AppLanguage::en ? en : ru;
+}
+
 
 /// One settings row: the label pinned to the left edge, the control to the right
 /// in its own column. The .NET cards do exactly this (`Border Classes="row"`),
@@ -540,12 +599,9 @@ void MainWindow::build_tabs()
         rows->addWidget(setting_row(UiKey::k7, language_, engine_));
         // The hint is copy from the .NET page (Models_Engine_Hint): it explains the
         // trade-off the list below then quantifies.
-        auto* engine_hint = new QLabel(
-            QStringLiteral("Whisper — классический движок (модели 40–800 МБ). Parakeet (NVIDIA, 0.6B) — "
-                           "мультиязычный (25 языков, вкл. русский), качество уровня large при скорости small; "
-                           "модель 0.6–0.9 ГБ."),
-            page);
+        auto* engine_hint = new QLabel(ui_text(UiKey::k104, language_), page);
         engine_hint->setObjectName(QStringLiteral("engineHint"));
+        engine_hint->setProperty("uiKey", static_cast<int>(UiKey::k104));
         engine_hint->setWordWrap(true);
         // A full-width wrapping row, not a right-aligned one: a long hint inside
         // setting_row demanded its whole single-line width, and the page then
@@ -565,39 +621,12 @@ void MainWindow::build_tabs()
         whisper_size_->hide();
         parakeet_size_->hide();
 
-        struct ModelSpec {
-            const char* name;
-            const char* size;
-            const char* speed;
-            const char* quality;
-            const char* description;
-        };
-        // Models.cs:356-360 and :490-493, descriptions from Strings.resx.
-        static const ModelSpec kWhisperModels[] = {
-            {"Tiny (q8)", "≈ 42 МБ", "Очень быстро", "Низкое",
-                "Минимальная модель (q8). Быстро распознаёт, экономна по памяти."},
-            {"Base (q8)", "≈ 78 МБ", "Быстро", "Среднее",
-                "Базовая модель (q8). Хороший баланс скорости и качества на CPU."},
-            {"Small (q8)", "≈ 252 МБ", "Средне", "Высокое",
-                "Рекомендуемая модель (q8). Точное распознавание, умеренная нагрузка."},
-            {"Medium (q8)", "≈ 785 МБ", "Медленно", "Очень высокое",
-                "Качественное распознавание (q8), заметно медленнее на CPU."},
-            {"Large (turbo, q8)", "≈ 834 МБ", "Очень медленно", "Максимальное",
-                "Максимальное качество (q8, turbo). Для мощных процессоров."},
-        };
-        static const ModelSpec kParakeetModels[] = {
-            {"Parakeet v3 (q4_k)", "≈ 0.64 ГБ", "Очень быстро", "Высокое",
-                "Компактный квант: меньше памяти и диска, немного ниже точность."},
-            {"Parakeet v3 (q5_k)", "≈ 0.71 ГБ", "Очень быстро", "Высокое",
-                "Баланс размера и точности: чуть выше качество, чем у q4_k."},
-            {"Parakeet v3 (q6_k)", "≈ 0.78 ГБ", "Очень быстро", "Высокое",
-                "Повышенная точность при умеренном размере файла."},
-            {"Parakeet v3 (q8_0)", "≈ 0.9 ГБ", "Очень быстро", "Высокое",
-                "Максимальная точность кванта при самом большом размере файла."},
-        };
+
+        
         const auto build_model_card = [&](bool whisper) -> QWidget* {
-            const ModelSpec* specs = whisper ? kWhisperModels : kParakeetModels;
-            const std::size_t count = whisper ? std::size(kWhisperModels) : std::size(kParakeetModels);
+            const ModelRow* specs = whisper ? kWhisperModelRows : kParakeetModelRows;
+            const std::size_t count =
+                whisper ? std::size(kWhisperModelRows) : std::size(kParakeetModelRows);
             auto* card = new QWidget(page);
             card->setObjectName(whisper ? QStringLiteral("whisperModelsCard")
                                         : QStringLiteral("parakeetModelsCard"));
@@ -605,7 +634,7 @@ void MainWindow::build_tabs()
             card_layout->setContentsMargins(0, 0, 0, 0);
             card_layout->setSpacing(0);
             for (std::size_t index = 0; index < count; ++index) {
-                const ModelSpec& spec = specs[index];
+                const ModelRow& spec = specs[index];
                 auto* row = new QWidget(card);
                 row->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
                 auto* row_layout = new QHBoxLayout(row);
@@ -625,19 +654,26 @@ void MainWindow::build_tabs()
                 name->setFont(name_font);
                 auto* meta = new QLabel(
                     ui_text(UiKey::k2, language_)
-                        .arg(QString::fromUtf8(spec.size), QString::fromUtf8(spec.speed),
-                            QString::fromUtf8(spec.quality)),
+                        .arg(QString::fromUtf8(model_field(spec.size_ru, spec.size_en, language_)),
+                            QString::fromUtf8(model_field(spec.speed_ru, spec.speed_en, language_)),
+                            QString::fromUtf8(model_field(spec.quality_ru, spec.quality_en, language_))),
                     text_box);
                 meta->setObjectName(QStringLiteral("mutedLabel"));
                 // Wrapped, so the row's minimum is its longest word: otherwise the
                 // meta line alone forced the whole page wider than the viewport.
                 meta->setWordWrap(true);
-                auto* description = new QLabel(QString::fromUtf8(spec.description), text_box);
+                auto* description = new QLabel(
+                    QString::fromUtf8(model_field(spec.description_ru, spec.description_en, language_)),
+                    text_box);
                 description->setObjectName(QStringLiteral("mutedLabel"));
                 description->setWordWrap(true);
                 text_layout->addWidget(name);
                 text_layout->addWidget(meta);
                 text_layout->addWidget(description);
+                // Registered so a language change re-letters the card in place, like the
+                // rest of the window.
+                model_card_labels_.push_back(
+                    ModelCardLabels{name, meta, description, whisper, static_cast<int>(index)});
                 row_layout->addWidget(text_box, 1);
                 auto* download = new QPushButton(ui_text(UiKey::k31, language_), row);
                 download->setObjectName(whisper ? QStringLiteral("whisperModelButton%1").arg(index)
@@ -1424,6 +1460,26 @@ void MainWindow::retranslate()
         theme_->setItemText(1, theme_text(AppTheme::dark, language_));
         theme_->setItemText(2, theme_text(AppTheme::system, language_));
         theme_->setCurrentIndex(current);
+    }
+    // The model cards are built once, so their four texts are re-applied here.
+    for (const auto& card : model_card_labels_) {
+        if (card.name == nullptr || card.index < 0) {
+            continue;
+        }
+        const ModelRow* rows = card.whisper ? kWhisperModelRows : kParakeetModelRows;
+        const std::size_t count =
+            card.whisper ? std::size(kWhisperModelRows) : std::size(kParakeetModelRows);
+        if (static_cast<std::size_t>(card.index) >= count) {
+            continue;
+        }
+        const ModelRow& row = rows[card.index];
+        card.name->setText(QString::fromUtf8(row.name));
+        card.meta->setText(ui_text(UiKey::k2, language_)
+            .arg(QString::fromUtf8(model_field(row.size_ru, row.size_en, language_)),
+                QString::fromUtf8(model_field(row.speed_ru, row.speed_en, language_)),
+                QString::fromUtf8(model_field(row.quality_ru, row.quality_en, language_))));
+        card.description->setText(
+            QString::fromUtf8(model_field(row.description_ru, row.description_en, language_)));
     }
     refresh_model_list();
     refresh_status();

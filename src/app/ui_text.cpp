@@ -12,7 +12,7 @@ struct Entry {
 };
 
 /// One row per UiKey, in the same order as the enum.
-constexpr std::array<Entry, 104> kTexts{{
+constexpr std::array<Entry, 105> kTexts{{
     Entry{" мс", " ms"},
     Entry{"%1 (недоступен)", "%1 (unavailable)"},
     Entry{"%1 · Скорость: %2 · Качество: %3", "%1 · Speed: %2 · Quality: %3"},
@@ -124,6 +124,12 @@ constexpr std::array<Entry, 104> kTexts{{
     Entry{"хоткеи не зарегистрированы", "the hotkeys are not registered"},
     Entry{"сборка обновления для нативной версии ещё не опубликована",
         "the update build for the native version is not published yet"},
+    Entry{"Whisper — классический движок (модели 40–800 МБ). Parakeet (NVIDIA, 0.6B) — "
+          "мультиязычный (25 языков, вкл. русский), качество уровня large при скорости small; "
+          "модель 0.6–0.9 ГБ.",
+        "Whisper is the classic engine (models 40–800 MB). Parakeet (NVIDIA, 0.6B) is "
+        "multilingual (25 languages, Russian included), with large-level quality at small "
+        "speed; the model is 0.6–0.9 GB."},
 }};
 
 } // namespace

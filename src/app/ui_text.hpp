@@ -124,6 +124,8 @@ enum class UiKey : int {
     k102,
     /// Отказ установки обновления.
     k103,
+    /// Подсказка о движке на странице «Модели».
+    k104,
     /// Not a string: the number of keys. The table is checked against it at compile
     /// time, so a key without an entry (or an entry without a key - which silently
     /// shifts every later label, as happened once) cannot survive a build.

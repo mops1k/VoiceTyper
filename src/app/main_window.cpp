@@ -480,6 +480,19 @@ QIcon drawn_icon(DrawnIcon icon, int size, const QColor& colour)
 
 } // namespace
 
+/// Whether a registered page belongs to a navigation entry.
+///
+/// The page is registered under the label it was built with, and that label is localised -
+/// so comparing it with the current language alone made the English interface attach pages
+/// to the wrong entries (reported from the running build: the appearance page showed the
+/// models). Both spellings are accepted, so the order always follows kNavigation.
+[[nodiscard]] bool page_matches_entry(const QString& registered, const NavEntry& entry,
+    AppLanguage language)
+{
+    return registered == ui_text(entry.text, language)
+        || registered == QString::fromUtf8(entry.label);
+}
+
 void MainWindow::build_tabs()
 {
     auto* central = new QWidget(this);
@@ -1106,10 +1119,11 @@ void MainWindow::finalize_pages()
     for (const auto& entry : kNavigation) {
         const QString label = QString::fromUtf8(entry.label);
         const auto found = std::find_if(built_pages_.begin(), built_pages_.end(),
-            [&label](const auto& pair) { return pair.first == label; });
+            [&entry, this](const auto& pair) { return page_matches_entry(pair.first, entry, language_); });
         if (found == built_pages_.end()) {
             continue;
         }
+        static_cast<void>(label);
         QWidget* page = found->second;
 
         auto* scroll = new QScrollArea(pages_);
@@ -1137,6 +1151,11 @@ void MainWindow::finalize_pages()
         outer_layout->addWidget(page, 1);
         scroll->setWidget(outer);
         scroll->setProperty("pageWidget", QVariant::fromValue(static_cast<QObject*>(page)));
+        // A trailing stretch: without it the page layout spreads its rows over the whole
+        // height, which is what made the settings look scattered (Alexander, 06.10.2026).
+        if (auto* box = qobject_cast<QVBoxLayout*>(page->layout()); box != nullptr) {
+            box->addStretch(1);
+        }
         pages_->addWidget(scroll);
 
         // The item shows the label in the interface language; the Russian label stays
@@ -1163,7 +1182,7 @@ void MainWindow::finalize_pages()
     // A page that is not in the navigation table would otherwise be unreachable.
     for (const auto& pair : built_pages_) {
         const bool known = std::any_of(kNavigation, kNavigation + std::size(kNavigation),
-            [&pair](const NavEntry& entry) { return pair.first == QString::fromUtf8(entry.label); });
+            [&pair, this](const NavEntry& entry) { return page_matches_entry(pair.first, entry, language_); });
         if (known) {
             continue; // already added above, exactly once
         }
@@ -1184,7 +1203,7 @@ void MainWindow::finalize_pages()
         std::string_view entry_key = "About";
         QString entry_glyph;
         for (const auto& entry : kNavigation) {
-            if (ui_text(entry.text, language_) == pair.first) {
+            if (page_matches_entry(pair.first, entry, language_)) {
                 drawn = navigation_drawn_icon(entry.key);
                 entry_key = entry.key;
                 entry_glyph = QString::fromUtf8(entry.glyph);
@@ -1609,13 +1628,31 @@ void MainWindow::retranslate()
     }
     // Navigation items, the page title and the parts that are not plain labels.
     if (nav_ != nullptr) {
-        for (int index = 0; index < nav_->count() && index < static_cast<int>(std::size(kNavigation)); ++index) {
-            nav_->item(index)->setText(ui_text(kNavigation[index].text, language_));
+        for (int index = 0; index < nav_->count(); ++index) {
+            QListWidgetItem* item = nav_->item(index);
+            const QString key = item->data(Qt::UserRole + 2).toString();
+            for (const auto& entry : kNavigation) {
+                if (key == QString::fromUtf8(entry.key)) {
+                    item->setText(ui_text(entry.text, language_));
+                    break;
+                }
+            }
         }
         refresh_page_title(nav_->currentRow());
     }
     if (silence_threshold_ != nullptr) {
         silence_threshold_->setSuffix(ui_text(UiKey::k0, language_));
+    }
+    // The combo ITEM texts are built once, when the window is built, so a language change
+    // left them in the old language: the interface was Russian while "Язык интерфейса"
+    // showed "Russian" (Alexander, 06.10.2026). Only the two language combos carry text
+    // from the table; the others are product names and mode names.
+    if (app_language_ != nullptr && app_language_->count() >= 2) {
+        app_language_->setItemText(0, ui_text(UiKey::k30, language_));
+    }
+    if (recognition_language_ != nullptr && recognition_language_->count() >= 3) {
+        recognition_language_->setItemText(0, ui_text(UiKey::k3, language_));
+        recognition_language_->setItemText(1, ui_text(UiKey::k30, language_));
     }
     if (theme_ != nullptr) {
         // The combo item texts are built from the same table, so they have to be rebuilt.
@@ -1838,8 +1875,10 @@ void MainWindow::refresh_navigation_icons()
         // only this one runs whatever path created the item (the item data was missing on
         // the items the second pass added, which is why the icons never appeared).
         DrawnIcon icon = DrawnIcon::about;
+        const QString item_key = item->data(Qt::UserRole + 2).toString();
         for (const auto& entry : kNavigation) {
-            if (ui_text(entry.text, language_) == item->text()) {
+            if (item_key == QString::fromUtf8(entry.key)
+                || item->text() == ui_text(entry.text, language_)) {
                 icon = navigation_drawn_icon(entry.key);
                 item->setData(Qt::UserRole + 1, QString::fromUtf8(entry.glyph));
                 item->setData(Qt::UserRole + 2, QString::fromUtf8(entry.key));

@@ -813,6 +813,14 @@ private slots:
             static_cast<int>(voicetyper::domain::AppLanguage::en));
         QVERIFY2(find_row_label(QStringLiteral("Interface language")) != nullptr,
             "the window did not re-letter itself: the English label is missing");
+        // The combo item texts come from the table too: they used to keep the language the
+        // window was built with, so a Russian interface showed "Russian".
+        combo->setCurrentIndex(0);
+        QCoreApplication::processEvents();
+        QCOMPARE(combo->itemText(0), QStringLiteral("Русский"));
+        combo->setCurrentIndex(1);
+        QCoreApplication::processEvents();
+        QCOMPARE(combo->itemText(0), QStringLiteral("Russian"));
         QVERIFY2(find_row_label(QStringLiteral("Язык интерфейса")) == nullptr,
             "the Russian label is still there after switching to English");
         // The navigation follows too.
@@ -1198,6 +1206,49 @@ private slots:
                 nav->model()->data(nav->model()->index(row, 0), Qt::DecorationRole);
             QVERIFY2(decoration.isValid(),
                 qPrintable(QStringLiteral("у пункта %1 нет иконки в модели").arg(row)));
+        }
+        window.hide();
+        std::filesystem::remove(path);
+    }
+
+    // Пункт меню обязан показывать свою страницу, и это не должно зависеть от языка
+    // интерфейса: в английском «Внешний вид» открывал настройки моделей, потому что
+    // страницы сопоставлялись по локализованной подписи (Александр, 06.10.2026).
+    void every_navigation_entry_shows_its_own_page()
+    {
+        voicetyper::platform::PortableClock clock;
+        voicetyper::platform::PortableFileSystem file_system;
+        const auto path = std::filesystem::temp_directory_path() / "voicetyper-ui-page-mapping-test.json";
+        std::filesystem::remove(path);
+        voicetyper::app::SettingsPresenter presenter(path, file_system, clock);
+        static_cast<void>(presenter.load());
+
+        voicetyper::app::MainWindow window(presenter, voicetyper::app::WindowServices{});
+        window.resize(980, 640);
+        window.show();
+        QCoreApplication::processEvents();
+
+        auto* nav = window.findChild<QListWidget*>(QStringLiteral("sideNav"));
+        QVERIFY(nav != nullptr);
+        QCOMPARE(nav->count(), window.page_count());
+        for (int row = 0; row < nav->count(); ++row) {
+            const QString key = nav->item(row)->data(Qt::UserRole + 2).toString();
+            QVERIFY2(!key.isEmpty(),
+                qPrintable(QStringLiteral("у пункта %1 нет ключа страницы").arg(row)));
+            QWidget* scroll = window.page_scroll(row);
+            QVERIFY(scroll != nullptr);
+            QCOMPARE(scroll->objectName(), QStringLiteral("pageScroll_") + key);
+        }
+        // И то же в английском интерфейсе: раньше здесь связка и рассыпалась.
+        auto* combo = window.findChild<QComboBox*>(QStringLiteral("appLanguageCombo"));
+        QVERIFY(combo != nullptr);
+        combo->setCurrentIndex(1);
+        QCoreApplication::processEvents();
+        for (int row = 0; row < nav->count(); ++row) {
+            const QString key = nav->item(row)->data(Qt::UserRole + 2).toString();
+            QWidget* scroll = window.page_scroll(row);
+            QVERIFY(scroll != nullptr);
+            QCOMPARE(scroll->objectName(), QStringLiteral("pageScroll_") + key);
         }
         window.hide();
         std::filesystem::remove(path);

@@ -37,10 +37,14 @@ jobs:
           if ([string]::IsNullOrWhiteSpace($version)) { throw 'no version to build' }
           "value=$version" >> $env:GITHUB_OUTPUT
 
+      # 6.11.2 exists only as a local build on the developer machine, so CI installs
+      # the newest PUBLISHED Qt (6.9.3; the repository lists up to qt6_693) with the same
+      # MinGW 13.1 toolchain the local preset uses. The project only touches stable Qt
+      # APIs, so both toolchains build the same code.
       - name: install Qt
         uses: jurplel/install-qt-action@v4
         with:
-          version: '6.11.2'
+          version: '6.9.3'
           arch: win64_mingw
           tools: tools_mingw1310
           cache: true

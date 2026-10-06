@@ -206,6 +206,10 @@ private:
     void refresh_model_buttons();
     /// Wires the sensitivity slider and the microphone test to the services.
     void bind_microphone_controls();
+    /// Draws the left menu icons in the theme colour: the .NET glyphs are painted, and
+    /// the menu was text only because nothing ever drew them.
+    void refresh_navigation_icons();
+
     /// Re-applies every string from the table in the current language, in place: the
     /// window is never rebuilt for a language change.
     void retranslate();

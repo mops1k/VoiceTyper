@@ -337,11 +337,19 @@ if(VOICETYPER_BUILD_GUI)
         PREFIX "/"
         FILES
             assets/voiceTyper.png
+            assets/spin-up.png
+            assets/spin-down.png
             assets/fonts/Inter-Regular.ttf
             assets/fonts/Inter-Medium.ttf
             assets/fonts/Inter-SemiBold.ttf
             assets/fonts/Inter-Bold.ttf
     )
+if(WIN32)
+    # The executable's own icon: the tray icon comes from the Qt resources, but the file
+    # had none, so shortcuts and Explorer showed a generic icon.
+    target_sources(voicetyper-qt-shell PRIVATE assets/voiceTyper.rc)
+endif()
+
     target_link_libraries(voicetyper-qt-shell
         PRIVATE
             voicetyper_ui
@@ -539,6 +547,8 @@ if(VOICETYPER_BUILD_TESTS)
             qt_add_resources(voicetyper-ui-snapshot "voicetyper_snapshot_assets"
                 PREFIX "/"
                 FILES
+                assets/spin-up.png
+                assets/spin-down.png
                     assets/fonts/Inter-Regular.ttf
                     assets/fonts/Inter-Medium.ttf
                     assets/fonts/Inter-SemiBold.ttf

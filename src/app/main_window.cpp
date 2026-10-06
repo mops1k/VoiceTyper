@@ -42,6 +42,7 @@
 #include <cstring>
 #include <iterator>
 #include <QApplication>
+#include <QDebug>
 #include <QWindow>
 #include <QTextEdit>
 #include <QTimer>
@@ -198,6 +199,10 @@ constexpr Palette kLightPalette{
     "#FFFFFF", "#FFFFFF", "#E8EFF6", "#333333", "#6A6A6A", "#EFEFEF", "#0067C0", "#E8EFF6", "#EFF4F9"};
 
 /// The navigation from `SettingsViewModel.cs:307-316`: key order and the Segoe
+/// Sidebar icon box, logical pixels: the .NET template drew a 16 px glyph inside it.
+inline constexpr int kNavigationIconSizePx = 18;
+inline constexpr int kNavigationGlyphSizePx = 16;
+
 /// MDL2 Assets glyphs of the .NET build.
 struct NavEntry {
     const char* glyph;
@@ -313,7 +318,7 @@ QWidget* setting_row(UiKey key, AppLanguage language, QWidget* control, int cont
     // edge, where the right border was cut off (reported from the running build).
     // Alexander asked for a small gap rather than a flush edge.
     // Win11 rows are about 52 px tall: 32 px of control plus this padding.
-    layout->setContentsMargins(4, 10, kRowRightInset, 10);
+    layout->setContentsMargins(4, 6, kRowRightInset, 6);
     layout->setSpacing(12);
     auto* text = new QLabel(ui_text(key, language), row);
     // The key is remembered on the widget: that is what lets a language change re-letter
@@ -350,6 +355,128 @@ QFont navigation_font(int pixel_size)
     font.setPixelSize(pixel_size);
     return font;
 }
+
+/// Icons are drawn, not taken from a glyph font.
+///
+/// The .NET build used Segoe MDL2 Assets, and the port copied its code points - but those
+/// glyphs do not render on this machine (the same finding is recorded on the title bar
+/// buttons below). Geometry cannot depend on a font, so the navigation icons, the model
+/// buttons and the record button are painted from primitives.
+enum class DrawnIcon { general, appearance, models, hotkeys, microphone, startup, log, about,
+    download, remove, record, stop };
+
+void paint_drawn_icon(QPainter& painter, DrawnIcon icon, const QRectF& box, const QColor& colour)
+{
+    painter.setPen(QPen(colour, 1.6, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    painter.setBrush(Qt::NoBrush);
+    const qreal x = box.left();
+    const qreal y = box.top();
+    const qreal w = box.width();
+    const qreal h = box.height();
+    const auto point = [&](qreal fx, qreal fy) { return QPointF(x + w * fx, y + h * fy); };
+    switch (icon) {
+    case DrawnIcon::general: // a gear: circle, hub and four teeth
+        painter.drawEllipse(box.adjusted(w * 0.18, h * 0.18, -w * 0.18, -h * 0.18));
+        painter.drawEllipse(box.adjusted(w * 0.42, h * 0.42, -w * 0.42, -h * 0.42));
+        painter.drawLine(point(0.5, 0.0), point(0.5, 0.16));
+        painter.drawLine(point(0.5, 0.84), point(0.5, 1.0));
+        painter.drawLine(point(0.0, 0.5), point(0.16, 0.5));
+        painter.drawLine(point(0.84, 0.5), point(1.0, 0.5));
+        break;
+    case DrawnIcon::appearance: // a palette: circle with three dots
+        painter.drawEllipse(box.adjusted(w * 0.08, h * 0.08, -w * 0.08, -h * 0.08));
+        painter.setBrush(colour);
+        painter.drawEllipse(point(0.32, 0.36), w * 0.07, w * 0.07);
+        painter.drawEllipse(point(0.60, 0.34), w * 0.07, w * 0.07);
+        painter.drawEllipse(point(0.44, 0.62), w * 0.07, w * 0.07);
+        break;
+    case DrawnIcon::models: // a stack of layers
+        painter.drawPolygon(QPolygonF{point(0.5, 0.05), point(0.95, 0.30), point(0.5, 0.55), point(0.05, 0.30)});
+        painter.drawPolyline(QPolygonF{point(0.05, 0.55), point(0.5, 0.80), point(0.95, 0.55)});
+        break;
+    case DrawnIcon::hotkeys: // a keyboard: a rounded box with key dots
+        painter.drawRoundedRect(box.adjusted(0, h * 0.22, 0, -h * 0.22), 2.0, 2.0);
+        painter.setBrush(colour);
+        painter.drawEllipse(point(0.22, 0.5), w * 0.05, w * 0.05);
+        painter.drawEllipse(point(0.5, 0.5), w * 0.05, w * 0.05);
+        painter.drawEllipse(point(0.78, 0.5), w * 0.05, w * 0.05);
+        break;
+    case DrawnIcon::microphone: // a capsule with a stand
+        painter.drawRoundedRect(QRectF(point(0.32, 0.05), point(0.68, 0.52)), w * 0.18, w * 0.18);
+        painter.drawArc(QRectF(point(0.18, 0.28), point(0.82, 0.72)), 200 * 16, 140 * 16);
+        painter.drawLine(point(0.5, 0.72), point(0.5, 0.92));
+        painter.drawLine(point(0.30, 0.95), point(0.70, 0.95));
+        break;
+    case DrawnIcon::startup: // a power symbol
+        painter.drawArc(box.adjusted(w * 0.08, h * 0.10, -w * 0.08, -h * 0.02), 60 * 16, 60 * 16);
+        painter.drawArc(box.adjusted(w * 0.08, h * 0.10, -w * 0.08, -h * 0.02), 240 * 16, 60 * 16);
+        painter.drawLine(point(0.5, 0.02), point(0.5, 0.42));
+        break;
+    case DrawnIcon::log: // lines of text
+        for (int line = 0; line < 4; ++line) {
+            const qreal fy = 0.12 + 0.25 * line;
+            painter.drawLine(point(0.08, fy), point(line == 3 ? 0.55 : 0.92, fy));
+        }
+        break;
+    case DrawnIcon::about: // an information circle
+        painter.drawEllipse(box.adjusted(w * 0.05, h * 0.05, -w * 0.05, -h * 0.05));
+        painter.setBrush(colour);
+        painter.drawEllipse(point(0.5, 0.26), w * 0.055, w * 0.055);
+        painter.drawLine(point(0.5, 0.42), point(0.5, 0.74));
+        break;
+    case DrawnIcon::download: // an arrow into a tray
+        painter.drawLine(point(0.5, 0.05), point(0.5, 0.62));
+        painter.drawPolyline(QPolygonF{point(0.30, 0.44), point(0.5, 0.66), point(0.70, 0.44)});
+        painter.drawPolyline(QPolygonF{point(0.12, 0.78), point(0.12, 0.95), point(0.88, 0.95), point(0.88, 0.78)});
+        break;
+    case DrawnIcon::remove: // a bin with a lid
+        painter.drawLine(point(0.10, 0.24), point(0.90, 0.24));
+        painter.drawLine(point(0.38, 0.24), point(0.38, 0.12));
+        painter.drawLine(point(0.62, 0.24), point(0.62, 0.12));
+        painter.drawLine(point(0.38, 0.12), point(0.62, 0.12));
+        painter.drawPolyline(QPolygonF{point(0.20, 0.24), point(0.26, 0.94), point(0.74, 0.94), point(0.80, 0.24)});
+        break;
+    case DrawnIcon::record: // a filled dot
+        painter.setBrush(colour);
+        painter.drawEllipse(box.adjusted(w * 0.14, h * 0.14, -w * 0.14, -h * 0.14));
+        break;
+    case DrawnIcon::stop: // a rounded square
+        painter.setBrush(colour);
+        painter.drawRoundedRect(box.adjusted(w * 0.16, h * 0.16, -w * 0.16, -h * 0.16), 2.0, 2.0);
+        break;
+    }
+}
+
+/// The navigation key names the same icon the .NET template used per entry.
+DrawnIcon navigation_drawn_icon(std::string_view key)
+{
+    if (key == "Main") return DrawnIcon::general;
+    if (key == "Appearance") return DrawnIcon::appearance;
+    if (key == "Models") return DrawnIcon::models;
+    if (key == "Hotkeys") return DrawnIcon::hotkeys;
+    if (key == "Microphone") return DrawnIcon::microphone;
+    if (key == "Startup") return DrawnIcon::startup;
+    if (key == "Log") return DrawnIcon::log;
+    return DrawnIcon::about;
+}
+
+QIcon drawn_icon(DrawnIcon icon, int size, const QColor& colour)
+{
+    // A pixmap of a fixed size: multiplying the size by devicePixelRatio produced a null
+    // pixmap (and therefore an empty icon) when that ratio came back as zero, which is why
+    // the navigation icons never appeared while the same drawing worked on buttons.
+    QPixmap pixmap(size, size);
+    pixmap.fill(Qt::transparent);
+    if (qApp != nullptr && qApp->devicePixelRatio() > 0.0) {
+        pixmap.setDevicePixelRatio(qApp->devicePixelRatio());
+    }
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    const qreal inset = size * 0.16;
+    paint_drawn_icon(painter, icon, QRectF(inset, inset, size - 2 * inset, size - 2 * inset), colour);
+    return QIcon(pixmap);
+}
+
 
 } // namespace
 
@@ -503,8 +630,11 @@ void MainWindow::build_tabs()
     status_ = new QLabel(footer);
     status_->setObjectName(QStringLiteral("footerStatus"));
     status_->setFont(navigation_font(12));
-    record_button_ = new QPushButton(ui_text(UiKey::k10, language_), footer);
+    record_button_ = new QPushButton(footer);
     record_button_->setObjectName(QStringLiteral("recordButton"));
+    record_button_->setProperty("buttonRole", QStringLiteral("record"));
+    record_button_->setIconSize(QSize(18, 18));
+    record_button_->setMinimumWidth(46);
     connect(record_button_, &QPushButton::clicked, this, &MainWindow::on_recording_toggled);
     engine_state_ = new QLabel(footer);
     hotkey_state_ = new QLabel(footer);
@@ -638,7 +768,7 @@ void MainWindow::build_tabs()
                 auto* row = new QWidget(card);
                 row->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
                 auto* row_layout = new QHBoxLayout(row);
-                row_layout->setContentsMargins(4, 12, kRowRightInset, 12);
+                row_layout->setContentsMargins(4, 8, kRowRightInset, 8);
                 row_layout->setSpacing(12);
                 auto* toggle = new ToggleSwitch(row);
                 toggle->setObjectName(whisper ? QStringLiteral("whisperModelToggle%1").arg(index)
@@ -675,7 +805,10 @@ void MainWindow::build_tabs()
                 model_card_labels_.push_back(
                     ModelCardLabels{name, meta, description, whisper, static_cast<int>(index)});
                 row_layout->addWidget(text_box, 1);
-                auto* download = new QPushButton(ui_text(UiKey::k31, language_), row);
+                auto* download = new QPushButton(row);
+                download->setProperty("buttonRole", QStringLiteral("download"));
+                download->setIconSize(QSize(18, 18));
+                download->setFixedWidth(46);
                 download->setObjectName(whisper ? QStringLiteral("whisperModelButton%1").arg(index)
                                                 : QStringLiteral("parakeetModelButton%1").arg(index));
                 row_layout->addWidget(download, 0, Qt::AlignTop);
@@ -1014,10 +1147,18 @@ void MainWindow::finalize_pages()
         // The .NET page key (Main, Appearance, Models, ...): it is what a screenshot
         // run and the reviewers name, independently of the Russian label.
         item->setData(Qt::UserRole + 2, QString::fromUtf8(entry.key));
+        // Drawn right here as well: the theme is applied before this loop runs, and the
+        // icon must exist even if nothing ever refreshes it again.
+        const QColor nav_icon_colour(muted_text_.isEmpty() ? QStringLiteral("#E6E6E6") : muted_text_);
+        item->setIcon(drawn_icon(navigation_drawn_icon(entry.key), kNavigationIconSizePx,
+            nav_icon_colour));
         // A fixed row height: the .NET template uses Margin="14,10" around a
         // 14 px line, so every entry is the same size whatever the font metrics.
-        item->setSizeHint(QSize(0, 40));
+        item->setSizeHint(QSize(0, 30));
     }
+    // The theme may have been applied before the menu existed, so the icons are drawn
+    // here as well as on every theme change.
+    refresh_navigation_icons();
 
     // A page that is not in the navigation table would otherwise be unreachable.
     for (const auto& pair : built_pages_) {
@@ -1033,8 +1174,31 @@ void MainWindow::finalize_pages()
         scroll->setMinimumSize(0, 1);
         scroll->setWidget(pair.second);
         pages_->addWidget(scroll);
-        nav_->addItem(pair.first);
+        // This pass adds entries whose label is the one the page registered - which is the
+        // localised label, so in English it never matched kNavigation: the menu was built
+        // here, and addItem(text) creates an item without an icon and without the entry
+        // data. The entry is found by the same localised label and the item is created with
+        // its icon and its data, exactly like the first pass.
+        const QColor colour(muted_text_.isEmpty() ? QStringLiteral("#E6E6E6") : muted_text_);
+        DrawnIcon drawn = DrawnIcon::about;
+        std::string_view entry_key = "About";
+        QString entry_glyph;
+        for (const auto& entry : kNavigation) {
+            if (ui_text(entry.text, language_) == pair.first) {
+                drawn = navigation_drawn_icon(entry.key);
+                entry_key = entry.key;
+                entry_glyph = QString::fromUtf8(entry.glyph);
+                break;
+            }
+        }
+        auto* added = new QListWidgetItem(drawn_icon(drawn, kNavigationIconSizePx, colour),
+            pair.first, nav_);
+        added->setData(Qt::UserRole + 1, entry_glyph);
+        added->setData(Qt::UserRole + 2, QString::fromUtf8(entry_key.data()));
+        added->setSizeHint(QSize(0, 30));
     }
+    // Everything is in the menu now: dress the icons once, for every pass.
+    refresh_navigation_icons();
 }
 
 QWidget* MainWindow::page_scroll(int index) const
@@ -1371,7 +1535,7 @@ QWidget* MainWindow::setting_row_control(QWidget* status, QWidget* control)
     row->setObjectName(QStringLiteral("settingsRow"));
     row->setAttribute(Qt::WA_StyledBackground, true);
     auto* layout = new QHBoxLayout(row);
-    layout->setContentsMargins(4, 10, kRowRightInset, 10);
+    layout->setContentsMargins(4, 6, kRowRightInset, 6);
     layout->setSpacing(12);
     row->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
     // The status takes the room the plain labels take; the action keeps its own column.
@@ -1626,15 +1790,22 @@ void MainWindow::refresh_model_buttons()
             const bool downloaded = services_.model_is_downloaded
                 && services_.model_is_downloaded(whisper, static_cast<int>(index));
             if (downloaded) {
-                button->setText(ui_text(UiKey::k37, language_));
+                button->setIcon(drawn_icon(DrawnIcon::remove, 18, QColor(QStringLiteral("#E5484D"))));
+                button->setToolTip(ui_text(UiKey::k37, language_));
+                button->setProperty("buttonRole", QStringLiteral("remove"));
                 button->setEnabled(static_cast<bool>(services_.model_delete));
                 button->setToolTip(ui_text(UiKey::k38, language_));
             } else {
-                button->setText(ui_text(UiKey::k31, language_));
+                button->setIcon(drawn_icon(DrawnIcon::download, 18, QColor(QStringLiteral("#4FD1A5"))));
+                button->setToolTip(ui_text(UiKey::k31, language_));
+                button->setProperty("buttonRole", QStringLiteral("download"));
                 button->setEnabled(false);
                 button->setToolTip(QStringLiteral(
                     "Загрузка моделей появится вместе с сервисом обновлений; сейчас файл модели кладётся в папку моделей вручную"));
             }
+            // A dynamic property change only reaches the stylesheet after a repolish.
+            button->style()->unpolish(button);
+            button->style()->polish(button);
         }
     };
     update(whisper_model_buttons_, true);
@@ -1651,8 +1822,37 @@ void MainWindow::refresh_page_title(int index)
     page_title_->setText(nav_->item(index)->text());
 }
 
+void MainWindow::refresh_navigation_icons()
+{
+    if (nav_ == nullptr || nav_->count() <= 0) {
+        return;
+    }
+    const QColor icon_colour(muted_text_.isEmpty() ? QStringLiteral("#E6E6E6") : muted_text_);
+    nav_->setIconSize(QSize(kNavigationIconSizePx, kNavigationIconSizePx));
+    for (int row = 0; row < nav_->count(); ++row) {
+        QListWidgetItem* item = nav_->item(row);
+        if (item == nullptr) {
+            continue;
+        }
+        // Matched by the visible label: the menu is filled by two different passes, and
+        // only this one runs whatever path created the item (the item data was missing on
+        // the items the second pass added, which is why the icons never appeared).
+        DrawnIcon icon = DrawnIcon::about;
+        for (const auto& entry : kNavigation) {
+            if (ui_text(entry.text, language_) == item->text()) {
+                icon = navigation_drawn_icon(entry.key);
+                item->setData(Qt::UserRole + 1, QString::fromUtf8(entry.glyph));
+                item->setData(Qt::UserRole + 2, QString::fromUtf8(entry.key));
+                break;
+            }
+        }
+        item->setIcon(drawn_icon(icon, kNavigationIconSizePx, icon_colour));
+    }
+}
+
 void MainWindow::refresh_title_button_icons()
 {
+    refresh_navigation_icons();
     const QColor colour(muted_text_.isEmpty() ? QStringLiteral("#E6E6E6") : muted_text_);
     for (const auto& [button, is_close] : title_button_icons_) {
         QPixmap pixmap(10, 10);
@@ -1722,12 +1922,14 @@ void MainWindow::apply_theme()
         #titleBar QPushButton { background: transparent; border: none; color: %4; padding: 0px; border-radius: 0px; }
         #titleBar QPushButton:hover { background: %3; }
         #titleBarClose:hover { background: #C42B1C; color: #FFFFFF; }
+        QPushButton#titleBarClose:hover { background-color: #C42B1C; }
         /* Navigation column: rounded items, an accent bar on the selected one. */
         #sidebar { background: %1; border-right: 1px solid %6; }
         #sideNav { background: transparent; border: none; outline: none; }
         /* Square, full-width items with a hairline between them, like the reference. */
         #sideNav::item {
-            color: %4; padding: 9px 16px; margin: 0px; border-bottom: 1px solid %6; border-radius: 0px;
+            color: %4; padding: 6px 16px; margin: 0px; border-bottom: 1px solid %6; border-radius: 0px;
+            font-weight: bold;
         }
         #sideNav::item:hover { background: %3; }
         #sideNav::item:selected { background: %8; color: %4; }
@@ -1751,6 +1953,29 @@ void MainWindow::apply_theme()
             padding: 5px 8px; min-height: 24px;
         }
         QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus { border: 1px solid %7; }
+        /* The .NET NumberBox keeps its steppers inside the field; here they were drawn as
+           two separate boxes next to it (Alexander, 06.10.2026). They now sit inside the
+           field, separated by the same hairline as the border. */
+        QSpinBox::up-button, QDoubleSpinBox::up-button {
+            subcontrol-origin: border; subcontrol-position: top right;
+            width: 18px; margin: 1px 1px 0px 0px; border: none; border-left: 1px solid %6;
+            background: %2;
+        }
+        QSpinBox::down-button, QDoubleSpinBox::down-button {
+            subcontrol-origin: border; subcontrol-position: bottom right;
+            width: 18px; margin: 0px 1px 1px 0px; border: none; border-left: 1px solid %6;
+            background: %2;
+        }
+        QSpinBox::up-button:hover, QSpinBox::down-button:hover,
+        QDoubleSpinBox::up-button:hover, QDoubleSpinBox::down-button:hover { background: %3; }
+        /* Real triangles: Qt draws the border-based trick as flat bars, so the arrows are
+           images from the resource. */
+        QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {
+            image: url(:/assets/spin-up.png); width: 9px; height: 6px;
+        }
+        QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {
+            image: url(:/assets/spin-down.png); width: 9px; height: 6px;
+        }
         QComboBox::drop-down { border: none; width: 22px; }
         QComboBox QAbstractItemView {
             background: %2; color: %4; border: 1px solid %6; selection-background-color: %3;
@@ -1763,6 +1988,16 @@ void MainWindow::apply_theme()
         QPushButton:hover { background: %2; border: 1px solid %7; }
         QPushButton:pressed { background: %2; }
         QPushButton:disabled { color: %5; border: 1px solid %6; }
+        /* Semantic buttons: the .NET page coloured them, and the port had them all grey.
+           Sky green for download, red for delete, sky blue for the record button. */
+        QPushButton[buttonRole="download"] { background: #16302A; border: 1px solid #4FD1A5; color: #4FD1A5; }
+        QPushButton[buttonRole="download"]:hover { background: #1D3F36; }
+        QPushButton[buttonRole="download"]:disabled { border: 1px solid #2C5F4E; color: #3E8F72; background: #12241F; }
+        QPushButton[buttonRole="remove"] { background: #33191C; border: 1px solid #E5484D; color: #E5484D; }
+        QPushButton[buttonRole="remove"]:hover { background: #432024; }
+        QPushButton[buttonRole="record"] { background: #1B2C4A; border: 1px solid #4C8BF5; color: #DCE9FF; }
+        QPushButton[buttonRole="record"]:hover { background: #22385E; }
+        QPushButton[buttonRole="record"][recording="true"] { background: #4C8BF5; border: 1px solid #4C8BF5; color: #0B1622; }
         QCheckBox { color: %4; spacing: 8px; }
         QTextEdit { background: %2; color: %4; border: 1px solid %6; border-radius: 8px; }
         /* Footer: a quiet status strip with the record button. */
@@ -1806,7 +2041,14 @@ void MainWindow::refresh_status_summary()
                  recording_mode_->currentText()));
     const auto can_record = services_.start_recording != nullptr;
     record_button_->setEnabled(can_record);
-    record_button_->setText(recording_ ? ui_text(UiKey::k25, language_) : ui_text(UiKey::k10, language_));
+    // An icon instead of a word: a filled dot while recording, a square to stop it. The
+    // tooltip keeps the meaning explicit.
+    record_button_->setIcon(drawn_icon(recording_ ? DrawnIcon::stop : DrawnIcon::record, 18,
+        QColor(recording_ ? QStringLiteral("#0B1622") : QStringLiteral("#DCE9FF"))));
+    record_button_->setToolTip(recording_ ? ui_text(UiKey::k25, language_) : ui_text(UiKey::k10, language_));
+    record_button_->setProperty("recording", recording_);
+    record_button_->style()->unpolish(record_button_);
+    record_button_->style()->polish(record_button_);
     if (!can_record) {
         record_button_->setToolTip(ui_text(UiKey::k8, language_));
     }

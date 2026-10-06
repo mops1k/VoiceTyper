@@ -1,0 +1,7 @@
+// Windows resources of the application executable.
+//
+// The tray icon came from the Qt resource bundle, but the FILE had no icon at all, so the
+// desktop shortcut and Explorer showed a generic one (reported by Alexander, 06.10.2026:
+// "на рабочем столе в ярлыке иконки нет"). This is the icon the .NET build shipped,
+// restored from the repository history.
+IDI_ICON1 ICON DISCARDABLE "voiceTyper.ico"

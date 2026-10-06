@@ -17,6 +17,7 @@
 #include <QApplication>
 #include "app/toggle_switch.hpp"
 #include <QComboBox>
+#include <QListWidget>
 #include <QMenu>
 #include <QSystemTrayIcon>
 #include <QImage>
@@ -672,9 +673,13 @@ private slots:
         auto* downloaded = window.findChild<QPushButton*>(QStringLiteral("whisperModelButton2"));
         auto* missing = window.findChild<QPushButton*>(QStringLiteral("whisperModelButton0"));
         QVERIFY(downloaded != nullptr && missing != nullptr);
-        QCOMPARE(downloaded->text(), QStringLiteral("Удалить"));
+        // The buttons carry icons instead of words now (Alexander, 06.10.2026), so the
+        // role and the icon are what identify them.
+        QCOMPARE(downloaded->property("buttonRole").toString(), QStringLiteral("remove"));
+        QVERIFY2(!downloaded->icon().isNull(), "кнопка удаления без иконки");
         QVERIFY2(downloaded->isEnabled(), "a downloaded model must offer a working delete");
-        QCOMPARE(missing->text(), QStringLiteral("Скачать"));
+        QCOMPARE(missing->property("buttonRole").toString(), QStringLiteral("download"));
+        QVERIFY2(!missing->icon().isNull(), "кнопка скачивания без иконки");
         QVERIFY2(!missing->isEnabled(), "a model that is not on disk cannot be downloaded yet");
         QVERIFY2(!missing->toolTip().isEmpty(), "the disabled download button must say why");
 
@@ -1152,6 +1157,48 @@ private slots:
         auto* hint = window.findChild<QLabel*>(QStringLiteral("engineHint"));
         QVERIFY(hint != nullptr);
         QVERIFY2(!has_cyrillic(hint->text()), qPrintable(hint->text()));
+        window.hide();
+        std::filesystem::remove(path);
+    }
+
+    // Иконки левого меню: глиф из .NET-шаблона хранился в данных пункта, но никогда не
+    // рисовался, поэтому меню было текстовым (Александр, 06.10.2026).
+    void the_navigation_entries_carry_icons()
+    {
+        voicetyper::platform::PortableClock clock;
+        voicetyper::platform::PortableFileSystem file_system;
+        const auto path = std::filesystem::temp_directory_path() / "voicetyper-ui-nav-icons-test.json";
+        std::filesystem::remove(path);
+        voicetyper::app::SettingsPresenter presenter(path, file_system, clock);
+        static_cast<void>(presenter.load());
+
+        voicetyper::app::MainWindow window(presenter, voicetyper::app::WindowServices{});
+        window.resize(980, 640);
+        window.show();
+        QCoreApplication::processEvents();
+
+        auto* nav = window.findChild<QListWidget*>(QStringLiteral("sideNav"));
+        QVERIFY2(nav != nullptr, "левое меню не найдено");
+        QVERIFY(nav->count() > 0);
+        QCOMPARE(nav->iconSize(), QSize(18, 18));
+        // Пункты не должны растягиваться на высоту колонки: у каждого своя фиксированная
+        // высота, иначе меню разъезжается (сообщение и скриншот Александра, 06.10.2026).
+        for (int row = 0; row < nav->count(); ++row) {
+            const int height = nav->visualItemRect(nav->item(row)).height();
+            QVERIFY2(height <= 34, qPrintable(QStringLiteral("пункт %1 растянут: %2px").arg(row).arg(height)));
+        }
+        qDebug() << "test sees count" << nav->count() << "icon0null" << nav->item(0)->icon().isNull();
+        for (int row = 0; row < nav->count(); ++row) {
+            QListWidgetItem* item = nav->item(row);
+            QVERIFY(item != nullptr);
+            // The icon lives in the model's decoration role, which is what the delegate
+            // paints: QListWidgetItem::icon() reads a separate copy QListWidget does not
+            // keep in step here, so it reports null even when the menu shows the icon.
+            const QVariant decoration =
+                nav->model()->data(nav->model()->index(row, 0), Qt::DecorationRole);
+            QVERIFY2(decoration.isValid(),
+                qPrintable(QStringLiteral("у пункта %1 нет иконки в модели").arg(row)));
+        }
         window.hide();
         std::filesystem::remove(path);
     }

@@ -1,5 +1,0 @@
-<Solution>
-  <Project Path="VoiceTyper.App/VoiceTyper.App.csproj" />
-  <Project Path="VoiceTyper.Core/VoiceTyper.Core.csproj" />
-  <Project Path="VoiceTyper.Tests/VoiceTyper.Tests.csproj" />
-</Solution>

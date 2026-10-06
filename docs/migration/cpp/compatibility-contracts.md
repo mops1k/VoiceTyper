@@ -633,8 +633,8 @@ product; it is the dependency boundary the later Phase C tasks build on.
 |---|---|
 | whisper.cpp | `ggml-org/whisper.cpp` @ `d09f61a708f3487afa956ff578e60eae5e7a233c` (upstream 1.9.4, ggml 0.25.1), MIT, compiled from source, **static** |
 | parakeet.cpp | `mudler/parakeet.cpp` @ `e75de9b6b9b688fd293aa22f7e27aa724ea286f8` (`v0.5.0-1-ge75de9b`), MIT, shipped `parakeet.dll`, C ABI **6** |
-| `VoiceTyper.App/Native/parakeet.dll` | 5,682,591 bytes, SHA-256 `85c7c65bfd8d467799d6cb43bd3cfac884e27dce27680189b56edc5594ec932b` |
-| `VoiceTyper.App/Native/mc_wasapi.dll` | 114,213 bytes, SHA-256 `4f97ea7fed7670e91a99cc7ba233efc86f04de9e8cfb9e8f8da5bc08d16944e0` (Phase D, no ABI contract yet) |
+| `native/parakeet.dll` | 5,682,591 bytes, SHA-256 `85c7c65bfd8d467799d6cb43bd3cfac884e27dce27680189b56edc5594ec932b` |
+| `native/mc_wasapi.dll` | 114,213 bytes, SHA-256 `4f97ea7fed7670e91a99cc7ba233efc86f04de9e8cfb9e8f8da5bc08d16944e0` (Phase D, no ABI contract yet) |
 
 Rules:
 

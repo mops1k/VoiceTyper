@@ -87,11 +87,10 @@ TrayController::TrayController(QSystemTrayIcon& icon, QObject* parent)
     menu_ = new QMenu();
     // Текст пунктов упирался в правый край, а вертикальные отступы были тесными: у
     // пунктов теперь запас справа и по высоте (замечание Александра, 06.10.2026).
-    // Пункты были тесными по высоте и текст упирался в правый край: запас сверху и
-    // снизу увеличен, справа оставлено заметно больше места (Александр, 06.10.2026).
-    menu_->setStyleSheet(QStringLiteral("QMenu { padding: 6px 6px 6px 6px; }"
-                                        "QMenu::item { padding: 12px 28px 12px 14px; }"
-                                        "QMenu::separator { height: 1px; margin: 6px 12px; }"));
+    // Только запас справа: текст упирался в правый край, а всё остальное в меню
+    // устраивало (уточнение Александра, 06.10.2026 - вертикальные отступы он просил
+    // не в меню трея, а в списке разделов внутри окна настроек).
+    menu_->setStyleSheet(QStringLiteral("QMenu::item { padding-right: 26px; }"));
     show_action_ = menu_->addAction(tr("Открыть настройки"));
     QObject::connect(show_action_, &QAction::triggered, this, &TrayController::show_requested);
     menu_->addSeparator();

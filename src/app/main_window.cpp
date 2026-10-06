@@ -1671,7 +1671,8 @@ void MainWindow::apply_theme()
         #sideNav { background: transparent; border: none; outline: none; }
         /* Square, full-width items with a hairline between them, like the reference. */
         #sideNav::item {
-            color: %4; padding: 9px 16px; margin: 0px; border-bottom: 1px solid %6; border-radius: 0px;
+            color: %4; padding: 18px 16px; margin: 0px; border-bottom: 1px solid %6; border-radius: 0px;
+            font-weight: bold;
         }
         #sideNav::item:hover { background: %3; }
         #sideNav::item:selected { background: %8; color: %4; }

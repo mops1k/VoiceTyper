@@ -28,12 +28,12 @@ set(VOICETYPER_VERSION "2.0.0" CACHE STRING "Product version, compared with the 
 # voicetyper_fetch_whisper_cpp() touches the network.
 include(${PROJECT_SOURCE_DIR}/cmake/NativeAsr.cmake)
 voicetyper_verify_native_pins()
-voicetyper_verify_shipped_dll(parakeet.cpp "VoiceTyper.App/Native/parakeet.dll")
+voicetyper_verify_shipped_dll(parakeet.cpp "native/parakeet.dll")
 set(VOICETYPER_PARAKEET_DLL_VERIFIED "${verified}")
-voicetyper_verify_shipped_dll(mc_wasapi "VoiceTyper.App/Native/mc_wasapi.dll")
+voicetyper_verify_shipped_dll(mc_wasapi "native/mc_wasapi.dll")
 set(VOICETYPER_MCWASAPI_DLL_VERIFIED "${verified}")
-voicetyper_native_manifest_artifact(parakeet.cpp "VoiceTyper.App/Native/parakeet.dll" sha256 VOICETYPER_PARAKEET_DLL_SHA256)
-voicetyper_native_manifest_artifact(mc_wasapi "VoiceTyper.App/Native/mc_wasapi.dll" sha256 VOICETYPER_MCWASAPI_DLL_SHA256)
+voicetyper_native_manifest_artifact(parakeet.cpp "native/parakeet.dll" sha256 VOICETYPER_PARAKEET_DLL_SHA256)
+voicetyper_native_manifest_artifact(mc_wasapi "native/mc_wasapi.dll" sha256 VOICETYPER_MCWASAPI_DLL_SHA256)
 
 # Contract headers must stay standard-C++-only. Failing here rather than at link
 # time keeps a GUI-off build Qt-free and keeps OS SDK leakage out of the
@@ -838,11 +838,11 @@ if(WIN32 AND VOICETYPER_BUILD_GUI)
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                     "$<TARGET_FILE:voicetyper-qt-shell>" "${VOICETYPER_DEPLOY_DIR}"
             # The native capture library, exactly as the .NET distribution shipped it.
-            # The copy comes from the tracked location (VoiceTyper.App/Native), which is
+            # The copy comes from the tracked location (native), which is
             # also the one the manifest check above verifies; dist/ is a build output and
             # is not in the repository.
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                    "${CMAKE_SOURCE_DIR}/VoiceTyper.App/Native/mc_wasapi.dll" "${VOICETYPER_DEPLOY_DIR}"
+                    "${CMAKE_SOURCE_DIR}/native/mc_wasapi.dll" "${VOICETYPER_DEPLOY_DIR}"
             # Qt runtime + the platform plugin, from the Qt root only.
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                     "${VOICETYPER_QT_ROOT}/bin/Qt6Core.dll"
@@ -863,7 +863,7 @@ if(WIN32 AND VOICETYPER_BUILD_GUI)
             # Parakeet is runtime-loaded beside the executable, not imported, so
             # nothing in the link line would copy it for us.
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                    "${PROJECT_SOURCE_DIR}/VoiceTyper.App/Native/parakeet.dll"
+                    "${PROJECT_SOURCE_DIR}/native/parakeet.dll"
                     "${VOICETYPER_DEPLOY_DIR}"
             COMMENT "Assembling a runnable tree in ${VOICETYPER_DEPLOY_DIR}"
             VERBATIM)

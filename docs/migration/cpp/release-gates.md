@@ -60,8 +60,8 @@ Local WSL restore succeeded, but local build/test was blocked by the absent Wind
 | `VoiceTyper.App/bin/Release/net10.0-windows/win-x64/publish` | 488 | 200,267,054 | pre-existing, mtime 2026-09-10 |
 | `VoiceTyper.App/bin/Release/net10.0-windows/win-x64` | 555 | 240,644,910 | may include build outputs |
 | `dist` | 2,223 | 1,483,295,430 | stale/pre-existing; 4 symlinks not followed |
-| `VoiceTyper.App/Native/mc_wasapi.dll` | 1 | 114,213 | binary only; source absent |
-| `VoiceTyper.App/Native/parakeet.dll` | 1 | 5,682,591 | pinned Parakeet build |
+| `native/mc_wasapi.dll` | 1 | 114,213 | binary only; source absent |
+| `native/parakeet.dll` | 1 | 5,682,591 | pinned Parakeet build |
 
 These are byte counts only, not a clean publish or performance result. Hardware/artifact collection is recorded in plan `p_49ef390bda00`.
 

@@ -116,12 +116,12 @@
       "pinnedDate": "2026-09-10",
       "license": "MIT",
       "licenseHolder": "Copyright (c) 2026 the parakeet.cpp authors",
-      "licenseFile": "VoiceTyper.App/Native/parakeet/LICENSE",
+      "licenseFile": "native/parakeet/LICENSE",
       "abiVersion": 6,
-      "abiSource": "VoiceTyper.App/Native/parakeet/include/parakeet_capi.h",
+      "abiSource": "native/parakeet/include/parakeet_capi.h",
       "abiConstant": "src/platform/api/engine_registry.hpp kParakeetAbiVersion = 6",
       "toolchain": "gcc.exe (MinGW-W64 x86_64-ucrt-mcf-seh, Brecht Sanders r1) 16.1.0, cmake 4.3.2, PARAKEET_SHARED=ON, GGML_NATIVE=OFF, GGML_LLAMAFILE=ON, GGML_OPENMP=OFF, CMAKE_SHARED_LINKER_FLAGS=-static -static-libgcc -static-libstdc++",
-      "buildNotes": "VoiceTyper.App/Native/parakeet/BUILD.txt",
+      "buildNotes": "native/parakeet/BUILD.txt",
       "integration": {
         "module": "src/platform/windows/parakeet_runtime.hpp + .cpp",
         "loader": "LoadLibraryW / GetProcAddress (Win32) — no link-time dependency, no import library",
@@ -138,7 +138,7 @@
       },
       "artifacts": [
         {
-          "path": "VoiceTyper.App/Native/parakeet.dll",
+          "path": "native/parakeet.dll",
           "bytes": 5682591,
           "sha256": "85c7c65bfd8d467799d6cb43bd3cfac884e27dce27680189b56edc5594ec932b"
         }
@@ -159,7 +159,7 @@
       },
       "artifacts": [
         {
-          "path": "VoiceTyper.App/Native/mc_wasapi.dll",
+          "path": "native/mc_wasapi.dll",
           "bytes": 114213,
           "sha256": "4f97ea7fed7670e91a99cc7ba233efc86f04de9e8cfb9e8f8da5bc08d16944e0"
         }

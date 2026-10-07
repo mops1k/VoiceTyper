@@ -70,6 +70,13 @@ jobs:
       - name: Build
         run: cmake --build --preset windows-mingw-release --clean-first
 
+      # The test executables are EXCLUDE_FROM_ALL by design - CMakeLists.txt documents
+      # the aggregate target for exactly this - so a plain build leaves them out and
+      # ctest then reports every test as "Not Run" (40 of 43, exit 1, found in the spike
+      # job on 2026-10-07). They have to be built explicitly before ctest runs.
+      - name: Build the tests
+        run: cmake --build --preset windows-mingw-release --target voicetyper-tests
+
       - name: Test
         run: ctest --preset windows-mingw-release --output-on-failure
 
@@ -109,6 +116,10 @@ jobs:
 
       - name: Build
         run: cmake --build --preset linux-arch-release --clean-first
+
+      # Same reason as in the windows job: the test executables are EXCLUDE_FROM_ALL.
+      - name: Build the tests
+        run: cmake --build --preset linux-arch-release --target voicetyper-tests
 
       - name: Test
         run: ctest --preset linux-arch-release --output-on-failure

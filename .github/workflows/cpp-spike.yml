@@ -28,7 +28,7 @@ permissions:
 
 jobs:
   windows:
-    name: Windows MinGW13 / Qt 6.11.2
+    name: Windows MinGW13 / Qt 6.9.3
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
@@ -38,44 +38,31 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install pinned aqtinstall
+      # Qt 6.11.2 exists only as a local build on the developer machine: the public
+      # archive has no qt6_6112 (Updates.xml answers 404), so the aqt install this job
+      # used to run failed every time and the whole spike job failed with it
+      # (7 failed runs, found 2026-10-07). The newest PUBLISHED Qt is used instead -
+      # the same one the release workflow installs, and the product only touches
+      # stable Qt APIs, so both toolchains build the same code.
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.9.3'
+          arch: win64_mingw
+          tools: tools_mingw1310
+          cache: true
+
+      # The toolchain file reads VOICETYPER_MINGW_ROOT / VOICETYPER_QT_ROOT from the
+      # environment; install-qt-action exports QT_ROOT_DIR and IQTA_TOOLS.
+      - name: Export the toolchain roots
         shell: pwsh
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install --upgrade --force-reinstall --no-cache-dir `
-            git+https://github.com/miurahr/aqtinstall.git@8c3695d4a4e1ceabf6a74dc6c79681656dc6b74b
-
-      - name: Install Qt 6.11.2 and MinGW 13.1
-        shell: pwsh
-        run: |
-          $sevenZip = (Get-Command 7z.exe -ErrorAction SilentlyContinue).Source
-          if (-not $sevenZip) {
-            $sevenZip = 'C:\Program Files\7-Zip\7z.exe'
+          if (-not (Test-Path "${{ env.IQTA_TOOLS }}\mingw1310_64\bin\g++.exe")) {
+            Get-ChildItem "${{ env.IQTA_TOOLS }}" | ForEach-Object { Write-Host $_.Name }
+            throw "no MinGW at ${{ env.IQTA_TOOLS }}\mingw1310_64"
           }
-          if (-not (Test-Path $sevenZip)) {
-            throw '7-Zip executable was not found for aqt extraction'
-          }
-
-          python -m aqt install-qt windows desktop 6.11.2 win64_mingw `
-            -O "$env:RUNNER_TEMP\Qt" --base https://download.qt.io `
-            --timeout 30 --external $sevenZip
-          python -m aqt install-tool windows desktop tools_mingw1310 `
-            qt.tools.win64_mingw1310 -O "$env:RUNNER_TEMP\QtTools" `
-            --base https://download.qt.io --timeout 30 --external $sevenZip
-
-          $qtConfig = Get-ChildItem "$env:RUNNER_TEMP\Qt" -Recurse -Filter Qt6Config.cmake |
-            Select-Object -First 1
-          $gpp = Get-ChildItem "$env:RUNNER_TEMP\QtTools" -Recurse -Filter g++.exe |
-            Select-Object -First 1
-          if (-not $qtConfig -or -not $gpp) {
-            throw 'Qt6Config.cmake or MinGW g++.exe was not found after aqt install'
-          }
-
-          $qtRoot = [IO.Path]::GetFullPath((Join-Path $qtConfig.DirectoryName '../../../..'))
-          $mingwRoot = Split-Path (Split-Path $gpp.FullName)
-          "VOICETYPER_QT_ROOT=$qtRoot" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
-          "VOICETYPER_MINGW_ROOT=$mingwRoot" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
-          "$mingwRoot\bin" | Out-File $env:GITHUB_PATH -Encoding utf8 -Append
+          "VOICETYPER_QT_ROOT=${{ env.QT_ROOT_DIR }}" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "VOICETYPER_MINGW_ROOT=${{ env.IQTA_TOOLS }}\mingw1310_64" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "${{ env.IQTA_TOOLS }}\mingw1310_64\bin" | Out-File $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Configure
         run: cmake --preset windows-mingw-release --fresh
@@ -96,7 +83,13 @@ jobs:
           path: ${{ runner.temp }}\voicetyper-install
 
   arch:
-    name: Arch Linux / Qt 6.11.x
+    name: Arch Linux / Qt 6.11.x (self-hosted, manual)
+    # This job needs a self-hosted runner, and the repository currently has none
+    # (actions/runners -> total_count 0), so on a push it would queue for ever and
+    # hold the whole run's status. It is manual-only and non-blocking until such a
+    # runner is registered; then the if/continue-on-error can be dropped.
+    if: github.event_name == 'workflow_dispatch'
+    continue-on-error: true
     runs-on: [self-hosted, linux, arch]
     timeout-minutes: 30
     steps:

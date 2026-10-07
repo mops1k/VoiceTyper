@@ -31,9 +31,11 @@
 #include "asr/gigaam_transcriber.hpp"
 #include "asr/native_engine_registry.hpp"
 #include "asr/native_transcribers.hpp"
+#include "asr/silero_segmenter.hpp"
 #include "domain/app_paths.hpp"
 #include "domain/file_logger.hpp"
 #include "domain/recording_state_machine.hpp"
+#include "domain/silence_trimming_port.hpp"
 #include "domain/terms_dictionary.hpp"
 #include "domain/terms_dictionary_port.hpp"
 #include "domain/version.hpp"
@@ -558,7 +560,29 @@ int run(int argc, char** argv)
     // a model's input window (GigaAM is trained on ~25 s). It has to exist before
     // the engine registry below, because the GigaAM factory borrows it and that
     // factory can run as soon as the first engine is selected.
-    domain::EnergySpeechSegmenter segmenter;
+    // Silero is the product's detector from now on: it drives the VAD auto-stop,
+    // the chunk cuts of a dictation longer than a model window and the silence
+    // trimming below. The energy heuristic stays as an EXPLICITLY logged fallback
+    // when the model file is missing - the same rule as the engines: a substitution
+    // is reported, never silent.
+    domain::EnergySpeechSegmenter energy_segmenter;
+    std::unique_ptr<asr::SileroSegmenter> silero_segmenter;
+    {
+        const auto vad_model = models_directory(paths) / "ggml-silero-v6.2.0.bin";
+        auto opened = asr::SileroSegmenter::open(vad_model);
+        if (opened.is_ok()) {
+            silero_segmenter = std::move(opened).value();
+            static_cast<void>(logger.write(platform::LogLevel::info, "VAD detector",
+                "silero " + vad_model.filename().string()));
+        } else {
+            static_cast<void>(logger.write(platform::LogLevel::warn, "VAD detector",
+                "silero unavailable (" + opened.error().message()
+                    + "), falling back to the energy detector"));
+        }
+    }
+    domain::SpeechSegmenter& segmenter = silero_segmenter != nullptr
+        ? static_cast<domain::SpeechSegmenter&>(*silero_segmenter)
+        : static_cast<domain::SpeechSegmenter&>(energy_segmenter);
     asr::NativeEngineRegistryOptions registry_options;
     registry_options.whisper_available = true;
     registry_options.whisper_factory = [](const std::filesystem::path& model) {
@@ -666,8 +690,13 @@ int run(int argc, char** argv)
     // mechanism that reaches all three engines (measured 2026-10-07 - GigaAM
     // reports no vocabulary support and ignores a context prompt, and the
     // Parakeet C API has neither).
+    // The trimming decorator sits between the machine and the engine, so every
+    // engine receives audio without the silence around the dictation and without
+    // the long pauses inside it. The dictionary decorator stays outside it: it
+    // rewrites the text that comes back.
+    domain::SilenceTrimmingPort silence_port(engine_host, segmenter);
     domain::TermsDictionaryPort dictionary_port(
-        engine_host, [&presenter] { return presenter.settings().terms_dictionary; });
+        silence_port, [&presenter] { return presenter.settings().terms_dictionary; });
     domain::RecordingStateMachine machine(
         logged_capture, dictionary_port, output, worker, machine_options, &segmenter);
     // The machine reads its per-session parameters and its mode from the live
@@ -726,8 +755,19 @@ int run(int argc, char** argv)
         status_overlay.post_state(platform::OverlayState::error,
             device_problem ? device_message.toStdString() : detail);
     });
-    machine.set_text_ready_handler([&logger, status_channel](std::string text) {
+    machine.set_text_ready_handler([&logger, status_channel, &silence_port](std::string text) {
         // Length only. The log must never contain recognised text (LOG-01).
+        // What the trimming step did, in numbers only: the log never contains the
+        // text (LOG-01), but "why was this dictation slow" and "did the silence
+        // actually go away" have to be answerable.
+        const auto& trimming = silence_port.last_report();
+        static_cast<void>(logger.write(
+            platform::LogLevel::info,
+            "silence trimmed",
+            "segments=" + std::to_string(trimming.speech_segments)
+                + " removed_leading=" + std::to_string(trimming.removed_leading)
+                + " removed_trailing=" + std::to_string(trimming.removed_trailing)
+                + " compressed_pause=" + std::to_string(trimming.compressed_pause_samples)));
         static_cast<void>(logger.write(
             platform::LogLevel::info,
             "text delivered",

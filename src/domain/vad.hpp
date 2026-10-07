@@ -30,6 +30,18 @@ public:
         const std::vector<float>& samples) = 0;
     virtual void reset() = 0;
 
+    /// Per-frame speech probabilities of the last detect_speech_no_reset call,
+    /// when the implementation has them. Silero reports one value per 512-sample
+    /// frame (31.9 ms); the energy heuristic has none.
+    ///
+    /// Empty means "no per-frame information", and a caller must then use its own
+    /// rule (the chunk planner falls back to the deterministic midpoint) instead
+    /// of guessing. Additive on purpose: adding a detector must not force every
+    /// existing implementation to grow a method it cannot answer.
+    [[nodiscard]] virtual std::vector<float> last_frame_probabilities() const { return {}; }
+    /// Length of one probability frame in seconds; 0 when unknown.
+    [[nodiscard]] virtual double probability_frame_seconds() const noexcept { return 0.0; }
+
 protected:
     SpeechSegmenter() = default;
 };

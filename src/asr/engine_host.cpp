@@ -373,6 +373,7 @@ domain::Result<std::string> EngineHost::transcribe(
     request.temperature = options.temperature;
     request.condition_on_previous_text = options.condition_on_previous_text;
     request.best_of = options.best_of;
+    request.speech_map = options.speech_map;
 
     in_flight_.fetch_add(1, std::memory_order_acq_rel);
     auto result = engine->transcribe(domain::WavAudio(std::move(wav_data)), request, cancellation);

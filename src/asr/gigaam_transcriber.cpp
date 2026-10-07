@@ -148,9 +148,27 @@ domain::Result<std::string> GigaamTranscriber::transcribe(
         return text;
     }
 
-    if (segmenter_ == nullptr) {
-        // Cutting at an arbitrary sample would damage a word. Without a
-        // segmenter the honest answer is a refusal, not a silent guess.
+    // A detector's answer may already be attached to this request: the trimming
+    // decorator runs Silero before the engine, and re-running it here would make
+    // one dictation pay for two detection passes (measured: 355 ms for 3 s of
+    // audio, 1369 ms for 30 s).
+    std::vector<domain::SpeechSegment> segments;
+    std::vector<float> probabilities;
+    double frame_seconds = 0.0;
+    if (!request.speech_map.empty()) {
+        segments = request.speech_map.segments;
+        probabilities = request.speech_map.probabilities;
+        frame_seconds = request.speech_map.frame_seconds;
+    } else if (segmenter_ != nullptr) {
+        segmenter_->reset();
+        segments = segmenter_->detect_speech_no_reset(audio);
+        probabilities = segmenter_->last_frame_probabilities();
+        frame_seconds = segmenter_->probability_frame_seconds();
+    }
+
+    if (segments.empty()) {
+        // Cutting at an arbitrary sample would damage a word. Without speech spans
+        // the honest answer is a refusal, not a silent guess.
         return domain::Result<std::string>::failure(
             domain::ErrorCode::out_of_range,
             "gigaam: the dictation is longer than the model window ("
@@ -161,15 +179,8 @@ domain::Result<std::string> GigaamTranscriber::transcribe(
     // The chunk budget keeps a margin below the declared window so the cut itself
     // never lands on the limit.
     const double budget = std::max(1.0, window - 1.0);
-    segmenter_->reset();
-    const auto segments = segmenter_->detect_speech_no_reset(audio);
-    // Probabilities are not part of the portable segmenter contract, so a forced
-    // cut inside one over-long utterance uses the deterministic midpoint rather
-    // than the quietest frame (frame_seconds 0 selects that fallback). Extending
-    // the segmenter contract with probabilities is a recorded follow-up, not
-    // something to fake here.
     const auto chunks = domain::plan_speech_chunks(
-        segments, {}, 0.0, audio.size(), domain::kTargetSampleRate, budget);
+        segments, probabilities, frame_seconds, audio.size(), domain::kTargetSampleRate, budget);
     if (chunks.empty()) {
         return domain::Result<std::string>::failure(
             domain::ErrorCode::out_of_range,

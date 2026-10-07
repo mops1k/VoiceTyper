@@ -280,6 +280,20 @@ if(VOICETYPER_BUILD_ASR)
     )
     voicetyper_set_warnings(voicetyper_asr_whisper)
 
+    # Silero VAD through the pinned whisper.cpp. It uses the whisper library the
+    # Whisper engine already links, so there is no second ggml and no new
+    # dependency; the model is the one the models page installs.
+    add_library(voicetyper_asr_silero STATIC
+        src/asr/silero_segmenter.cpp
+    )
+    target_link_libraries(voicetyper_asr_silero
+        PUBLIC
+            voicetyper_domain
+        PRIVATE
+            voicetyper_whisper_native
+    )
+    voicetyper_set_warnings(voicetyper_asr_silero)
+
     # The two real engines behind the frozen platform::Transcriber contract, plus
     # the concrete registry that creates them. Only exists when whisper.cpp is in
     # the build: without it, Whisper is reported platform_unsupported by the
@@ -436,6 +450,9 @@ endif()
                 # The terms dictionary port wraps the engine host, so the
                 # composition that builds it needs the replacement code linked.
                 voicetyper_terms
+                # The composition opens the Silero VAD model and wraps the engine
+                # with the trimming decorator.
+                voicetyper_asr_silero
                 # FileLogger backs the Журнал page; without it the composition
                 # cannot report anything the user would need to debug a run.
                 voicetyper_core_support
@@ -575,6 +592,26 @@ if(VOICETYPER_BUILD_TESTS)
     add_test(NAME speech-segments-contract COMMAND voicetyper-speech-segments-contract)
     set_tests_properties(speech-segments-contract PROPERTIES
         PASS_REGULAR_EXPRESSION "speech-segments-contract: OK"
+    )
+
+    add_executable(voicetyper-silence-trimming-contract EXCLUDE_FROM_ALL
+        tests/contract/silence_trimming_contract.cpp
+    )
+    target_link_libraries(voicetyper-silence-trimming-contract PRIVATE voicetyper_vad voicetyper_audio)
+    voicetyper_set_warnings(voicetyper-silence-trimming-contract)
+    add_test(NAME silence-trimming-contract COMMAND voicetyper-silence-trimming-contract)
+    set_tests_properties(silence-trimming-contract PROPERTIES
+        PASS_REGULAR_EXPRESSION "silence-trimming-contract: OK"
+    )
+
+    add_executable(voicetyper-silero-vad-contract EXCLUDE_FROM_ALL
+        tests/contract/silero_vad_contract.cpp
+    )
+    target_link_libraries(voicetyper-silero-vad-contract PRIVATE voicetyper_asr_silero voicetyper_audio)
+    voicetyper_set_warnings(voicetyper-silero-vad-contract)
+    add_test(NAME silero-vad-contract COMMAND voicetyper-silero-vad-contract)
+    set_tests_properties(silero-vad-contract PROPERTIES
+        PASS_REGULAR_EXPRESSION "silero-vad-contract: OK"
     )
 
     add_executable(voicetyper-terms-dictionary-contract EXCLUDE_FROM_ALL
@@ -1346,6 +1383,8 @@ add_custom_target(voicetyper-tests
         voicetyper-vad-contract
         voicetyper-speech-segments-contract
         voicetyper-terms-dictionary-contract
+        voicetyper-silero-vad-contract
+        voicetyper-silence-trimming-contract
         voicetyper-gigaam-engine-contract
         voicetyper-mc-wasapi-contract
         voicetyper-microphone-level-contract

@@ -40,6 +40,7 @@
 #include "domain/cancellation.hpp"
 #include "domain/error.hpp"
 #include "domain/settings.hpp"
+#include "domain/speech_segments.hpp"
 
 #include <cstddef>
 #include <filesystem>
@@ -73,6 +74,10 @@ struct TranscriptionRequest {
     /// Number of greedy candidates. The recording state machine requests 3 for
     /// the final result; 1 is the fast path used elsewhere.
     int best_of = 1;
+    /// A detector's answer for this audio, when the caller already ran one: an
+    /// engine that needs speech spans uses it instead of detecting again, so one
+    /// dictation never pays for two detection passes. Empty means "detect yourself".
+    domain::SpeechMap speech_map;
 };
 
 /// Declares which request fields an engine actually applies.

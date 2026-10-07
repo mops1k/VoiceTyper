@@ -42,6 +42,7 @@
 #include "domain/cancellation.hpp"
 #include "domain/error.hpp"
 #include "domain/settings.hpp"
+#include "domain/speech_segments.hpp"
 #include "domain/vad.hpp"
 
 #include <chrono>
@@ -91,6 +92,9 @@ struct SessionOptions {
     /// Background noise suppression, ported from the .NET build. Off by default, exactly
     /// like the setting it comes from.
     bool noise_suppression = false;
+    /// What a detector already found for THIS audio, when a caller ran one (the
+    /// trimming decorator does). Empty means "the engine detects for itself".
+    SpeechMap speech_map;
 };
 
 // ---------------------------------------------------------------------------

@@ -55,6 +55,34 @@ inline constexpr double kDefaultMaxChunkSeconds = 25.0;
 /// it exists so a pathological probability vector cannot yield a 1-sample chunk.
 inline constexpr double kMinChunkSeconds = 0.5;
 
+/// One piece of the source audio that survived a trim, and where it landed in the
+/// output. A caller that needs to move timestamps (a speech map) through the trim
+/// uses these spans instead of re-deriving the layout.
+struct KeptSpan {
+    std::size_t source_begin = 0;
+    std::size_t source_end = 0;
+    std::size_t output_begin = 0;
+
+    [[nodiscard]] std::size_t source_size() const noexcept { return source_end - source_begin; }
+};
+
+/// A detector's answer, in the timeline of the audio it was run on.
+///
+/// A caller that already ran a detector (the silence-trimming decorator does)
+/// hands its answer to the engine, so one dictation costs ONE detection pass
+/// instead of two. An engine that receives an empty map detects for itself,
+/// exactly as before - nothing is silently assumed.
+struct SpeechMap {
+    std::vector<SpeechSegment> segments;
+    std::vector<float> probabilities;
+    double frame_seconds = 0.0;
+
+    [[nodiscard]] bool empty() const noexcept
+    {
+        return segments.empty() && probabilities.empty();
+    }
+};
+
 /// Result of a segment-driven trim together with the numbers the log reports.
 struct TrimReport {
     /// The trimmed audio. If `speech_segments` is 0 this is the input unchanged:
@@ -65,6 +93,8 @@ struct TrimReport {
     std::size_t removed_trailing = 0;
     std::size_t compressed_pause_samples = 0;
     std::size_t speech_segments = 0;
+    /// The pieces that survived, in output order: the mapping a speech map needs.
+    std::vector<KeptSpan> kept_spans;
 };
 
 /// Trims `samples` to the span the segments describe: leading/trailing silence
@@ -82,6 +112,15 @@ struct TrimReport {
     double margin_seconds = kSilenceTrimMarginSeconds,
     double max_silence_seconds = kSilenceTrimMaxSilenceSeconds,
     double gap_silence_seconds = kSilenceTrimGapSeconds);
+
+/// Rewrites a speech map into the timeline of the trimmed audio described by
+/// `kept_spans`. Segments are mapped endpoint by endpoint, and every output frame
+/// takes the probability of the source frame it was copied from.
+[[nodiscard]] SpeechMap map_speech_map(
+    const SpeechMap& source,
+    const std::vector<KeptSpan>& kept_spans,
+    std::size_t output_samples,
+    std::size_t sample_rate = 16000);
 
 /// One contiguous slice of the recording, as sample indices into the original
 /// buffer. The engine receives the slice as its own WAV.

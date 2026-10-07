@@ -55,7 +55,8 @@ void append_silence(
     std::size_t end,
     std::size_t max_silence,
     std::size_t gap,
-    std::size_t& compressed)
+    std::size_t& compressed,
+    std::vector<KeptSpan>& kept_spans)
 {
     if (end <= begin) {
         return;
@@ -66,6 +67,9 @@ void append_silence(
         compressed += length - keep;
     }
     const auto copied = std::min(keep, length);
+    if (copied > 0) {
+        kept_spans.push_back(KeptSpan{begin, begin + copied, out.size()});
+    }
     out.insert(out.end(), samples.begin() + static_cast<std::ptrdiff_t>(begin),
                samples.begin() + static_cast<std::ptrdiff_t>(begin + copied));
 }
@@ -152,15 +156,77 @@ TrimReport trim_silence_to_segments(
     for (const auto& span : spans) {
         const auto span_begin = std::max(cursor, std::min(end, sample_at(span.start_seconds, sample_rate)));
         const auto span_end = std::max(span_begin, std::min(end, sample_at(span.end_seconds, sample_rate)));
-        append_silence(out, samples, cursor, span_begin, max_silence, gap, report.compressed_pause_samples);
-        out.insert(out.end(), samples.begin() + static_cast<std::ptrdiff_t>(span_begin),
-                   samples.begin() + static_cast<std::ptrdiff_t>(span_end));
+        append_silence(out, samples, cursor, span_begin, max_silence, gap,
+            report.compressed_pause_samples, report.kept_spans);
+        if (span_end > span_begin) {
+            report.kept_spans.push_back(KeptSpan{span_begin, span_end, out.size()});
+            out.insert(out.end(), samples.begin() + static_cast<std::ptrdiff_t>(span_begin),
+                       samples.begin() + static_cast<std::ptrdiff_t>(span_end));
+        }
         cursor = span_end;
     }
-    append_silence(out, samples, cursor, end, max_silence, gap, report.compressed_pause_samples);
+    append_silence(out, samples, cursor, end, max_silence, gap,
+        report.compressed_pause_samples, report.kept_spans);
 
     report.samples = std::move(out);
     return report;
+}
+
+SpeechMap map_speech_map(const SpeechMap& source, const std::vector<KeptSpan>& kept_spans,
+    std::size_t output_samples, std::size_t sample_rate)
+{
+    SpeechMap mapped;
+    mapped.frame_seconds = source.frame_seconds;
+    if (kept_spans.empty()) {
+        return mapped;
+    }
+    const double rate = sample_rate == 0 ? 1.0 : static_cast<double>(sample_rate);
+
+    const auto forward = [&kept_spans](std::size_t source_sample) -> std::size_t {
+        for (const auto& span : kept_spans) {
+            if (source_sample >= span.source_begin && source_sample < span.source_end) {
+                return span.output_begin + (source_sample - span.source_begin);
+            }
+        }
+        if (source_sample < kept_spans.front().source_begin) {
+            return kept_spans.front().output_begin;
+        }
+        return kept_spans.back().output_begin + kept_spans.back().source_size();
+    };
+    const auto backward = [&kept_spans](std::size_t output_sample) -> std::size_t {
+        for (const auto& span : kept_spans) {
+            if (output_sample >= span.output_begin && output_sample < span.output_begin + span.source_size()) {
+                return span.source_begin + (output_sample - span.output_begin);
+            }
+        }
+        return kept_spans.back().source_begin + kept_spans.back().source_size();
+    };
+
+    for (const auto& segment : source.segments) {
+        const auto begin = static_cast<std::size_t>(std::max(0.0, segment.start_seconds) * rate);
+        const auto end = static_cast<std::size_t>(std::max(0.0, segment.end_seconds) * rate);
+        const double mapped_begin = static_cast<double>(forward(begin)) / rate;
+        const double mapped_end = static_cast<double>(forward(end)) / rate;
+        if (mapped_end > mapped_begin) {
+            mapped.segments.push_back(SpeechSegment{mapped_begin, mapped_end});
+        }
+    }
+
+    if (source.frame_seconds > 0.0 && !source.probabilities.empty() && output_samples > 0) {
+        const auto frame_samples = static_cast<std::size_t>(source.frame_seconds * rate);
+        if (frame_samples > 0) {
+            const std::size_t frames = output_samples / frame_samples;
+            mapped.probabilities.reserve(frames);
+            for (std::size_t index = 0; index < frames; ++index) {
+                const std::size_t output_sample = index * frame_samples + frame_samples / 2;
+                const std::size_t source_frame = backward(output_sample) / frame_samples;
+                mapped.probabilities.push_back(source_frame < source.probabilities.size()
+                        ? source.probabilities[source_frame]
+                        : source.probabilities.back());
+            }
+        }
+    }
+    return mapped;
 }
 
 std::vector<SpeechChunk> plan_speech_chunks(

@@ -98,6 +98,11 @@ platform::Status ModelDownloadService::download(ModelEngine engine, std::string_
             "the model file name is empty");
     }
 
+    if (cancellation.can_be_cancelled() && cancellation.is_cancellation_requested()) {
+        return platform::Status::failure(platform::ErrorCode::cancelled,
+            "the download was cancelled before it started");
+    }
+
     std::error_code error;
     std::filesystem::create_directories(models_directory_, error);
     const auto target = path_for(file_name);
@@ -160,7 +165,13 @@ platform::Status ModelDownloadService::download(ModelEngine engine, std::string_
     file.close();
 
     if (read_status.is_error()) {
+        // The partial file always goes: a cancelled transfer must leave no leftovers, and a
+        // broken one must not leave something that looks like a ready model.
         std::filesystem::remove(temporary, error);
+        if (cancellation.can_be_cancelled() && cancellation.is_cancellation_requested()) {
+            return platform::Status::failure(platform::ErrorCode::cancelled,
+                "the download was cancelled");
+        }
         return platform::Status::failure(read_status.error());
     }
     if (state.total > 0 && state.downloaded != state.total) {

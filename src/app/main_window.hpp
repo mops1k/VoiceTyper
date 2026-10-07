@@ -106,12 +106,24 @@ struct WindowServices {
     /// Downloads the installer, verifies it and starts it. `percent` below zero means
     /// "unknown size"; `stage` is "download" or "done"; a non-empty `error` failed.
     std::function<void(std::function<void(int percent, QString stage, QString error)>)> update_install;
-    /// Starts a model download. Progress arrives on the UI thread: `percent` below zero
-    /// means the size is unknown, a non-empty `error` means the download failed. An empty
-    /// service leaves the download buttons disabled with a reason.
-    std::function<void(bool whisper, int index,
-        std::function<void(int percent, QString error)>)>
-        model_download;
+    /// One report from a running model download.
+    struct ModelTransfer {
+        /// Share received, 0..100; below zero while the size is still unknown.
+        int percent = -1;
+        double bytes_per_second = 0.0;
+        /// Seconds left, negative when it cannot be estimated.
+        double remaining_seconds = -1.0;
+        /// Non-empty when the transfer failed.
+        QString error;
+        /// True when the user cancelled it.
+        bool cancelled = false;
+    };
+
+    /// Starts a model download. Reports arrive on the UI thread. An empty service leaves the
+    /// download buttons disabled with a reason.
+    std::function<void(bool whisper, int index, std::function<void(ModelTransfer)>)> model_download;
+    /// Asks a running download to stop; the service removes the partial file.
+    std::function<void(bool whisper, int index)> model_download_cancel;
     /// Live log lines.
     std::function<QString()> log_text;
     /// Called after a settings change that affects a running service (engine,
@@ -281,6 +293,9 @@ private:
     };
     std::vector<ModelCardLabels> model_card_labels_;
 
+    /// True while a row is downloading, so its button offers cancellation.
+    std::vector<bool> whisper_model_busy_;
+    std::vector<bool> parakeet_model_busy_;
     /// The progress bar of every model row, in the same order as the buttons.
     std::vector<QProgressBar*> whisper_model_progress_;
     std::vector<QProgressBar*> parakeet_model_progress_;

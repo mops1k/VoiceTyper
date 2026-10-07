@@ -43,11 +43,12 @@ void check_equal(const std::string& actual, const std::string& expected, const s
 class FakeStream final : public voicetyper::platform::HttpByteStream {
 public:
     FakeStream(int status, std::optional<std::uint64_t> length, std::vector<std::string> chunks,
-        bool fail_after_chunks = false)
+        bool fail_after_chunks = false, voicetyper::domain::CancellationSource* cancel_after_first = nullptr)
         : status_(status)
         , length_(length)
         , chunks_(std::move(chunks))
         , fail_after_chunks_(fail_after_chunks)
+        , cancel_after_first_(cancel_after_first)
     {
     }
 
@@ -59,9 +60,19 @@ public:
     [[nodiscard]] std::optional<std::uint64_t> content_length() const noexcept override { return length_; }
 
     voicetyper::domain::Status read_into(
-        const voicetyper::platform::HttpChunkSink& sink, const voicetyper::domain::CancellationToken&) override
+        const voicetyper::platform::HttpChunkSink& sink,
+        const voicetyper::domain::CancellationToken& cancellation) override
     {
+        std::size_t sent = 0;
         for (const std::string& chunk : chunks_) {
+            if (cancel_after_first_ != nullptr && sent == 1) {
+                cancel_after_first_->request_cancellation(); // the user changed their mind
+            }
+            if (cancellation.can_be_cancelled() && cancellation.is_cancellation_requested()) {
+                return voicetyper::domain::Status::failure(
+                    voicetyper::domain::ErrorCode::cancelled, "the download was cancelled");
+            }
+            ++sent;
             if (!sink(chunk.data(), chunk.size())) {
                 return voicetyper::domain::Status::failure(
                     voicetyper::domain::ErrorCode::io_failure, "the sink aborted the transfer");
@@ -81,6 +92,7 @@ private:
     std::optional<std::uint64_t> length_;
     std::vector<std::string> chunks_;
     bool fail_after_chunks_ = false;
+    voicetyper::domain::CancellationSource* cancel_after_first_ = nullptr;
     std::vector<voicetyper::platform::HttpHeader> headers_;
     bool closed_ = false;
 };
@@ -110,10 +122,11 @@ public:
                 voicetyper::domain::ErrorCode::unavailable, "the model host is unreachable");
         }
         return voicetyper::domain::Result<std::unique_ptr<voicetyper::platform::HttpByteStream>>(
-            std::make_unique<FakeStream>(status, length, chunks, dropped));
+            std::make_unique<FakeStream>(status, length, chunks, dropped, cancel_after_first));
     }
 
     bool dropped = false;
+    voicetyper::domain::CancellationSource* cancel_after_first = nullptr;
 };
 
 void the_urls_are_the_dotnet_repositories()
@@ -241,6 +254,55 @@ void a_broken_transfer_leaves_nothing_behind()
     std::filesystem::remove_all(directory);
 }
 
+void a_cancelled_download_leaves_nothing_behind()
+{
+    using voicetyper::core::support::ModelDownloadService;
+    using voicetyper::core::support::ModelEngine;
+    const auto directory = scratch_directory();
+    FakeHttp http;
+    http.length = 100;
+    http.chunks = {"hello", "world"};
+
+    // The user changed their mind before the transfer began: the service must refuse at once
+    // and not even open the connection.
+    voicetyper::domain::CancellationSource source;
+    source.request_cancellation();
+    ModelDownloadService service(http, directory);
+    const auto status = service.download(ModelEngine::whisper, "ggml-base-q8_0.bin", {},
+        source.token());
+    check(status.is_error(), "отменённая загрузка сообщает об ошибке");
+    check(http.last_url.empty(), "соединение даже не открывалось");
+    check(!std::filesystem::exists(directory / "ggml-base-q8_0.bin"), "файла нет");
+    check(!std::filesystem::exists(directory / "ggml-base-q8_0.bin.part"), "временного файла нет");
+    std::filesystem::remove_all(directory);
+}
+
+void a_cancelled_transfer_leaves_no_leftovers()
+{
+    using voicetyper::core::support::ModelDownloadService;
+    using voicetyper::core::support::ModelEngine;
+    const auto directory = scratch_directory();
+    voicetyper::domain::CancellationSource source;
+    FakeHttp http;
+    http.length = 1024;
+    http.chunks = {"first", "second", "third"};
+    http.cancel_after_first = &source; // the user presses cancel while it runs
+
+    ModelDownloadService service(http, directory);
+    const auto status = service.download(ModelEngine::parakeet, "tdt-0.6b-v3-q6_k.gguf", {},
+        source.token());
+    check(status.is_error(), "отмена во время загрузки — это ошибка");
+    check(status.error().code() == voicetyper::domain::ErrorCode::cancelled,
+        "код ошибки именно «отменено», а не «связь оборвалась»");
+    std::size_t leftovers = 0;
+    for (const auto& entry : std::filesystem::directory_iterator(directory)) {
+        static_cast<void>(entry);
+        ++leftovers;
+    }
+    check(leftovers == 0, "после отмены в папке моделей пусто: ни .part, ни целевого файла");
+    std::filesystem::remove_all(directory);
+}
+
 void an_unreachable_host_is_reported()
 {
     using voicetyper::core::support::ModelDownloadService;
@@ -267,6 +329,8 @@ int main()
     a_successful_download_writes_the_file();
     a_broken_transfer_leaves_nothing_behind();
     an_unreachable_host_is_reported();
+    a_cancelled_download_leaves_nothing_behind();
+    a_cancelled_transfer_leaves_no_leftovers();
 
     if (failures == 0) {
         std::printf("model-download-contract: OK (%d checks)\n", checks);

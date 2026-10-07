@@ -1162,9 +1162,85 @@ private slots:
         const QStringList after = card_texts();
         QVERIFY(!after.isEmpty());
         QVERIFY2(!any_cyrillic(after), qPrintable(after.join(QLatin1Char('|'))));
-        auto* hint = window.findChild<QLabel*>(QStringLiteral("engineHint"));
-        QVERIFY(hint != nullptr);
-        QVERIFY2(!has_cyrillic(hint->text()), qPrintable(hint->text()));
+        window.hide();
+        std::filesystem::remove(path);
+    }
+
+    // Таблица строк и перечисление ключей разъезжаются молча: сегодня строка «Скачивание…»
+    // стояла на месте подсказки о движке, поэтому и над списком моделей, и в статусе
+    // показывался не тот текст (Александр, 07.10.2026). Эти проверки фиксируют конец таблицы
+    // дословно, чтобы сдвиг падал здесь, а не на устройстве.
+    void the_last_string_table_entries_are_exact()
+    {
+        using voicetyper::app::UiKey;
+        using voicetyper::app::ui_text;
+        QCOMPARE(ui_text(UiKey::k105, voicetyper::domain::AppLanguage::ru), QStringLiteral("Скачивание…"));
+        QCOMPARE(ui_text(UiKey::k106, voicetyper::domain::AppLanguage::ru), QStringLiteral("Не удалось скачать модель"));
+        QCOMPARE(ui_text(UiKey::k107, voicetyper::domain::AppLanguage::ru), QStringLiteral("Скачивание: %1%"));
+        QCOMPARE(ui_text(UiKey::k108, voicetyper::domain::AppLanguage::ru), QStringLiteral("Загрузка отменена"));
+        QCOMPARE(ui_text(UiKey::k109, voicetyper::domain::AppLanguage::ru), QStringLiteral("Отменить загрузку"));
+        QCOMPARE(ui_text(UiKey::k106, voicetyper::domain::AppLanguage::en), QStringLiteral("Could not download the model"));
+        QCOMPARE(ui_text(UiKey::k107, voicetyper::domain::AppLanguage::en), QStringLiteral("Downloading: %1%"));
+        QCOMPARE(ui_text(UiKey::k108, voicetyper::domain::AppLanguage::en), QStringLiteral("The download was cancelled"));
+    }
+
+    // Прогресс загрузки модели: показываем настоящие проценты, а не циклическую анимацию, и
+    // то же нажатие отменяет начатую загрузку (требование Александра, 07.10.2026).
+    void the_model_row_shows_percentage_and_cancels()
+    {
+        voicetyper::platform::PortableClock clock;
+        voicetyper::platform::PortableFileSystem file_system;
+        const auto path = std::filesystem::temp_directory_path() / "voicetyper-ui-modeldownload-test.json";
+        std::filesystem::remove(path);
+        voicetyper::app::SettingsPresenter presenter(path, file_system, clock);
+        static_cast<void>(presenter.load());
+
+        voicetyper::app::WindowServices services;
+        std::function<void(voicetyper::app::WindowServices::ModelTransfer)> report;
+        bool cancel_requested = false;
+        services.model_is_downloaded = [](bool, int) { return false; };
+        services.model_download = [&report](bool, int,
+            std::function<void(voicetyper::app::WindowServices::ModelTransfer)> progress) {
+            report = std::move(progress);
+        };
+        services.model_download_cancel = [&cancel_requested](bool, int) { cancel_requested = true; };
+
+        voicetyper::app::MainWindow window(presenter, std::move(services));
+        window.resize(980, 640);
+        window.show();
+
+        auto* button = window.findChild<QPushButton*>(QStringLiteral("whisperModelButton0"));
+        auto* bar = window.findChild<QProgressBar*>(QStringLiteral("whisperModelProgress0"));
+        QVERIFY(button != nullptr && bar != nullptr);
+        QVERIFY2(button->isEnabled(), "с доступной загрузкой кнопка скачивания работает");
+        QVERIFY2(bar->isHidden(), "до загрузки индикатор скрыт");
+
+        button->click();
+        QCoreApplication::processEvents();
+        QVERIFY2(report != nullptr, "загрузка передана сервису");
+        QVERIFY2(!bar->isHidden(), "во время загрузки индикатор показан");
+        QCOMPARE(bar->maximum(), 100);
+        QVERIFY2(bar->isTextVisible(), "проценты должны быть видны числом");
+        QCOMPARE(button->property("buttonRole").toString(), QStringLiteral("remove"));
+
+        voicetyper::app::WindowServices::ModelTransfer progress;
+        progress.percent = 42;
+        report(progress);
+        QCoreApplication::processEvents();
+        QCOMPARE(bar->value(), 42);
+
+        button->click(); // то же нажатие — отмена
+        QCoreApplication::processEvents();
+        QVERIFY2(cancel_requested, "повторное нажатие отменяет загрузку");
+
+        voicetyper::app::WindowServices::ModelTransfer cancelled;
+        cancelled.error = QStringLiteral("the download was cancelled");
+        cancelled.cancelled = true;
+        report(cancelled);
+        QCoreApplication::processEvents();
+        QVERIFY2(bar->isHidden(), "после отмены индикатор убран");
+        QCOMPARE(button->property("buttonRole").toString(), QStringLiteral("download"));
+
         window.hide();
         std::filesystem::remove(path);
     }

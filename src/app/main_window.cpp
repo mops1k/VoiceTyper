@@ -363,7 +363,7 @@ QFont navigation_font(int pixel_size)
 /// buttons below). Geometry cannot depend on a font, so the navigation icons, the model
 /// buttons and the record button are painted from primitives.
 enum class DrawnIcon { general, appearance, models, hotkeys, microphone, startup, log, about,
-    download, remove, record, stop };
+    download, remove, record, stop, cancel };
 
 void paint_drawn_icon(QPainter& painter, DrawnIcon icon, const QRectF& box, const QColor& colour)
 {
@@ -439,6 +439,10 @@ void paint_drawn_icon(QPainter& painter, DrawnIcon icon, const QRectF& box, cons
     case DrawnIcon::record: // a filled dot
         painter.setBrush(colour);
         painter.drawEllipse(box.adjusted(w * 0.14, h * 0.14, -w * 0.14, -h * 0.14));
+        break;
+    case DrawnIcon::cancel: // a cross
+        painter.drawLine(point(0.15, 0.15), point(0.85, 0.85));
+        painter.drawLine(point(0.85, 0.15), point(0.15, 0.85));
         break;
     case DrawnIcon::stop: // a rounded square
         painter.setBrush(colour);
@@ -742,10 +746,6 @@ void MainWindow::build_tabs()
         rows->addWidget(setting_row(UiKey::k7, language_, engine_));
         // The hint is copy from the .NET page (Models_Engine_Hint): it explains the
         // trade-off the list below then quantifies.
-        auto* engine_hint = new QLabel(ui_text(UiKey::k104, language_), page);
-        engine_hint->setObjectName(QStringLiteral("engineHint"));
-        engine_hint->setProperty("uiKey", static_cast<int>(UiKey::k104));
-        engine_hint->setWordWrap(true);
         // A full-width wrapping row, not a right-aligned one: a long hint inside
         // setting_row demanded its whole single-line width, and the page then
         // became wider than the scroll viewport - the right edge of every control
@@ -754,7 +754,6 @@ void MainWindow::build_tabs()
         hint_row->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
         auto* hint_layout = new QHBoxLayout(hint_row);
         hint_layout->setContentsMargins(4, 6, kRowRightInset, 12);
-        hint_layout->addWidget(engine_hint, 1);
         rows->addWidget(hint_row);
 
         // The .NET page picks a model from a list that carries its size, speed,
@@ -833,6 +832,7 @@ void MainWindow::build_tabs()
                 transfer->setTextVisible(false);
                 transfer->hide();
                 (whisper ? whisper_model_progress_ : parakeet_model_progress_).push_back(transfer);
+                (whisper ? whisper_model_busy_ : parakeet_model_busy_).push_back(false);
                 download->setObjectName(whisper ? QStringLiteral("whisperModelButton%1").arg(index)
                                                 : QStringLiteral("parakeetModelButton%1").arg(index));
                 row_layout->addWidget(transfer, 0, Qt::AlignTop);
@@ -843,6 +843,14 @@ void MainWindow::build_tabs()
                 // One handler for both states of the button: delete a model that is on disk,
                 // download one that is not.
                 connect(download, &QPushButton::clicked, this, [this, whisper, index] {
+                    const auto& busy = whisper ? whisper_model_busy_ : parakeet_model_busy_;
+                    if (static_cast<std::size_t>(index) < busy.size() && busy[static_cast<std::size_t>(index)]) {
+                        // The same button cancels a transfer that is already running.
+                        if (services_.model_download_cancel) {
+                            services_.model_download_cancel(whisper, index);
+                        }
+                        return;
+                    }
                     const bool downloaded = services_.model_is_downloaded
                         && services_.model_is_downloaded(whisper, static_cast<int>(index));
                     if (downloaded) {
@@ -1844,41 +1852,55 @@ void MainWindow::start_model_download(bool whisper, int index)
         return;
     }
     QProgressBar* bar = bars[static_cast<std::size_t>(index)];
+    auto& busy = whisper ? whisper_model_busy_ : parakeet_model_busy_;
     const auto& buttons = whisper ? whisper_model_buttons_ : parakeet_model_buttons_;
     QPushButton* button = index < static_cast<int>(buttons.size()) ? buttons[static_cast<std::size_t>(index)]
                                                                   : nullptr;
-    bar->setRange(0, 0); // unknown until the first progress report
+    // A percentage, not a cycling animation: the server reports the length, so the bar shows
+    // real progress from the first report on.
+    bar->setRange(0, 100);
+    bar->setValue(0);
+    bar->setFormat(QStringLiteral("%p%"));
+    bar->setTextVisible(true);
     bar->show();
-    if (button != nullptr) {
-        button->setEnabled(false);
-        button->setToolTip(ui_text(UiKey::k105, language_));
-    }
+    busy[static_cast<std::size_t>(index)] = true;
+    refresh_model_buttons();
     set_status_message(ui_text(UiKey::k105, language_));
 
     QPointer<MainWindow> self(this);
-    services_.model_download(whisper, index, [self, whisper, index](int percent, QString error) {
+    services_.model_download(whisper, index,
+        [self, whisper, index](WindowServices::ModelTransfer report) {
         if (self == nullptr) {
             return;
         }
         const auto& list = whisper ? self->whisper_model_progress_ : self->parakeet_model_progress_;
-        if (index < 0 || static_cast<std::size_t>(index) >= list.size()) {
+        auto& busy = whisper ? self->whisper_model_busy_ : self->parakeet_model_busy_;
+        if (index < 0 || static_cast<std::size_t>(index) >= list.size()
+            || static_cast<std::size_t>(index) >= busy.size()) {
             return;
         }
         QProgressBar* bar = list[static_cast<std::size_t>(index)];
-        if (!error.isEmpty()) {
+        const auto finish = [&] {
+            busy[static_cast<std::size_t>(index)] = false;
             bar->hide();
-            self->set_status_message(ui_text(UiKey::k106, self->language_) + QStringLiteral(": ") + error);
             self->refresh_model_buttons();
+        };
+        if (!report.error.isEmpty()) {
+            // A cancellation is a normal outcome, not a failure: say so, without the reason.
+            finish();
+            self->set_status_message(report.cancelled
+                    ? ui_text(UiKey::k108, self->language_)
+                    : ui_text(UiKey::k106, self->language_) + QStringLiteral(": ") + report.error);
             return;
         }
-        if (percent >= 0) {
-            bar->setRange(0, 100);
-            bar->setValue(percent);
+        if (report.percent >= 0) {
+            bar->setValue(std::min(100, report.percent));
+            self->set_status_message(ui_text(UiKey::k107, self->language_)
+                .arg(report.percent));
         }
-        if (percent >= 100) {
-            bar->hide();
+        if (report.percent >= 100) {
+            finish();
             self->set_status_message(QString());
-            self->refresh_model_buttons();
         }
     });
 }
@@ -1890,9 +1912,17 @@ void MainWindow::refresh_model_buttons()
     const auto update = [this](const std::vector<QPushButton*>& buttons, bool whisper) {
         for (std::size_t index = 0; index < buttons.size(); ++index) {
             QPushButton* button = buttons[index];
-            const bool downloaded = services_.model_is_downloaded
+            const auto& busy_flags = whisper ? whisper_model_busy_ : parakeet_model_busy_;
+            const bool busy = static_cast<std::size_t>(index) < busy_flags.size()
+                && busy_flags[static_cast<std::size_t>(index)];
+            const bool downloaded = !busy && services_.model_is_downloaded
                 && services_.model_is_downloaded(whisper, static_cast<int>(index));
-            if (downloaded) {
+            if (busy) {
+                button->setIcon(drawn_icon(DrawnIcon::cancel, 18, QColor(QStringLiteral("#E5484D"))));
+                button->setToolTip(ui_text(UiKey::k109, language_));
+                button->setProperty("buttonRole", QStringLiteral("remove"));
+                button->setEnabled(services_.model_download_cancel != nullptr);
+            } else if (downloaded) {
                 button->setIcon(drawn_icon(DrawnIcon::remove, 18, QColor(QStringLiteral("#E5484D"))));
                 button->setToolTip(ui_text(UiKey::k37, language_));
                 button->setProperty("buttonRole", QStringLiteral("remove"));

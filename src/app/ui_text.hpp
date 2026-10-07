@@ -129,6 +129,10 @@ enum class UiKey : int {
     /// Загрузка моделей.
     k105,
     k106,
+    /// Ход загрузки модели и её отмена.
+    k107,
+    k108,
+    k109,
     /// Not a string: the number of keys. The table is checked against it at compile
     /// time, so a key without an entry (or an entry without a key - which silently
     /// shifts every later label, as happened once) cannot survive a build.

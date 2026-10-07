@@ -66,6 +66,11 @@
 namespace voicetyper::app {
 namespace {
 
+/// The model pages show five Whisper sizes and four Parakeet quants; the cancel table is
+/// indexed by engine and row, so it is sized for the larger of the two.
+constexpr int kModelRowsPerEngine = 5;
+constexpr int kModelRowSlots = kModelRowsPerEngine * 2;
+
 /// The shell's status strings follow the interface language of the settings: the window
 /// re-letters itself, and these messages have to match it (Alexander, 06.10.2026).
 QString localized(UiKey key)
@@ -773,6 +778,16 @@ int run(int argc, char** argv)
     /// Updates run off the UI thread: the release query and a 60 MB download both block.
     platform::Win32Executor update_executor;
 
+    // Everything the Qt layer reports (qInfo/qWarning, Qt's own messages) goes into the same
+    // log as the rest of the application. Without this the interface is a black box: a status
+    // line could disagree with the log and there was no way to see which one was right.
+    qInstallMessageHandler([&logger](QtMsgType type, const QMessageLogContext&, const QString& message) {
+        const auto level = (type == QtWarningMsg || type == QtCriticalMsg || type == QtFatalMsg)
+            ? platform::LogLevel::warn
+            : platform::LogLevel::info;
+        static_cast<void>(logger.write(level, "qt", message.toStdString()));
+    });
+
     // The update controls of the About page. The .NET build checked the release feed
     // quietly on start and offered the installer there; the release asset naming for
     // THIS build is not settled yet (Phase 5 of the plan), so the install refuses to
@@ -978,13 +993,21 @@ int run(int argc, char** argv)
         return std::filesystem::exists(models_directory(paths) / std::filesystem::path(std::string(core::support::parakeet_model_file_name(size))), error);
     };
     // Model downloads run like the update check: on a worker thread, with progress posted
-    // back to the interface. The file goes into the models folder under the name the catalog
-    // and the recognisers use.
-    services.model_download = [&logger, &update_executor, &ui_executor, &paths](
+    // back to the interface. Every row has its own cancellation source, so the user can stop a
+    // transfer that is already running; the service then removes the partial file.
+    auto transfer_sources =
+        std::make_shared<std::vector<std::shared_ptr<domain::CancellationSource>>>(kModelRowSlots);
+    services.model_download = [&logger, &update_executor, &ui_executor, &paths, transfer_sources](
                                  bool whisper, int size_index,
-                                 std::function<void(int, QString)> report) {
+                                 std::function<void(app::WindowServices::ModelTransfer)> report) {
+        if (size_index < 0 || size_index >= kModelRowsPerEngine) {
+            return;
+        }
+        const int slot = (whisper ? 0 : kModelRowsPerEngine) + size_index;
+        auto source = std::make_shared<domain::CancellationSource>();
+        (*transfer_sources)[static_cast<std::size_t>(slot)] = source;
         static_cast<void>(update_executor.post([&logger, &ui_executor, &paths, whisper, size_index,
-                                                   report = std::move(report)] {
+                                                   source, report = std::move(report)] {
             app::QtHttpClient http;
             core::support::ModelDownloadService service(http, models_directory(paths));
             const auto engine = whisper ? core::support::ModelEngine::whisper
@@ -996,25 +1019,48 @@ int run(int argc, char** argv)
                       static_cast<domain::ParakeetModelSize>(size_index)));
             const auto status = service.download(engine, name,
                 [&ui_executor, report](const core::support::ModelDownloadProgress& progress) {
-                    const int percent = progress.total > 0
+                    app::WindowServices::ModelTransfer transfer;
+                    transfer.percent = progress.total > 0
                         ? static_cast<int>(progress.fraction() * 100.0)
                         : -1;
-                    static_cast<void>(ui_executor.post([report, percent] {
-                        report(percent, QString());
-                    }));
+                    transfer.bytes_per_second = progress.bytes_per_second;
+                    transfer.remaining_seconds = progress.remaining_seconds().value_or(-1.0);
+                    static_cast<void>(ui_executor.post([report, transfer] { report(transfer); }));
                 },
-                domain::CancellationToken{});
+                source->token());
             if (status.is_error()) {
                 const QString message = QString::fromStdString(status.error().to_string());
-                static_cast<void>(logger.write(platform::LogLevel::warn, "model download failed",
+                const bool cancelled = status.error().code() == domain::ErrorCode::cancelled;
+                static_cast<void>(logger.write(
+                    cancelled ? platform::LogLevel::info : platform::LogLevel::warn,
+                    cancelled ? "model download cancelled" : "model download failed",
                     name + ": " + status.error().to_string()));
-                static_cast<void>(ui_executor.post([report, message] { report(-1, message); }));
+                static_cast<void>(ui_executor.post([report, message, cancelled] {
+                    app::WindowServices::ModelTransfer transfer;
+                    transfer.error = message;
+                    transfer.cancelled = cancelled;
+                    report(transfer);
+                }));
                 return;
             }
             static_cast<void>(logger.write(platform::LogLevel::info, "model downloaded",
                 std::string(whisper ? "whisper " : "parakeet ") + name));
-            static_cast<void>(ui_executor.post([report] { report(100, QString()); }));
+            static_cast<void>(ui_executor.post([report] {
+                app::WindowServices::ModelTransfer transfer;
+                transfer.percent = 100;
+                report(transfer);
+            }));
         }));
+    };
+    services.model_download_cancel = [transfer_sources](bool whisper, int size_index) {
+        if (size_index < 0 || size_index >= kModelRowsPerEngine) {
+            return;
+        }
+        const int slot = (whisper ? 0 : kModelRowsPerEngine) + size_index;
+        const auto& sources = *transfer_sources;
+        if (static_cast<std::size_t>(slot) < sources.size() && sources[static_cast<std::size_t>(slot)]) {
+            sources[static_cast<std::size_t>(slot)]->request_cancellation();
+        }
     };
     services.model_delete = [&](bool whisper, int size_index) {
         const auto size = static_cast<domain::ModelSize>(size_index);

@@ -19,7 +19,7 @@ option(VOICETYPER_BUILD_ASR "Build the pinned whisper.cpp dependency (requires n
 # The product version. It is what the About page shows and what the update check
 # compares against the release tag, so it must be a real version, not the spike
 # default. CI overrides it with the tag being released.
-set(VOICETYPER_VERSION "2.1.0" CACHE STRING "Product version, compared with the release tag")
+set(VOICETYPER_VERSION "2.1.1" CACHE STRING "Product version, compared with the release tag")
 
 # Native dependency contract (task t_c6a6b0ce9685). The manifest is read on
 # every configuration, the Parakeet pin/ABI are cross-checked against the
@@ -1022,6 +1022,18 @@ if(WIN32 AND VOICETYPER_BUILD_GUI)
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                     "${VOICETYPER_QT_ROOT}/plugins/platforms/qwindows.dll"
                     "${VOICETYPER_DEPLOY_DIR}/platforms"
+            # QtNetwork needs a TLS backend for every HTTPS request: the update check
+            # and every model download go through it. Without this the shipped app
+            # answers "TLS initialization failed" and the updater is dead (found in the
+            # 2.1.0 build, 2026-10-07). Schannel is Windows' own TLS stack, so no
+            # OpenSSL DLLs have to be shipped; the cert-only backend is Qt's fallback
+            # for certificate loading. qopensslbackend.dll is deliberately left out: it
+            # would need libssl/libcrypto, which the product does not ship.
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${VOICETYPER_DEPLOY_DIR}/tls"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${VOICETYPER_QT_ROOT}/plugins/tls/qschannelbackend.dll"
+                    "${VOICETYPER_QT_ROOT}/plugins/tls/qcertonlybackend.dll"
+                    "${VOICETYPER_DEPLOY_DIR}/tls"
             # Compiler runtime from the MinGW root, never from WinLibs.
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                     "${VOICETYPER_MINGW_ROOT}/bin/libgcc_s_seh-1.dll"

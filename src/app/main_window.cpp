@@ -1873,6 +1873,15 @@ void MainWindow::start_model_download(bool whisper, int index)
         if (self == nullptr) {
             return;
         }
+        // The report arrives on a worker thread, and everything below touches widgets: the
+        // progress bar, the button icons and their stylesheet roles. Painting from two threads
+        // is what produced «QWidget::repaint: Recursive repaint detected» and then a crash
+        // inside Qt6Gui on the device (07.10.2026), so the whole handler is marshalled onto
+        // the interface thread, the way the rest of this file already does it.
+        QMetaObject::invokeMethod(self, [self, whisper, index, report] {
+        if (self == nullptr) {
+            return;
+        }
         const auto& list = whisper ? self->whisper_model_progress_ : self->parakeet_model_progress_;
         auto& busy = whisper ? self->whisper_model_busy_ : self->parakeet_model_busy_;
         if (index < 0 || static_cast<std::size_t>(index) >= list.size()
@@ -1902,6 +1911,7 @@ void MainWindow::start_model_download(bool whisper, int index)
             finish();
             self->set_status_message(QString());
         }
+        }, Qt::QueuedConnection);
     });
 }
 

@@ -43,7 +43,12 @@ namespace voicetyper::domain {
 
 /// Trim constants of VoiceTyper.Core/Audio/SilenceTrimmer.cs as ported in
 /// src/domain/audio_wav.cpp. Declared once so both detectors share them.
-inline constexpr double kSilenceTrimMarginSeconds = 0.25;
+/// Leading/trailing silence kept around the speech. Raised from 0.25 s to 0.5 s
+/// (Alexander, 2026-10-07): the start and the end of a phrase must never be cut,
+/// and a late VAD boundary must not eat a soft onset or a fading tail. It also
+/// makes the recording edge untouchable in practice - a phrase that starts within
+/// half a second of the beginning keeps the beginning.
+inline constexpr double kSilenceTrimMarginSeconds = 0.5;
 inline constexpr double kSilenceTrimMaxSilenceSeconds = 0.6;
 inline constexpr double kSilenceTrimGapSeconds = 0.3;
 
@@ -112,6 +117,19 @@ struct TrimReport {
     double margin_seconds = kSilenceTrimMarginSeconds,
     double max_silence_seconds = kSilenceTrimMaxSilenceSeconds,
     double gap_silence_seconds = kSilenceTrimGapSeconds);
+
+/// Grows every speech span outwards while the audio next to it carries energy.
+///
+/// This is the independent guard behind "silence only": the detector's word is not
+/// enough to drop a region, because a soft onset (or a breath, or a fading tail)
+/// can look like silence to a VAD while still carrying energy. A region is dropped
+/// only where the detector sees no speech AND the frame energy is at the noise
+/// floor of the recording. Cost is one pass over the samples - no model, no VAD.
+[[nodiscard]] std::vector<SpeechSegment> extend_segments_with_energy(
+    const std::vector<float>& samples,
+    const std::vector<SpeechSegment>& segments,
+    std::size_t sample_rate = 16000,
+    double frame_seconds = 0.03);
 
 /// Rewrites a speech map into the timeline of the trimmed audio described by
 /// `kept_spans`. Segments are mapped endpoint by endpoint, and every output frame

@@ -78,6 +78,10 @@ domain::Result<std::unique_ptr<SileroSegmenter>> SileroSegmenter::open(
     // 30 ms padding. max_speech_duration_s stays at its "no forced split" value:
     // this segmenter answers "where is speech", the chunk policy is the caller's.
     impl->params = whisper_vad_default_params();
+    // The detector pads each speech span by 30 ms by default. 150 ms is deliberate:
+    // a soft onset or a fading tail must fall inside the span, because the trimming
+    // step is not allowed to cut a phrase (Alexander, 2026-10-07).
+    impl->params.speech_pad_ms = 150;
 
     return domain::Result<std::unique_ptr<SileroSegmenter>>(
         std::unique_ptr<SileroSegmenter>(new SileroSegmenter(std::move(impl))));

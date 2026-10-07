@@ -607,7 +607,8 @@ if(VOICETYPER_BUILD_TESTS)
     add_executable(voicetyper-silero-vad-contract EXCLUDE_FROM_ALL
         tests/contract/silero_vad_contract.cpp
     )
-    target_link_libraries(voicetyper-silero-vad-contract PRIVATE voicetyper_asr_silero voicetyper_audio)
+    # voicetyper_vad carries the trim/energy helpers the S4 evidence uses.
+    target_link_libraries(voicetyper-silero-vad-contract PRIVATE voicetyper_asr_silero voicetyper_audio voicetyper_vad)
     voicetyper_set_warnings(voicetyper-silero-vad-contract)
     add_test(NAME silero-vad-contract COMMAND voicetyper-silero-vad-contract)
     set_tests_properties(silero-vad-contract PROPERTIES

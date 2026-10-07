@@ -172,6 +172,63 @@ TrimReport trim_silence_to_segments(
     return report;
 }
 
+std::vector<SpeechSegment> extend_segments_with_energy(
+    const std::vector<float>& samples, const std::vector<SpeechSegment>& segments,
+    std::size_t sample_rate, double frame_seconds)
+{
+    if (samples.empty() || segments.empty() || sample_rate == 0 || frame_seconds <= 0.0) {
+        return segments;
+    }
+    const auto frame_samples = static_cast<std::size_t>(frame_seconds * static_cast<double>(sample_rate));
+    if (frame_samples == 0) {
+        return segments;
+    }
+    const std::size_t frames = samples.size() / frame_samples;
+    if (frames == 0) {
+        return segments;
+    }
+
+    std::vector<double> energy(frames, 0.0);
+    for (std::size_t frame = 0; frame < frames; ++frame) {
+        double sum = 0.0;
+        const auto begin = frame * frame_samples;
+        for (std::size_t index = begin; index < begin + frame_samples; ++index) {
+            sum += static_cast<double>(samples[index]) * static_cast<double>(samples[index]);
+        }
+        energy[frame] = std::sqrt(sum / static_cast<double>(frame_samples));
+    }
+
+    // The noise floor is the median of the quietest third of the frames: a floor
+    // derived from the recording itself, not a fixed threshold that a loud or a
+    // quiet microphone would break.
+    std::vector<double> sorted = energy;
+    std::sort(sorted.begin(), sorted.end());
+    const double floor = sorted[sorted.size() / 3];
+    // 3x the floor is "still silence"; anything above it is protected.
+    const double threshold = floor * 3.0 + 1e-6;
+
+    const auto frame_of = [frame_samples, frames](double seconds, std::size_t sample_rate_for) {
+        const auto sample = static_cast<std::size_t>(std::max(0.0, seconds) * static_cast<double>(sample_rate_for));
+        return std::min(frames - 1, sample / frame_samples);
+    };
+
+    std::vector<SpeechSegment> grown;
+    grown.reserve(segments.size());
+    for (const auto& segment : segments) {
+        std::size_t begin = frame_of(segment.start_seconds, sample_rate);
+        std::size_t end = frame_of(segment.end_seconds, sample_rate);
+        while (begin > 0 && energy[begin - 1] > threshold) {
+            --begin;
+        }
+        while (end + 1 < frames && energy[end + 1] > threshold) {
+            ++end;
+        }
+        grown.push_back(SpeechSegment{static_cast<double>(begin * frame_samples) / static_cast<double>(sample_rate),
+            static_cast<double>((end + 1) * frame_samples) / static_cast<double>(sample_rate)});
+    }
+    return grown;
+}
+
 SpeechMap map_speech_map(const SpeechMap& source, const std::vector<KeptSpan>& kept_spans,
     std::size_t output_samples, std::size_t sample_rate)
 {

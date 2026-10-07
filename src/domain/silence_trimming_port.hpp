@@ -68,9 +68,13 @@ public:
         }
 
         segmenter_.reset();
-        const auto segments = segmenter_.detect_speech_no_reset(samples);
-        const SpeechMap detected{segments, segmenter_.last_frame_probabilities(),
+        const auto detected_segments = segmenter_.detect_speech_no_reset(samples);
+        const SpeechMap detected{detected_segments, segmenter_.last_frame_probabilities(),
             segmenter_.probability_frame_seconds()};
+        // The detector's word alone does not authorise dropping a region: spans grow
+        // outwards while the audio carries energy, so a soft onset or a fading tail
+        // survives even when the VAD missed it. One pass, no model.
+        const auto segments = extend_segments_with_energy(samples, detected_segments, kTargetSampleRate);
         const TrimReport trimmed = trim_silence_to_segments(samples, segments, kTargetSampleRate);
         report_ = Report{trimmed.removed_leading, trimmed.removed_trailing,
             trimmed.compressed_pause_samples, trimmed.speech_segments,

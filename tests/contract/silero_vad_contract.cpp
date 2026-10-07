@@ -7,10 +7,12 @@
 
 #include "asr/silero_segmenter.hpp"
 #include "domain/audio_wav.hpp"
+#include "domain/speech_segments.hpp"
 
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
+#include <fstream>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -145,6 +147,34 @@ int main()
         const std::string fixture = environment("VOICETYPER_VAD_FIXTURE");
         if (!fixture.empty()) {
             check_real_speech_is_found(model, fixture);
+        }
+        // S4 evidence: trim the fixture with the very code the product runs and
+        // write the result out, so the same clip can be transcribed with and
+        // without trimming and the two transcripts compared.
+        const std::string trimmed_out = environment("VOICETYPER_VAD_TRIMMED_OUT");
+        if (!fixture.empty() && !trimmed_out.empty()) {
+            const auto audio = voicetyper::domain::read_wav_file(fixture);
+            auto segmenter = SileroSegmenter::open(model);
+            if (audio.is_ok() && segmenter.is_ok()) {
+                const auto detected = segmenter.value()->detect_speech_no_reset(audio.value());
+                const auto grown = voicetyper::domain::extend_segments_with_energy(
+                    audio.value(), detected, 16000);
+                const auto trimmed = voicetyper::domain::trim_silence_to_segments(
+                    audio.value(), grown, 16000);
+                std::string bytes;
+                const auto written = voicetyper::domain::write_wav_pcm16(trimmed.samples, bytes);
+                if (written.is_ok()) {
+                    std::ofstream out(trimmed_out, std::ios::binary);
+                    out.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+                    std::cout << "  trimmed: segments=" << trimmed.speech_segments
+                              << " removed_leading=" << trimmed.removed_leading
+                              << " removed_trailing=" << trimmed.removed_trailing
+                              << " out_seconds="
+                              << (static_cast<double>(trimmed.samples.size()) / 16000.0) << "\n";
+                } else {
+                    check(false, "S4: the trimmed audio could be written");
+                }
+            }
         }
     }
 

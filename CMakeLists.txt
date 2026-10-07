@@ -19,7 +19,7 @@ option(VOICETYPER_BUILD_ASR "Build the pinned whisper.cpp dependency (requires n
 # The product version. It is what the About page shows and what the update check
 # compares against the release tag, so it must be a real version, not the spike
 # default. CI overrides it with the tag being released.
-set(VOICETYPER_VERSION "2.0.1" CACHE STRING "Product version, compared with the release tag")
+set(VOICETYPER_VERSION "2.1.0" CACHE STRING "Product version, compared with the release tag")
 
 # Native dependency contract (task t_c6a6b0ce9685). The manifest is read on
 # every configuration, the Parakeet pin/ABI are cross-checked against the

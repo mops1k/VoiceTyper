@@ -55,18 +55,19 @@ std::vector<float> speech_in_silence(std::size_t lead, std::size_t speech, std::
 
 void check_trim_margins()
 {
-    // 3 s total: 1 s silence, 1 s speech, 1 s silence. The .NET SilenceTrimmer
-    // keeps 0.25 s of silence on each side of the speech and drops the rest.
+    // 3 s total: 1 s silence, 1 s speech, 1 s silence. The trimmer keeps 0.5 s of
+    // silence on each side of the speech and drops the rest (the margin was raised
+    // from 0.25 s on 2026-10-07 so that a soft onset or a fading tail survives).
     const auto samples = speech_in_silence(16000, 16000, 16000);
     const std::vector<SpeechSegment> segments{{1.0, 2.0}};
     const auto report = trim_silence_to_segments(samples, segments);
     check(report.speech_segments == 1, "one speech segment is reported");
-    check(report.removed_leading == 12000, "leading silence is cut to the 0.25 s margin");
-    check(report.removed_trailing == 12000, "trailing silence is cut to the 0.25 s margin");
-    check(report.samples.size() == 24000, "the trimmed buffer is speech plus two margins");
+    check(report.removed_leading == 8000, "leading silence is cut to the 0.5 s margin");
+    check(report.removed_trailing == 8000, "trailing silence is cut to the 0.5 s margin");
+    check(report.samples.size() == 32000, "the trimmed buffer is speech plus two margins");
     check(report.compressed_pause_samples == 0, "no internal pause was compressed");
     check(report.samples.front() == 0.0f && report.samples.back() == 0.0f, "both margins are silence");
-    check(report.samples[12000] == 0.25f, "the speech starts right after the leading margin");
+    check(report.samples[8000] == 0.25f, "the speech starts right after the leading margin");
 }
 
 void check_trim_compresses_a_long_pause()

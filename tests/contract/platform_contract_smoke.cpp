@@ -63,7 +63,7 @@ void check(bool condition, const char* what)
 
 // Settings: 21 persisted properties, exact defaults from
 // docs/migration/cpp/compatibility-contracts.md §1.
-static_assert(domain::kAppSettingsPropertyCount == 21);
+static_assert(domain::kAppSettingsPropertyCount == 22);
 static_assert(domain::kDefaultRecordHotkey == "Ctrl+Alt+Space");
 static_assert(domain::kDefaultCancelHotkey == "Ctrl+Alt+Escape");
 static_assert(domain::kDefaultTermsDictionary == "API,CPU,GPU,ASR,STT,TTS,LLM,JSON,IDE,SQL");

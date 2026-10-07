@@ -781,11 +781,18 @@ int run(int argc, char** argv)
     // Everything the Qt layer reports (qInfo/qWarning, Qt's own messages) goes into the same
     // log as the rest of the application. Without this the interface is a black box: a status
     // line could disagree with the log and there was no way to see which one was right.
-    qInstallMessageHandler([&logger](QtMsgType type, const QMessageLogContext&, const QString& message) {
+    // Qt asks for a plain function pointer here, so the logger is reached through a
+    // file-scope pointer that is set once, before any message can arrive.
+    static platform::Logger* message_logger = nullptr;
+    message_logger = &logger;
+    qInstallMessageHandler([](QtMsgType type, const QMessageLogContext&, const QString& message) {
+        if (message_logger == nullptr) {
+            return;
+        }
         const auto level = (type == QtWarningMsg || type == QtCriticalMsg || type == QtFatalMsg)
             ? platform::LogLevel::warn
             : platform::LogLevel::info;
-        static_cast<void>(logger.write(level, "qt", message.toStdString()));
+        static_cast<void>(message_logger->write(level, "qt", message.toStdString()));
     });
 
     // The update controls of the About page. The .NET build checked the release feed

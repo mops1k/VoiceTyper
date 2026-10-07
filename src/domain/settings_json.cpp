@@ -808,9 +808,11 @@ SettingsLoadResult SettingsCodec::load(std::string_view json)
             } else if (detail::equals_ignore_ascii_case(key, "modelSize")) {
                 (void)detail::read_enum(value, field, AppSettings::defaults().model_size, result.settings.model_size, model_size_from_wire, 5, result.diagnostics, error);
             } else if (detail::equals_ignore_ascii_case(key, "transcriptionEngine")) {
-                (void)detail::read_enum(value, field, AppSettings::defaults().transcription_engine, result.settings.transcription_engine, transcription_engine_from_wire, 2, result.diagnostics, error);
+                (void)detail::read_enum(value, field, AppSettings::defaults().transcription_engine, result.settings.transcription_engine, transcription_engine_from_wire, 3, result.diagnostics, error);
             } else if (detail::equals_ignore_ascii_case(key, "parakeetModelSize")) {
                 (void)detail::read_enum(value, field, AppSettings::defaults().parakeet_model_size, result.settings.parakeet_model_size, parakeet_model_size_from_wire, 4, result.diagnostics, error);
+            } else if (detail::equals_ignore_ascii_case(key, "gigaamModelSize")) {
+                (void)detail::read_enum(value, field, AppSettings::defaults().gigaam_model_size, result.settings.gigaam_model_size, gigaam_model_size_from_wire, 4, result.diagnostics, error);
             } else if (detail::equals_ignore_ascii_case(key, "autoPasteEnabled")) {
                 (void)detail::read_bool(value, field, result.settings.auto_paste_enabled, result.diagnostics, error);
             } else if (detail::equals_ignore_ascii_case(key, "termsDictionary")) {
@@ -900,6 +902,7 @@ std::string SettingsCodec::serialize(const AppSettings& settings, std::string_vi
     detail::append_enum_field(output, "modelSize", to_wire(settings.model_size), line_ending);
     detail::append_enum_field(output, "transcriptionEngine", to_wire(settings.transcription_engine), line_ending);
     detail::append_enum_field(output, "parakeetModelSize", to_wire(settings.parakeet_model_size), line_ending);
+    detail::append_enum_field(output, "gigaamModelSize", to_wire(settings.gigaam_model_size), line_ending);
     detail::append_bool_field(output, "autoPasteEnabled", settings.auto_paste_enabled, line_ending);
     detail::append_field(output, "termsDictionary", settings.terms_dictionary, line_ending);
     detail::append_int_field(output, "silenceThresholdMs", settings.silence_threshold_ms, line_ending);

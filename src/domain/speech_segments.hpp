@@ -26,8 +26,10 @@
 //     segment is longer than the whole window; then it is cut at the frame with
 //     the LOWEST speech probability inside the allowed range (earliest on ties),
 //     which is the least damaging cut the data offers and is deterministic;
-//   * chunks are contiguous, non-empty, ascending, and together cover every
-//     speech sample of the recording;
+//   * chunks ascend, are non-empty, and each of them contains whole speech
+//     segments; the window budget is measured from the start of speech, so the
+//     silence between two chunks is not decoded at all and the chunks are
+//     speech-complete without being necessarily adjacent;
 //   * joining partial transcripts adds at most one space between two parts and
 //     never invents punctuation.
 

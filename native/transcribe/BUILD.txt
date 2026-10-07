@@ -1,0 +1,88 @@
+transcribe.cpp runtime for the GigaAM-v3 engine (VoiceTyper, C++/Qt build)
+=========================================================================
+
+Repo:    https://github.com/handy-computer/transcribe.cpp
+Pin:     3f32fbcc7bb3246851a0234263438bc3c0fa1cac (tag v0.3.1)
+Source:  https://github.com/handy-computer/transcribe.cpp/archive/3f32fbcc7bb3246851a0234263438bc3c0fa1cac.tar.gz
+         archive 43,842,201 bytes, sha256 aab406e988dc2b3e58f6ba7cb4badfd735ff4cb15a966c4e157dcde7d7b302ee
+License: MIT (vendored ggml and miniz are MIT as well; see THIRD_PARTY_NOTICES.md)
+Date:    2026-10-07
+
+WHY THIS TOOLCHAIN, NOT ANOTHER (measured, do not "simplify" this away)
+----------------------------------------------------------------------
+The runtime MUST be built with the SAME MinGW generation as the application:
+MinGW-W64 13.1.0 from the Qt toolchain,
+    C:\Users\Kvintilyanov\tools\Qt\Tools\Tools\mingw1310_64
+(Together with cmake/ninja from WinLibs, used only as build drivers.)
+
+A WinLibs GCC 16.2.0 build of the same source does NOT work inside this process,
+and directory isolation does not rescue it:
+  * putting the GCC 16 runtime (libstdc++-6.dll, libgcc_s_seh-1.dll,
+    libwinpthread-1.dll) next to the application makes the application die at
+    startup with 0xC0000139 STATUS_ENTRYPOINT_NOT_FOUND;
+  * keeping the library and its siblings in their own directory and loading it
+    with LoadLibraryExW(LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR) fails with error 127
+    ERROR_PROC_NOT_FOUND, because Windows reuses an ALREADY LOADED module by base
+    name: the GCC 16 libtranscribe.dll binds to the GCC 13 libstdc++-6.dll that
+    the application loaded.
+Linking the DLL with -static -static-libgcc -static-libstdc++ is not an option
+either: the link fails with "multiple definition of '_Unwind_Resume'"
+(libgcc_eh.a against ggml/src/libggml-base.dll.a), because this DLL links other
+MinGW DLLs - unlike parakeet.dll, which is a leaf and can be fully static.
+
+BUILD (run from a short path; C:\vt-tc was used)
+-----------------------------------------------
+  set PATH=C:\Users\Kvintilyanov\tools\Qt\Tools\Tools\mingw1310_64\bin;<WinLibs>\mingw64\bin;%PATH%
+  cmake -S <source> -B build13 -G Ninja ^
+    -DCMAKE_BUILD_TYPE=Release ^
+    -DCMAKE_C_COMPILER="<MinGW13>\gcc.exe" ^
+    -DCMAKE_CXX_COMPILER="<MinGW13>\g++.exe" ^
+    -DCMAKE_C_FLAGS="-D_WIN32_WINNT=0x0601" ^
+    -DCMAKE_CXX_FLAGS="-D_WIN32_WINNT=0x0601" ^
+    -DTRANSCRIBE_BUILD_SHARED=ON ^
+    -DTRANSCRIBE_VULKAN=OFF ^
+    -DTRANSCRIBE_GGML_BACKEND_DL=OFF ^
+    -DTRANSCRIBE_BUILD_TESTS=OFF ^
+    -DTRANSCRIBE_BUILD_EXAMPLES=ON ^
+    -DTRANSCRIBE_BUILD_TOOLS=OFF ^
+    -DTRANSCRIBE_USE_SYSTEM_BLAS=OFF
+  cmake --build build13 -j 8
+
+_WIN32_WINNT=0x0601 is required for the same reason the whisper.cpp pin needs it:
+MinGW-W64 13.1.0 does not ship THREAD_POWER_THROTTLING_STATE, which ggml uses
+inside "#if _WIN32_WINNT >= 0x0602".
+
+ARTIFACTS (all four DLLs are needed; ggml-cpu.dll is loaded dynamically)
+-----------------------------------------------------------------------
+  libtranscribe.dll  2,679,873 bytes  sha256 e1f74843382e2a36398c22a82d46d208eca2ac34ea49b372121ee3cac1e8e4e0
+  ggml.dll             112,861 bytes  sha256 da0989f0cbe0d144e9ca5f8d89b7ed623db31a116bc3416fb9783d3c952e2b64
+  ggml-base.dll      1,010,572 bytes  sha256 d51879f16e423fecdde3441dd325f91a6a32a6c25ab5be031c018609e3ef3807
+  ggml-cpu.dll       1,489,298 bytes  sha256 ea49b1ca3e89787158fa619ab4bea32464db62b225eb4f6b2fb0fa929440b913
+  transcribe.h         141,687 bytes  sha256 d3617a0638387157af4f99596322d4c6bade2463aae88e0e76506fcd2130a082
+                                      (the public header this build ships, vendored for the binding)
+
+DEPLOYMENT
+----------
+The four DLLs are staged in a `transcribe\` subdirectory next to the executable,
+not flat beside it, and the loader is given that directory explicitly
+(LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR). The library is loaded ONCE per process and is
+deliberately never freed: ggml installs a global std::terminate handler from a
+static initializer at load time, so unloading would leave that handler pointing
+into unloaded code, and a second load at the same base address trips ggml's own
+GGML_ASSERT(prev != ggml_uncaught_exception) (observed: exit code 3).
+
+BOUND SYMBOLS
+-------------
+The binding resolves a closed list of 14 symbols (see
+src/asr/transcribe_engine.hpp). The library version must report exactly 0.3.1 and
+transcribe_abi_struct_size() must agree with the vendored header for
+transcribe_model_load_params, transcribe_session_params, transcribe_run_params and
+transcribe_capabilities; a mismatch is an error, never a fallback.
+
+MODEL
+-----
+GigaAM-v3 e2e-RNN-T GGUF quants are downloaded by the application from
+https://huggingface.co/handy-computer/gigaam-v3-e2e-rnnt-gguf (weights MIT,
+inherited from ai-sage/GigaAM-v3). The Q8_0 file this build was validated
+against is 273,724,832 bytes, sha256
+78d63b47723b7f8d78c6113a6ef983b5a86e2a86f6c273e1f5cb6967b1c4467a.

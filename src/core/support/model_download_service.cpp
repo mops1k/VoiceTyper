@@ -13,6 +13,9 @@ constexpr std::string_view kWhisperBaseUrl =
     "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/";
 constexpr std::string_view kParakeetBaseUrl =
     "https://huggingface.co/mudler/parakeet-cpp-gguf/resolve/main/";
+/// GigaAM-v3 e2e-rnnt GGUF quants; weights inherit the upstream MIT license.
+constexpr std::string_view kGigaamBaseUrl =
+    "https://huggingface.co/handy-computer/gigaam-v3-e2e-rnnt-gguf/resolve/main/";
 
 /// The models are public artifacts on a file host: no credentials, and the user agent keeps
 /// the requests identifiable, exactly like the update service does.
@@ -68,10 +71,26 @@ std::string_view parakeet_model_file_name(domain::ParakeetModelSize size)
     return "tdt-0.6b-v3-q8_0.gguf";
 }
 
+std::string_view gigaam_model_file_name(domain::GigaamModelSize size)
+{
+    switch (size) {
+    case domain::GigaamModelSize::q4_k_m:
+        return "gigaam-v3-e2e-rnnt-Q4_K_M.gguf";
+    case domain::GigaamModelSize::q5_k_m:
+        return "gigaam-v3-e2e-rnnt-Q5_K_M.gguf";
+    case domain::GigaamModelSize::q6_k:
+        return "gigaam-v3-e2e-rnnt-Q6_K.gguf";
+    case domain::GigaamModelSize::q8_0:
+        return "gigaam-v3-e2e-rnnt-Q8_0.gguf";
+    }
+    return "gigaam-v3-e2e-rnnt-Q8_0.gguf";
+}
+
 std::string model_download_url(ModelEngine engine, std::string_view file_name)
 {
-    const std::string_view base =
-        engine == ModelEngine::whisper ? kWhisperBaseUrl : kParakeetBaseUrl;
+    const std::string_view base = engine == ModelEngine::whisper
+        ? kWhisperBaseUrl
+        : (engine == ModelEngine::parakeet ? kParakeetBaseUrl : kGigaamBaseUrl);
     std::string url(base);
     url.append(file_name);
     return url;

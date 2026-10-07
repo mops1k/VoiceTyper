@@ -56,6 +56,7 @@ namespace voicetyper::platform {
 
 using domain::CancellationToken;
 using domain::ErrorCode;
+using domain::GigaamModelSize;
 using domain::ModelSize;
 using domain::ParakeetModelSize;
 using domain::Result;
@@ -69,6 +70,8 @@ enum class ModelKind : std::uint8_t {
     vad = 1,
     /// Parakeet GGUF weights, one per ParakeetModelSize.
     parakeet = 2,
+    /// GigaAM-v3 e2e-rnnt GGUF weights, one per GigaamModelSize.
+    gigaam = 3,
 };
 
 [[nodiscard]] constexpr std::string_view model_kind_name(ModelKind kind) noexcept
@@ -77,14 +80,19 @@ enum class ModelKind : std::uint8_t {
     case ModelKind::whisper: return "whisper";
     case ModelKind::vad: return "vad";
     case ModelKind::parakeet: return "parakeet";
+    case ModelKind::gigaam: return "gigaam";
     }
     return "unknown";
 }
 
-/// Base URLs of the three model repositories. Frozen.
+/// Base URLs of the model repositories. Frozen for the .NET-shared rows; the
+/// GigaAM row is a C++-only extension.
 inline constexpr std::string_view kWhisperModelBaseUrl = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/";
 inline constexpr std::string_view kVadModelBaseUrl = "https://huggingface.co/ggml-org/whisper-vad/resolve/main/";
 inline constexpr std::string_view kParakeetModelBaseUrl = "https://huggingface.co/mudler/parakeet-cpp-gguf/resolve/main/";
+/// GigaAM-v3 e2e-rnnt GGUF quants published by the transcribe.cpp author; the
+/// weights inherit the upstream MIT license (see THIRD_PARTY_NOTICES.md).
+inline constexpr std::string_view kGigaamModelBaseUrl = "https://huggingface.co/handy-computer/gigaam-v3-e2e-rnnt-gguf/resolve/main/";
 
 /// Default model download timeout (30 minutes). The download also sends the
 /// shared User-Agent defined in platform/api/http.hpp.
@@ -99,9 +107,11 @@ inline constexpr std::string_view kModelDownloadSuffix = ".download";
 /// One entry of the frozen catalog: where a model lives and how big it is.
 struct ModelDescriptor {
     ModelKind kind = ModelKind::whisper;
-    /// Meaningful for whisper and parakeet; unused for vad.
+    /// Meaningful for whisper and parakeet; unused for vad and gigaam.
     ModelSize size = ModelSize::small;
     ParakeetModelSize parakeet_size = ParakeetModelSize::q8_0;
+    /// Meaningful for gigaam only.
+    GigaamModelSize gigaam_size = GigaamModelSize::q8_0;
     /// File name inside the models directory. Frozen.
     std::string file_name;
     /// Full download URL, i.e. base URL + file name. Frozen.
@@ -149,10 +159,12 @@ using ModelProgressSink = std::function<void(const ModelDownloadProgress&)>;
 [[nodiscard]] const std::array<ModelDescriptor, 5>& whisper_catalog();
 [[nodiscard]] const std::array<ModelDescriptor, 1>& vad_catalog();
 [[nodiscard]] const std::array<ModelDescriptor, 4>& parakeet_catalog();
+[[nodiscard]] const std::array<ModelDescriptor, 4>& gigaam_catalog();
 
 [[nodiscard]] Result<ModelDescriptor> find_whisper_model(ModelSize size);
 [[nodiscard]] Result<ModelDescriptor> find_vad_model();
 [[nodiscard]] Result<ModelDescriptor> find_parakeet_model(ParakeetModelSize size);
+[[nodiscard]] Result<ModelDescriptor> find_gigaam_model(GigaamModelSize size);
 
 /// Filenames removed at startup because they predate the q8 weights. Frozen:
 /// deleting by exact name only, so an unrelated file is never touched.

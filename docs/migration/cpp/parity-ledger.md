@@ -97,3 +97,26 @@ Evidence (2026-10-01): Windows MinGW13 + Qt 6.11.2 configure/build/ctest =
 endpoint); Arch GUI-off (ASR ON, GUI OFF) build/ctest = 0/0 with 25/25; Arch
 GUI-on Release builds and runs the overlay UI test offscreen = 11/11. Nothing
 in this table marks a ledger row `done`.
+
+## GigaAM-v3: C++-only extension beyond the .NET reference
+
+The native build adds a third speech-to-text engine the .NET reference does not
+have, so this row has no `C# evidence` column by construction (decision by
+Alexander, 2026-10-06: "третий движок рядом с Whisper и Parakeet"). It is recorded
+here so the intent-parity rule - no feature is claimed without a contract test and
+a Windows scenario - is satisfied by evidence rather than by prose.
+
+| Row | What | C++ contract evidence | Windows evidence | Status |
+| --- | --- | --- | --- | --- |
+| ASR-04 | GigaAM-v3-e2e-rnnt (MIT weights) through the pinned transcribe.cpp runtime (commit `3f32fbcc7bb3246851a0234263438bc3c0fa1cac`, v0.3.1) | `speech-segments-contract` (trim margins/pause compression, chunk planning at pauses, forced-cut determinism, transcript joining), `gigaam-engine-contract` (window read from the engine, chunking, refusal without a segmenter, no lazy load, deep warm-up, capabilities all false, no fallback), `settings-json-contract` (22 properties; the five .NET fixtures still parse and serialize with exactly one added line), `model-store-contract` (four quants with exact bytes) | `voicetyper-asr-native-smoke` with `VOICETYPER_ENGINE=gigaam`: 4.5 s reference clip -> `Важно различать глаголы и дополнения.` (exact match, punctuation and casing included); 10.98 s FLEURS ru clip -> full transcript, load 136 ms, deep warm-up 38 ms, transcribe 1565 ms; 33.84 s clip (over the model window) -> cut at a pause and transcribed in 4869 ms | done |
+
+Known compatibility consequence, accepted explicitly: `transcriptionEngine: "gigaam"`
+is a wire value the legacy .NET serializer cannot resolve, and its settings loader
+falls back to a whole-document default when that happens. A .NET rollback with a
+GigaAM setting therefore resets settings.json; a backup copy is taken before the
+engine is switched. The new `gigaamModelSize` property is safe in the other
+direction: unknown properties are ignored by the .NET reader.
+
+Deployment note: the runtime must be built with the SAME MinGW generation as the
+application. A GCC 16 build of the same source dies in-process with 0xC0000139 or
+error 127 (module-name reuse by the loader); see `native/transcribe/BUILD.txt`.

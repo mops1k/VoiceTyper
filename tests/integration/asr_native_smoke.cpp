@@ -9,6 +9,7 @@
 // transcript is not a quality claim; a real speech clip is a physical-smoke input.
 
 #include "asr/engine_parameters.hpp"
+#include "asr/gigaam_transcriber.hpp"
 #include "asr/native_engine_registry.hpp"
 #include "asr/native_transcribers.hpp"
 #include "domain/audio_wav.hpp"
@@ -37,10 +38,18 @@ void report(const std::string& key, const std::string& value)
 
 int main()
 {
-    const auto model = environment("VOICETYPER_WHISPER_MODEL");
+    // Engine selection is opt-in by data, like the model: the default stays
+    // Whisper, and `VOICETYPER_ENGINE=gigaam` runs the same chain through the
+    // transcribe.cpp runtime instead.
+    const std::string engine_name = environment("VOICETYPER_ENGINE").empty()
+        ? std::string("whisper")
+        : environment("VOICETYPER_ENGINE");
+    const auto model = environment("VOICETYPER_GIGAAM_MODEL").empty()
+        ? environment("VOICETYPER_WHISPER_MODEL")
+        : environment("VOICETYPER_GIGAAM_MODEL");
     const auto fixture = environment("VOICETYPER_ASR_FIXTURE");
     if (model.empty() || !std::filesystem::is_regular_file(model)) {
-        std::cout << "asr-native-smoke: SKIP (set VOICETYPER_WHISPER_MODEL to a ggml model file)\n";
+        std::cout << "asr-native-smoke: SKIP (set VOICETYPER_WHISPER_MODEL or VOICETYPER_GIGAAM_MODEL to a model file)\n";
         return 0;
     }
     if (fixture.empty() || !std::filesystem::is_regular_file(fixture)) {
@@ -54,6 +63,11 @@ int main()
                   << raw.error().message() << '\n';
         return 1;
     }
+
+    const voicetyper::domain::TranscriptionEngine engine_kind
+        = engine_name == "gigaam" ? voicetyper::domain::TranscriptionEngine::gigaam
+        : engine_name == "parakeet" ? voicetyper::domain::TranscriptionEngine::parakeet
+                                    : voicetyper::domain::TranscriptionEngine::whisper;
 
     voicetyper::asr::NativeEngineRegistryOptions options;
     options.whisper_available = true;
@@ -70,30 +84,64 @@ int main()
         state.reason = voicetyper::platform::EngineAvailabilityReason::platform_unsupported;
         return state;
     };
+    // The real GigaAM wiring, so this smoke test exercises the shipped path:
+    // registry -> TranscribeEngine -> library probe -> warmup -> transcribe.
+    // A segmenter is bound so a dictation longer than the model window is cut at
+    // a pause (the energy heuristic here; Silero replaces it behind the same seam).
+    voicetyper::domain::EnergySpeechSegmenter segmenter;
+    options.gigaam_library = voicetyper::asr::transcribe_library_beside_executable();
+    options.gigaam_factory = [&segmenter](const std::filesystem::path& dll, const std::filesystem::path& path) {
+        return voicetyper::asr::make_gigaam_engine(dll, path, &segmenter);
+    };
+    options.gigaam_probe = [](voicetyper::domain::TranscriptionEngine engine, const std::filesystem::path& path) {
+        return voicetyper::asr::probe_gigaam_for_registry(
+            engine, path, voicetyper::asr::transcribe_library_beside_executable());
+    };
 
     voicetyper::asr::NativeEngineRegistry registry(std::move(options));
-    const auto registered = registry.set_model_path(voicetyper::domain::TranscriptionEngine::whisper, model);
+    const auto registered = registry.set_model_path(engine_kind, model);
     if (registered.is_error()) {
         std::cerr << "asr-native-smoke: FAIL could not register the model path\n";
         return 1;
     }
-    const auto availability = registry.availability(voicetyper::domain::TranscriptionEngine::whisper);
+    const auto availability = registry.availability(engine_kind);
     if (!availability.available) {
-        std::cerr << "asr-native-smoke: FAIL whisper reported unavailable for a present model\n";
+        std::cerr << "asr-native-smoke: FAIL " << engine_name << " reported unavailable ("
+                  << voicetyper::platform::engine_availability_reason_name(availability.reason)
+                  << ") for a present model\n";
+        if (engine_kind == voicetyper::domain::TranscriptionEngine::gigaam) {
+            // The registry reports the coarse reason; the probe carries the exact
+            // cause (path, Win32 error, version, struct sizes, missing symbols).
+            const auto probe = voicetyper::asr::probe_transcribe_runtime(
+                voicetyper::asr::transcribe_library_beside_executable());
+            std::cerr << "asr-native-smoke: probe path=" << probe.library_path.string()
+                      << " loaded=" << (probe.library_loaded ? "yes" : "no")
+                      << " version='" << probe.version << "' detail=" << probe.detail << '\n';
+        }
         return 1;
     }
 
     const auto load_started = std::chrono::steady_clock::now();
-    auto engine = registry.create(voicetyper::domain::TranscriptionEngine::whisper, {});
+    auto engine = registry.create(engine_kind, {});
     if (engine.is_error()) {
         std::cerr << "asr-native-smoke: FAIL create: " << engine.error().message() << '\n';
         return 1;
+    }
+    // Whisper loads its weights inside create(); GigaAM/Parakeet load them in
+    // warmup(), which is the contract's "explicit warmup, never a lazy load
+    // inside transcribe" rule. The measured load time covers whichever runs.
+    if (!engine.value()->is_ready()) {
+        const auto loaded = engine.value()->warmup();
+        if (loaded.is_error()) {
+            std::cerr << "asr-native-smoke: FAIL warmup: " << loaded.error().message() << '\n';
+            return 1;
+        }
     }
     const auto load_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now() - load_started).count();
 
     if (!engine.value()->is_ready()) {
-        std::cerr << "asr-native-smoke: FAIL the engine is not ready after create\n";
+        std::cerr << "asr-native-smoke: FAIL the engine is not ready after create + warmup\n";
         return 1;
     }
 

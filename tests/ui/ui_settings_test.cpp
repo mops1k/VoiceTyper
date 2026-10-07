@@ -576,13 +576,18 @@ private slots:
             QRegularExpression(QStringLiteral("^whisperModelToggle")));
         const auto parakeet_toggles = page->findChildren<voicetyper::app::ToggleSwitch*>(
             QRegularExpression(QStringLiteral("^parakeetModelToggle")));
+        const auto gigaam_toggles = page->findChildren<voicetyper::app::ToggleSwitch*>(
+            QRegularExpression(QStringLiteral("^gigaamModelToggle")));
         QCOMPARE(whisper_toggles.size(), 5);
         QCOMPARE(parakeet_toggles.size(), 4);
+        QCOMPARE(gigaam_toggles.size(), 4);
 
         // The card of the active engine is the only one on screen.
         auto* whisper_card = page->findChild<QWidget*>(QStringLiteral("whisperModelsCard"));
         auto* parakeet_card = page->findChild<QWidget*>(QStringLiteral("parakeetModelsCard"));
-        QVERIFY(whisper_card != nullptr && parakeet_card != nullptr);
+        auto* gigaam_card = page->findChild<QWidget*>(QStringLiteral("gigaamModelsCard"));
+        QVERIFY(whisper_card != nullptr && parakeet_card != nullptr && gigaam_card != nullptr);
+        QVERIFY2(!gigaam_card->isVisible(), "the gigaam model list is shown for the whisper engine");
         auto* engine = page->findChild<QComboBox*>(QStringLiteral("engineCombo"));
         QVERIFY(engine != nullptr);
         QCOMPARE(engine->currentData().toInt(),
@@ -612,6 +617,29 @@ private slots:
             static_cast<int>(voicetyper::domain::ParakeetModelSize::q5k));
         QCOMPARE(static_cast<int>(presenter.settings().model_size),
             static_cast<int>(voicetyper::domain::ModelSize::medium));
+
+        // The third engine: its own list, its own quants, and the choice reaches
+        // its own setting (a GigaAM row must never write the Parakeet quant).
+        engine->setCurrentIndex(2);
+        QCoreApplication::processEvents();
+        QCOMPARE(engine->currentData().toInt(),
+            static_cast<int>(voicetyper::domain::TranscriptionEngine::gigaam));
+        QVERIFY2(!whisper_card->isVisible(), "the whisper list is still shown for the gigaam engine");
+        QVERIFY2(!parakeet_card->isVisible(), "the parakeet list is still shown for the gigaam engine");
+        QVERIFY2(gigaam_card->isVisible(), "the gigaam list is not shown for the gigaam engine");
+        gigaam_toggles[1]->click();
+        QCoreApplication::processEvents();
+        QTest::qWait(1200);
+        QCOMPARE(static_cast<int>(presenter.settings().gigaam_model_size),
+            static_cast<int>(voicetyper::domain::GigaamModelSize::q5_k_m));
+        QCOMPARE(static_cast<int>(presenter.settings().parakeet_model_size),
+            static_cast<int>(voicetyper::domain::ParakeetModelSize::q5k));
+        // Every GigaAM row has its own download control, addressed by engine.
+        for (int index = 0; index < 4; ++index) {
+            auto* button = page->findChild<QPushButton*>(
+                QStringLiteral("gigaamModelButton%1").arg(index));
+            QVERIFY2(button != nullptr, "a gigaam model row has no download button");
+        }
         window.hide();
         std::filesystem::remove(path);
     }
@@ -661,8 +689,8 @@ private slots:
 
         voicetyper::app::WindowServices services;
         int deleted_index = -1;
-        services.model_is_downloaded = [](bool, int size_index) { return size_index == 2; };
-        services.model_delete = [&deleted_index](bool, int size_index) {
+        services.model_is_downloaded = [](voicetyper::app::ModelList, int size_index) { return size_index == 2; };
+        services.model_delete = [&deleted_index](voicetyper::app::ModelList, int size_index) {
             deleted_index = size_index;
             return true;
         };
@@ -1199,12 +1227,12 @@ private slots:
         voicetyper::app::WindowServices services;
         std::function<void(voicetyper::app::WindowServices::ModelTransfer)> report;
         bool cancel_requested = false;
-        services.model_is_downloaded = [](bool, int) { return false; };
-        services.model_download = [&report](bool, int,
+        services.model_is_downloaded = [](voicetyper::app::ModelList, int) { return false; };
+        services.model_download = [&report](voicetyper::app::ModelList, int,
             std::function<void(voicetyper::app::WindowServices::ModelTransfer)> progress) {
             report = std::move(progress);
         };
-        services.model_download_cancel = [&cancel_requested](bool, int) { cancel_requested = true; };
+        services.model_download_cancel = [&cancel_requested](voicetyper::app::ModelList, int) { cancel_requested = true; };
 
         voicetyper::app::MainWindow window(presenter, std::move(services));
         window.resize(980, 640);

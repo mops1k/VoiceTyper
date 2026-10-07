@@ -59,10 +59,17 @@ enum class ModelSize : std::uint8_t {
 };
 
 /// Selected speech-to-text engine. The default is whisper (ordinal 0); C++
-/// must never silently substitute the other engine when this one is unavailable.
+/// must never silently substitute one engine when another is unavailable.
+///
+/// `gigaam` is a C++-only extension beyond the .NET reference (decided by
+/// Alexander 2026-10-06): the legacy .NET serializer cannot resolve this wire
+/// value and falls back to a whole-document default, which is why a settings
+/// backup is taken before a user switches engines. See
+/// docs/migration/cpp/parity-ledger.md.
 enum class TranscriptionEngine : std::uint8_t {
     whisper = 0,
     parakeet = 1,
+    gigaam = 2,
 };
 
 /// Parakeet GGUF quantization. Ordinal 3 (q8_0) is the default.
@@ -70,6 +77,17 @@ enum class ParakeetModelSize : std::uint8_t {
     q4k = 0,
     q5k = 1,
     q6k = 2,
+    q8_0 = 3,
+};
+
+/// GigaAM-v3 e2e-rnnt GGUF quantization
+/// (handy-computer/gigaam-v3-e2e-rnnt-gguf). Ordinal 3 (q8_0) is the default:
+/// the published FLEURS-ru WER of every quant is within 0.07 pp of the others
+/// (5.35..5.42), so the reference quant is the honest default.
+enum class GigaamModelSize : std::uint8_t {
+    q4_k_m = 0,
+    q5_k_m = 1,
+    q6_k = 2,
     q8_0 = 3,
 };
 
@@ -127,8 +145,20 @@ inline constexpr std::string_view to_wire(TranscriptionEngine value) noexcept
     switch (value) {
     case TranscriptionEngine::whisper: return "whisper";
     case TranscriptionEngine::parakeet: return "parakeet";
+    case TranscriptionEngine::gigaam: return "gigaam";
     }
     return "whisper";
+}
+
+inline constexpr std::string_view to_wire(GigaamModelSize value) noexcept
+{
+    switch (value) {
+    case GigaamModelSize::q4_k_m: return "q4_k_m";
+    case GigaamModelSize::q5_k_m: return "q5_k_m";
+    case GigaamModelSize::q6_k: return "q6_k";
+    case GigaamModelSize::q8_0: return "q8_0";
+    }
+    return "q8_0";
 }
 
 inline constexpr std::string_view to_wire(ParakeetModelSize value) noexcept
@@ -169,12 +199,13 @@ inline constexpr std::string_view to_wire(AppLanguage value) noexcept
 [[nodiscard]] std::optional<ModelSize> model_size_from_wire(std::string_view name);
 [[nodiscard]] std::optional<TranscriptionEngine> transcription_engine_from_wire(std::string_view name);
 [[nodiscard]] std::optional<ParakeetModelSize> parakeet_model_size_from_wire(std::string_view name);
+[[nodiscard]] std::optional<GigaamModelSize> gigaam_model_size_from_wire(std::string_view name);
 [[nodiscard]] std::optional<RecognitionLanguage> recognition_language_from_wire(std::string_view name);
 [[nodiscard]] std::optional<AppLanguage> app_language_from_wire(std::string_view name);
 
 /// Number of persisted properties, in declaration order. Golden fixtures assert
 /// this value; changing it is a schema change.
-inline constexpr std::size_t kAppSettingsPropertyCount = 21;
+inline constexpr std::size_t kAppSettingsPropertyCount = 22;
 
 /// Default hotkey that starts/stops recording.
 inline constexpr std::string_view kDefaultRecordHotkey = "Ctrl+Alt+Space";
@@ -218,6 +249,12 @@ struct AppSettings {
     TranscriptionEngine transcription_engine = TranscriptionEngine::whisper;
     /// JSON: parakeetModelSize. Default "q8_0".
     ParakeetModelSize parakeet_model_size = ParakeetModelSize::q8_0;
+    /// JSON: gigaamModelSize. Default "q8_0".
+    ///
+    /// C++-only extension: the legacy .NET serializer has no such property and
+    /// ignores it on read, so a .NET rollback keeps working as long as
+    /// transcriptionEngine is not "gigaam" (see the enum above).
+    GigaamModelSize gigaam_model_size = GigaamModelSize::q8_0;
     /// JSON: autoPasteEnabled. Default true.
     bool auto_paste_enabled = true;
     /// JSON: termsDictionary. Default "API,CPU,GPU,ASR,STT,TTS,LLM,JSON,IDE,SQL".
@@ -355,6 +392,18 @@ inline std::optional<TranscriptionEngine> transcription_engine_from_wire(std::st
     static constexpr std::pair<std::string_view, TranscriptionEngine> table[]{
         {"whisper", TranscriptionEngine::whisper},
         {"parakeet", TranscriptionEngine::parakeet},
+        {"gigaam", TranscriptionEngine::gigaam},
+    };
+    return detail::find_wire(name, table);
+}
+
+inline std::optional<GigaamModelSize> gigaam_model_size_from_wire(std::string_view name)
+{
+    static constexpr std::pair<std::string_view, GigaamModelSize> table[]{
+        {"q4_k_m", GigaamModelSize::q4_k_m},
+        {"q5_k_m", GigaamModelSize::q5_k_m},
+        {"q6_k", GigaamModelSize::q6_k},
+        {"q8_0", GigaamModelSize::q8_0},
     };
     return detail::find_wire(name, table);
 }

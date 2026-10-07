@@ -36,12 +36,30 @@ using ParakeetEngineFactory = std::function<
 using ParakeetProbeFn = std::function<platform::EngineAvailability(
     domain::TranscriptionEngine engine, const std::filesystem::path& model_path)>;
 
+/// Creates a GigaAM engine from `dll_path` + `model_path`. The factory is
+/// responsible for the version/struct-size assertion; the registry only reports
+/// what the probe said before it was called. The speech segmenter a long
+/// dictation needs is closed over by the composition's lambda, so the registry
+/// interface stays free of it.
+using GigaamEngineFactory = std::function<
+    domain::Result<std::unique_ptr<platform::Transcriber>>(
+        const std::filesystem::path& dll_path, const std::filesystem::path& model_path)>;
+
+/// Probes the transcribe.cpp runtime library without loading a model.
+using GigaamProbeFn = std::function<platform::EngineAvailability(
+    domain::TranscriptionEngine engine, const std::filesystem::path& model_path)>;
+
 struct NativeEngineRegistryOptions {
     WhisperEngineFactory whisper_factory;
     ParakeetEngineFactory parakeet_factory;
     ParakeetProbeFn parakeet_probe;
+    GigaamEngineFactory gigaam_factory;
+    GigaamProbeFn gigaam_probe;
     /// Full path of parakeet.dll, e.g. beside the executable.
     std::filesystem::path parakeet_library;
+    /// Full path of the transcribe.cpp runtime (libtranscribe.dll), e.g. beside
+    /// the executable.
+    std::filesystem::path gigaam_library;
     /// True when this build links whisper.cpp. A GUI-off portable contract build
     /// has it off, and asking for Whisper then reports platform_unsupported.
     bool whisper_available = false;

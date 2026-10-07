@@ -53,3 +53,54 @@ Attribution 4.0 (CC-BY-4.0):
 - Весовые модели Whisper с https://huggingface.co/ggerganov/whisper.cpp — см. карточки моделей
   (MIT/CC-BY в зависимости от модели).
 - Silero VAD: https://github.com/snakers4/silero-vad (MIT).
+
+## transcribe.cpp (MIT)
+
+Нативный рантайм распознавания GigaAM (`native/transcribe/libtranscribe.dll` и его
+спутники `ggml.dll`, `ggml-base.dll`, `ggml-cpu.dll`; сборка описана в
+`native/transcribe/BUILD.txt`, репозиторий:
+https://github.com/handy-computer/transcribe.cpp, pin коммита
+`3f32fbcc7bb3246851a0234263438bc3c0fa1cac`, тег v0.3.1).
+
+Сборка VoiceTyper включает производные файлы лицензии MIT:
+
+```
+MIT License
+
+Copyright (c) 2026 the transcribe.cpp authors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+Вендоренные внутри transcribe.cpp компоненты ggml и miniz также распространяются
+под MIT (https://github.com/ggml-org/ggml, https://github.com/richgel999/miniz).
+
+## Веса модели GigaAM-v3 (MIT)
+
+Модель распознавания `GigaAM-v3` (вариант `e2e_rnnt`, GGUF-кванты в репозитории
+handy-computer/gigaam-v3-e2e-rnnt-gguf) выпущена SberDevices/SaluteDevices под
+лицензией MIT — мягче, чем CC-BY-4.0 у весов Parakeet:
+
+- Модель: https://huggingface.co/ai-sage/GigaAM-v3
+- GGUF-кванты: https://huggingface.co/handy-computer/gigaam-v3-e2e-rnnt-gguf
+- Лицензия: https://github.com/salute-developers/GigaAM/blob/main/LICENSE
+
+Веса НЕ включены в поставку VoiceTyper: пользователь загружает файл
+`gigaam-v3-e2e-rnnt-<квант>.gguf` через раздел «Модели» с HuggingFace. После
+загрузки распознавание выполняется полностью локально, без сети (PRIV-01).

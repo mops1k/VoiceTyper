@@ -43,6 +43,32 @@ const std::array<ModelDescriptor, 4> kParakeetCatalog{
     make_descriptor(ModelKind::parakeet, ModelSize::small, ParakeetModelSize::q8_0, kParakeetModelBaseUrl, "tdt-0.6b-v3-q8_0.gguf", 940'663'680),
 };
 
+/// GigaAM rows carry the quant instead of a Parakeet size. File names and byte
+/// counts are exact and were verified against the HuggingFace API on
+/// 2026-10-06 (HF LFS metadata), not estimated from the published MiB figure.
+ModelDescriptor make_gigaam_descriptor(
+    domain::GigaamModelSize size,
+    std::string_view file_name,
+    std::uint64_t expected_bytes)
+{
+    ModelDescriptor descriptor;
+    descriptor.kind = ModelKind::gigaam;
+    descriptor.size = ModelSize::small;
+    descriptor.parakeet_size = ParakeetModelSize::q8_0;
+    descriptor.gigaam_size = size;
+    descriptor.file_name = std::string(file_name);
+    descriptor.download_url = std::string(kGigaamModelBaseUrl) + descriptor.file_name;
+    descriptor.expected_bytes = expected_bytes;
+    return descriptor;
+}
+
+const std::array<ModelDescriptor, 4> kGigaamCatalog{
+    make_gigaam_descriptor(domain::GigaamModelSize::q4_k_m, "gigaam-v3-e2e-rnnt-Q4_K_M.gguf", 183'948'704),
+    make_gigaam_descriptor(domain::GigaamModelSize::q5_k_m, "gigaam-v3-e2e-rnnt-Q5_K_M.gguf", 206'392'736),
+    make_gigaam_descriptor(domain::GigaamModelSize::q6_k, "gigaam-v3-e2e-rnnt-Q6_K.gguf", 227'953'952),
+    make_gigaam_descriptor(domain::GigaamModelSize::q8_0, "gigaam-v3-e2e-rnnt-Q8_0.gguf", 273'724'832),
+};
+
 const std::vector<std::string> kLegacyModelFileNames{
     "ggml-tiny.bin",
     "ggml-base.bin",
@@ -78,6 +104,11 @@ const std::array<ModelDescriptor, 4>& parakeet_catalog()
     return kParakeetCatalog;
 }
 
+const std::array<ModelDescriptor, 4>& gigaam_catalog()
+{
+    return kGigaamCatalog;
+}
+
 Result<ModelDescriptor> find_whisper_model(ModelSize size)
 {
     const auto index = static_cast<std::size_t>(size);
@@ -101,6 +132,16 @@ Result<ModelDescriptor> find_parakeet_model(ParakeetModelSize size)
             ErrorCode::invalid_argument, "unknown parakeet model size");
     }
     return kParakeetCatalog[index];
+}
+
+Result<ModelDescriptor> find_gigaam_model(domain::GigaamModelSize size)
+{
+    const auto index = static_cast<std::size_t>(size);
+    if (index >= kGigaamCatalog.size()) {
+        return Result<ModelDescriptor>::failure(
+            ErrorCode::invalid_argument, "unknown gigaam model size");
+    }
+    return kGigaamCatalog[index];
 }
 
 const std::vector<std::string>& legacy_model_file_names()

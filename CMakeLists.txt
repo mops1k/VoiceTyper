@@ -34,6 +34,11 @@ voicetyper_verify_shipped_dll(mc_wasapi "native/mc_wasapi.dll")
 set(VOICETYPER_MCWASAPI_DLL_VERIFIED "${verified}")
 voicetyper_native_manifest_artifact(parakeet.cpp "native/parakeet.dll" sha256 VOICETYPER_PARAKEET_DLL_SHA256)
 voicetyper_native_manifest_artifact(mc_wasapi "native/mc_wasapi.dll" sha256 VOICETYPER_MCWASAPI_DLL_SHA256)
+# The GigaAM runtime (transcribe.cpp): pinned build, four DLLs, hash-verified
+# against the manifest so an unreviewed or truncated library cannot be shipped.
+voicetyper_verify_shipped_dll(transcribe.cpp "native/transcribe/libtranscribe.dll")
+set(VOICETYPER_TRANSCRIBE_DLL_VERIFIED "${verified}")
+voicetyper_native_manifest_artifact(transcribe.cpp "native/transcribe/libtranscribe.dll" sha256 VOICETYPER_TRANSCRIBE_DLL_SHA256)
 
 # Contract headers must stay standard-C++-only. Failing here rather than at link
 # time keeps a GUI-off build Qt-free and keeps OS SDK leakage out of the
@@ -125,6 +130,7 @@ voicetyper_set_warnings(voicetyper_audio)
 
 add_library(voicetyper_vad STATIC
     src/domain/vad.cpp
+    src/domain/speech_segments.cpp
 )
 target_link_libraries(voicetyper_vad PUBLIC voicetyper_domain)
 voicetyper_set_warnings(voicetyper_vad)
@@ -212,6 +218,39 @@ add_library(voicetyper_parakeet_runtime STATIC
 target_link_libraries(voicetyper_parakeet_runtime PUBLIC voicetyper_domain voicetyper_platform)
 voicetyper_set_warnings(voicetyper_parakeet_runtime)
 
+# transcribe.cpp runtime (GigaAM): a runtime-loaded binding to the shipped
+# libtranscribe.dll, built on every platform because half of its contract -
+# "explicitly unavailable, with a reason, and no other engine substituted" - is
+# what the other platforms have to prove. The Win32 calls are compiled only on
+# Windows; the pinned public header is vendored beside the DLL recipe.
+add_library(voicetyper_transcribe_runtime STATIC
+    src/platform/windows/transcribe_runtime.cpp
+)
+target_link_libraries(voicetyper_transcribe_runtime PUBLIC voicetyper_domain voicetyper_platform)
+target_include_directories(voicetyper_transcribe_runtime PRIVATE
+    "${PROJECT_SOURCE_DIR}/native/transcribe"
+)
+voicetyper_set_warnings(voicetyper_transcribe_runtime)
+
+# GigaAM engine. The policy that matters most here is ours, not the library's:
+# a dictation longer than the model window is cut at a pause and the parts are
+# joined, and audio is never silently dropped. That policy sits behind the
+# portable TranscribeEngine seam, so its contract test runs on every host.
+add_library(voicetyper_gigaam STATIC
+    src/asr/gigaam_transcriber.cpp
+)
+target_link_libraries(voicetyper_gigaam
+    PUBLIC
+        voicetyper_domain
+        voicetyper_platform
+        voicetyper_transcribe_runtime
+    PRIVATE
+        voicetyper_asr
+        voicetyper_audio
+        voicetyper_vad
+)
+voicetyper_set_warnings(voicetyper_gigaam)
+
 if(VOICETYPER_BUILD_ASR)
     # whisper.cpp and ggml are C/C++ projects, so the C language is enabled only
     # when they are actually part of the build.
@@ -245,6 +284,10 @@ if(VOICETYPER_BUILD_ASR)
         PRIVATE
             voicetyper_asr_whisper
             voicetyper_parakeet_runtime
+            # The GigaAM engine (registry factory + probe) is part of the native
+            # engine set, so everything that links voicetyper_asr_native - the
+            # composition root and the real-model smoke test - gets it.
+            voicetyper_gigaam
     )
     voicetyper_set_warnings(voicetyper_asr_native)
 
@@ -508,6 +551,26 @@ if(VOICETYPER_BUILD_TESTS)
     add_test(NAME vad-contract COMMAND voicetyper-vad-contract)
     set_tests_properties(vad-contract PROPERTIES
         PASS_REGULAR_EXPRESSION "vad-contract: OK"
+    )
+
+    add_executable(voicetyper-speech-segments-contract EXCLUDE_FROM_ALL
+        tests/contract/speech_segments_contract.cpp
+    )
+    target_link_libraries(voicetyper-speech-segments-contract PRIVATE voicetyper_vad)
+    voicetyper_set_warnings(voicetyper-speech-segments-contract)
+    add_test(NAME speech-segments-contract COMMAND voicetyper-speech-segments-contract)
+    set_tests_properties(speech-segments-contract PROPERTIES
+        PASS_REGULAR_EXPRESSION "speech-segments-contract: OK"
+    )
+
+    add_executable(voicetyper-gigaam-engine-contract EXCLUDE_FROM_ALL
+        tests/contract/gigaam_engine_contract.cpp
+    )
+    target_link_libraries(voicetyper-gigaam-engine-contract PRIVATE voicetyper_gigaam)
+    voicetyper_set_warnings(voicetyper-gigaam-engine-contract)
+    add_test(NAME gigaam-engine-contract COMMAND voicetyper-gigaam-engine-contract)
+    set_tests_properties(gigaam-engine-contract PROPERTIES
+        PASS_REGULAR_EXPRESSION "gigaam-engine-contract: OK"
     )
 
     add_executable(voicetyper-asr-parameters-contract EXCLUDE_FROM_ALL
@@ -906,6 +969,16 @@ if(WIN32 AND VOICETYPER_BUILD_GUI)
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                     "${PROJECT_SOURCE_DIR}/native/parakeet.dll"
                     "${VOICETYPER_DEPLOY_DIR}"
+            # The GigaAM runtime keeps its own directory: the loader is given that
+            # directory explicitly, so its ggml siblings are never resolved from
+            # the application's directory (see native/transcribe/BUILD.txt).
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${VOICETYPER_DEPLOY_DIR}/transcribe"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${PROJECT_SOURCE_DIR}/native/transcribe/libtranscribe.dll"
+                    "${PROJECT_SOURCE_DIR}/native/transcribe/ggml.dll"
+                    "${PROJECT_SOURCE_DIR}/native/transcribe/ggml-base.dll"
+                    "${PROJECT_SOURCE_DIR}/native/transcribe/ggml-cpu.dll"
+                    "${VOICETYPER_DEPLOY_DIR}/transcribe"
             COMMENT "Assembling a runnable tree in ${VOICETYPER_DEPLOY_DIR}"
             VERBATIM)
         message(STATUS
@@ -1245,6 +1318,8 @@ add_custom_target(voicetyper-tests
         voicetyper-core-support-contract
         voicetyper-audio-dsp-contract
         voicetyper-vad-contract
+        voicetyper-speech-segments-contract
+        voicetyper-gigaam-engine-contract
         voicetyper-mc-wasapi-contract
         voicetyper-microphone-level-contract
         voicetyper-capture-guard-contract

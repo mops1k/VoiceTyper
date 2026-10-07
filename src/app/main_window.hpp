@@ -66,6 +66,12 @@ private:
     std::atomic<MainWindow*> target_;
 };
 
+/// Which model list a row belongs to. Three lists exist (Whisper, Parakeet,
+/// GigaAM); the model services are keyed by the ENGINE instead of a bool, so a
+/// fourth engine cannot silently address somebody else's file, and a GigaAM row
+/// can never be mistaken for a Parakeet one.
+using ModelList = domain::TranscriptionEngine;
+
 /// Optional services the window shows. An empty callback means "not available
 /// here"; the window disables the control instead of pretending.
 struct WindowServices {
@@ -87,8 +93,8 @@ struct WindowServices {
     /// Whether the model for an engine and size index is already on disk, and a
     /// request to delete it (the composition asks for confirmation first). Empty on a
     /// platform that cannot know, and then the rows say so.
-    std::function<bool(bool whisper, int size_index)> model_is_downloaded;
-    std::function<bool(bool whisper, int size_index)> model_delete;
+    std::function<bool(ModelList engine, int size_index)> model_is_downloaded;
+    std::function<bool(ModelList engine, int size_index)> model_delete;
     /// The recording endpoint's own input level in percent, and a request to change
     /// it. Unset on a platform without a level control, and then the slider is
     /// disabled and says why.
@@ -121,9 +127,9 @@ struct WindowServices {
 
     /// Starts a model download. Reports arrive on the UI thread. An empty service leaves the
     /// download buttons disabled with a reason.
-    std::function<void(bool whisper, int index, std::function<void(ModelTransfer)>)> model_download;
+    std::function<void(ModelList engine, int index, std::function<void(ModelTransfer)>)> model_download;
     /// Asks a running download to stop; the service removes the partial file.
-    std::function<void(bool whisper, int index)> model_download_cancel;
+    std::function<void(ModelList engine, int index)> model_download_cancel;
     /// Live log lines.
     std::function<QString()> log_text;
     /// Called after a settings change that affects a running service (engine,
@@ -213,7 +219,16 @@ private:
     /// Selects one model in the list: the hidden combo carries the change to the
     /// presenter, and the other toggles are unchecked because the choice is
     /// exclusive.
-    void select_model(bool whisper, int index);
+    void select_model(ModelList list, int index);
+
+    /// The per-engine model widgets. The three lists are addressed by engine, so
+    /// every branch that used to say "whisper or parakeet" now names the list.
+    [[nodiscard]] std::vector<ToggleSwitch*>& toggles_for(ModelList list) noexcept;
+    [[nodiscard]] std::vector<QPushButton*>& buttons_for(ModelList list) noexcept;
+    [[nodiscard]] std::vector<QProgressBar*>& progress_for(ModelList list) noexcept;
+    [[nodiscard]] std::vector<bool>& busy_for(ModelList list) noexcept;
+    [[nodiscard]] QComboBox* size_combo_for(ModelList list) const noexcept;
+    [[nodiscard]] QWidget* card_for(ModelList list) const noexcept;
     /// Mirrors the stored size into the toggles, and shows the card of the active
     /// engine only.
     void refresh_model_list();
@@ -233,7 +248,7 @@ private:
     void retranslate();
 
     /// Starts downloading one model and shows its progress in the row.
-    void start_model_download(bool whisper, int index);
+    void start_model_download(ModelList list, int index);
 
     /// Wires the update controls on the About page.
     void bind_update_controls();
@@ -273,6 +288,7 @@ private:
     QComboBox* engine_ = nullptr;
     QComboBox* whisper_size_ = nullptr;
     QComboBox* parakeet_size_ = nullptr;
+    QComboBox* gigaam_size_ = nullptr;
     /// The model list of the .NET page: one toggle per model, grouped per engine.
     /// The combos above stay as hidden state holders so the presenter keeps one
     /// control per engine.
@@ -280,7 +296,11 @@ private:
     std::vector<QPushButton*> whisper_model_buttons_;
     std::vector<QPushButton*> parakeet_model_buttons_;
     std::vector<ToggleSwitch*> parakeet_model_toggles_;
+    std::vector<ToggleSwitch*> gigaam_model_toggles_;
+    std::vector<QPushButton*> gigaam_model_buttons_;
     QWidget* whisper_models_card_ = nullptr;
+    QWidget* parakeet_models_card_ = nullptr;
+    QWidget* gigaam_models_card_ = nullptr;
     /// The page title band (like the reference: the title sits on its own strip and
     /// does not scroll away with the rows).
     /// The texts of one model card, so a language change re-letters it in place.
@@ -288,7 +308,7 @@ private:
         QLabel* name = nullptr;
         QLabel* meta = nullptr;
         QLabel* description = nullptr;
-        bool whisper = false;
+        ModelList list = ModelList::whisper;
         int index = -1;
     };
     std::vector<ModelCardLabels> model_card_labels_;
@@ -296,9 +316,11 @@ private:
     /// True while a row is downloading, so its button offers cancellation.
     std::vector<bool> whisper_model_busy_;
     std::vector<bool> parakeet_model_busy_;
+    std::vector<bool> gigaam_model_busy_;
     /// The progress bar of every model row, in the same order as the buttons.
     std::vector<QProgressBar*> whisper_model_progress_;
     std::vector<QProgressBar*> parakeet_model_progress_;
+    std::vector<QProgressBar*> gigaam_model_progress_;
 
     /// The update controls (About page).
     QLabel* update_version_ = nullptr;
@@ -318,7 +340,6 @@ private:
     QProgressBar* microphone_level_meter_ = nullptr;
     QWidget* page_header_ = nullptr;
     QLabel* page_title_ = nullptr;
-    QWidget* parakeet_models_card_ = nullptr;
     QComboBox* theme_ = nullptr;
     QComboBox* recording_mode_ = nullptr;
     QComboBox* microphone_ = nullptr;

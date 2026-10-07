@@ -185,20 +185,25 @@ std::vector<SpeechChunk> plan_speech_chunks(
     }
 
     const auto min_chunk = static_cast<std::size_t>(kMinChunkSeconds * static_cast<double>(sample_rate));
-    std::size_t chunk_begin = std::min(total_samples, sample_at(spans.front().start_seconds, sample_rate));
+    // The window budget is measured from the START OF SPEECH, never from the end
+    // of the previous chunk: a two-second utterance must not be cut just because
+    // the speaker paused for twenty seconds before it. The silence between two
+    // chunks is therefore not decoded at all, which is also why chunks are
+    // ascending and speech-complete but not necessarily adjacent.
     std::size_t index = 0;
+    std::size_t span_cursor = std::min(total_samples, sample_at(spans.front().start_seconds, sample_rate));
     while (index < spans.size()) {
         const auto seg_end = std::min(total_samples, sample_at(spans[index].end_seconds, sample_rate));
-        if (seg_end > chunk_begin && seg_end - chunk_begin > max_samples) {
+        if (seg_end > span_cursor && seg_end - span_cursor > max_samples) {
             // One speech segment is longer than the whole window: cut inside it
             // at the quietest frame the data offers, never closer than
             // kMinChunkSeconds to the chunk start.
-            const auto hard_end = std::min(seg_end, chunk_begin + max_samples);
-            const auto earliest = std::min(hard_end, chunk_begin + std::max<std::size_t>(1, min_chunk));
+            const auto hard_end = std::min(seg_end, span_cursor + max_samples);
+            const auto earliest = std::min(hard_end, span_cursor + std::max<std::size_t>(1, min_chunk));
             const auto cut = lowest_probability_sample(probabilities, frame_seconds, earliest, hard_end);
-            const auto safe_cut = cut <= chunk_begin ? hard_end : cut;
-            chunks.push_back(SpeechChunk{chunk_begin, safe_cut});
-            chunk_begin = safe_cut;
+            const auto safe_cut = cut <= span_cursor ? hard_end : cut;
+            chunks.push_back(SpeechChunk{span_cursor, safe_cut});
+            span_cursor = safe_cut;
             continue;
         }
 
@@ -206,19 +211,20 @@ std::vector<SpeechChunk> plan_speech_chunks(
         std::size_t next = index + 1;
         while (next < spans.size()) {
             const auto next_end = std::min(total_samples, sample_at(spans[next].end_seconds, sample_rate));
-            if (next_end - chunk_begin > max_samples) {
+            if (next_end - span_cursor > max_samples) {
                 break;
             }
             candidate_end = next_end;
             ++next;
         }
-        chunks.push_back(SpeechChunk{chunk_begin, candidate_end});
-        chunk_begin = candidate_end;
+        chunks.push_back(SpeechChunk{span_cursor, candidate_end});
         index = next;
+        if (index < spans.size()) {
+            span_cursor = std::min(total_samples, sample_at(spans[index].start_seconds, sample_rate));
+        }
     }
 
-    // Contiguity guard: a normalized span set can produce a zero-length chunk
-    // only if the recording is degenerate, and such a chunk is dropped here
+    // Degenerate spans can still produce a zero-length chunk; it is dropped here
     // rather than handed to an engine as an empty WAV.
     std::vector<SpeechChunk> result;
     result.reserve(chunks.size());
@@ -258,9 +264,11 @@ std::string join_transcripts(const std::vector<std::string>& parts)
         }
         const char previous = joined.back();
         const char first = normalized.front();
+        // ASCII punctuation only: a multi-byte UTF-8 ellipsis would need a
+        // sequence comparison, and guessing at one is worse than a space.
         const bool no_space = previous == ' ' || previous == '-' || previous == '\''
             || first == ',' || first == '.' || first == ';' || first == ':' || first == '!'
-            || first == '?' || first == ')' || first == ']' || first == u8'\u2026';
+            || first == '?' || first == ')' || first == ']';
         if (!no_space) {
             joined.push_back(' ');
         }

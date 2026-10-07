@@ -77,10 +77,10 @@ int main(int argc, char** argv)
 
     voicetyper::app::WindowServices services;
     // Read at call time, so these follow a language change like the rest of the window.
-    set_current_language(presenter.settings().app_language);
+    voicetyper::app::set_current_language(presenter.settings().app_language);
     // Read at call time, so these follow a language change like the rest of the window.
-    services.engine_status = [] { return ui_text(UiKey::k101, current_language()); };
-    services.record_hotkey_state = [] { return ui_text(UiKey::k102, current_language()); };
+    services.engine_status = [] { return voicetyper::app::ui_text(voicetyper::app::UiKey::k101, voicetyper::app::current_language()); };
+    services.record_hotkey_state = [] { return voicetyper::app::ui_text(voicetyper::app::UiKey::k102, voicetyper::app::current_language()); };
 
     voicetyper::app::MainWindow window(presenter, std::move(services));
     window.show();

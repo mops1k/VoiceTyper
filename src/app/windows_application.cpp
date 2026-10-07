@@ -28,6 +28,7 @@
 #include "app/tray_controller.hpp"
 #include "app/settings_presenter.hpp"
 #include "asr/engine_host.hpp"
+#include "asr/gigaam_transcriber.hpp"
 #include "asr/native_engine_registry.hpp"
 #include "asr/native_transcribers.hpp"
 #include "domain/app_paths.hpp"
@@ -69,7 +70,9 @@ namespace {
 /// The model pages show five Whisper sizes and four Parakeet quants; the cancel table is
 /// indexed by engine and row, so it is sized for the larger of the two.
 constexpr int kModelRowsPerEngine = 5;
-constexpr int kModelRowSlots = kModelRowsPerEngine * 2;
+/// One slot per (engine, row) so a transfer of one engine can never be cancelled
+/// through another engine's row.
+constexpr int kModelRowSlots = kModelRowsPerEngine * 3;
 
 /// The shell's status strings follow the interface language of the settings: the window
 /// re-letters itself, and these messages have to match it (Alexander, 06.10.2026).
@@ -84,6 +87,50 @@ QString localized(UiKey key)
 /// `VoiceTyper-1.1.3-Setup.exe` does not), so the installer that replaced the .NET
 /// build can never be installed over the native one by mistake.
 constexpr std::string_view kNativeInstallerMarker = "win64";
+
+/// Stable engine name for logs. A ternary chain here silently reported Parakeet
+/// for every non-Whisper engine, which is exactly the kind of log that makes a
+/// new engine look absent while it is running.
+constexpr const char* engine_name(domain::TranscriptionEngine engine) noexcept
+{
+    switch (engine) {
+    case domain::TranscriptionEngine::whisper: return "whisper";
+    case domain::TranscriptionEngine::parakeet: return "parakeet";
+    case domain::TranscriptionEngine::gigaam: return "gigaam";
+    }
+    return "whisper";
+}
+
+/// File name of one model row inside the models directory. The index is the row
+/// index of the engine's own list, which is why the engine is required: the same
+/// index means a different file in every list, and a GigaAM row must never be
+/// resolved to a Parakeet quant.
+std::string model_file_name_for(domain::TranscriptionEngine engine, int size_index)
+{
+    switch (engine) {
+    case domain::TranscriptionEngine::whisper:
+        return std::string(core::support::whisper_model_file_name(
+            static_cast<domain::ModelSize>(size_index)));
+    case domain::TranscriptionEngine::parakeet:
+        return std::string(core::support::parakeet_model_file_name(
+            static_cast<domain::ParakeetModelSize>(size_index)));
+    case domain::TranscriptionEngine::gigaam:
+        return std::string(core::support::gigaam_model_file_name(
+            static_cast<domain::GigaamModelSize>(size_index)));
+    }
+    return {};
+}
+
+/// Which download repository serves an engine's models.
+core::support::ModelEngine download_model_engine(domain::TranscriptionEngine engine)
+{
+    switch (engine) {
+    case domain::TranscriptionEngine::whisper: return core::support::ModelEngine::whisper;
+    case domain::TranscriptionEngine::parakeet: return core::support::ModelEngine::parakeet;
+    case domain::TranscriptionEngine::gigaam: return core::support::ModelEngine::gigaam;
+    }
+    return core::support::ModelEngine::whisper;
+}
 
 std::optional<std::string> environment_variable(std::string_view name)
 {
@@ -505,6 +552,11 @@ int run(int argc, char** argv)
     // showing the Russian "Захват" because the overlay only heard about the language when
     // it happened to change (Alexander, 06.10.2026).
     status_overlay.set_language(presenter.settings().app_language);
+    // VAD segmenter: it drives the VAD auto-stop AND cuts a dictation longer than
+    // a model's input window (GigaAM is trained on ~25 s). It has to exist before
+    // the engine registry below, because the GigaAM factory borrows it and that
+    // factory can run as soon as the first engine is selected.
+    domain::EnergySpeechSegmenter segmenter;
     asr::NativeEngineRegistryOptions registry_options;
     registry_options.whisper_available = true;
     registry_options.whisper_factory = [](const std::filesystem::path& model) {
@@ -523,6 +575,18 @@ int run(int argc, char** argv)
     registry_options.parakeet_probe = [](domain::TranscriptionEngine engine, const std::filesystem::path& model) {
         return asr::probe_parakeet_for_registry(engine, model);
     };
+    // GigaAM through the pinned transcribe.cpp runtime. The library is probed
+    // (version + struct sizes of the vendored header) and the model path is
+    // forwarded, exactly like Parakeet above; the segmenter is borrowed so a
+    // dictation longer than the model window is cut at a pause.
+    registry_options.gigaam_library = asr::transcribe_library_beside_executable();
+    registry_options.gigaam_factory = [&segmenter](const std::filesystem::path& dll,
+                                                   const std::filesystem::path& model) {
+        return asr::make_gigaam_engine(dll, model, &segmenter);
+    };
+    registry_options.gigaam_probe = [](domain::TranscriptionEngine engine, const std::filesystem::path& model) {
+        return asr::probe_gigaam_for_registry(engine, model, asr::transcribe_library_beside_executable());
+    };
     asr::NativeEngineRegistry registry(std::move(registry_options));
     asr::EngineHost engine_host(registry);
 
@@ -534,7 +598,9 @@ int run(int argc, char** argv)
     const auto startup_engine = settings.transcription_engine;
     const auto startup_model = startup_engine == domain::TranscriptionEngine::parakeet
         ? models_directory(paths) / std::filesystem::path(std::string(core::support::parakeet_model_file_name(settings.parakeet_model_size)))
-        : models_directory(paths) / std::filesystem::path(std::string(core::support::whisper_model_file_name(settings.model_size)));
+        : startup_engine == domain::TranscriptionEngine::gigaam
+            ? models_directory(paths) / std::filesystem::path(std::string(core::support::gigaam_model_file_name(settings.gigaam_model_size)))
+            : models_directory(paths) / std::filesystem::path(std::string(core::support::whisper_model_file_name(settings.model_size)));
     const auto* model_override = std::getenv("VOICETYPER_WHISPER_MODEL");
 
     if (startup_engine == domain::TranscriptionEngine::whisper
@@ -581,10 +647,10 @@ int run(int argc, char** argv)
     engine_status_timer.start();
 
     // --- recording state machine --------------------------------------------
-    // VAD mode needs a segmenter or recording never auto-stops. This is the
-    // energy heuristic, not Silero: the shipped silero model is not bound to a
-    // native runtime yet, and a working auto-stop is better than none.
-    domain::EnergySpeechSegmenter segmenter;
+    // VAD mode needs a segmenter or recording never auto-stops. The instance is
+    // declared above the engine registry (the GigaAM factory borrows it); this is
+    // still the energy heuristic rather than Silero, which is the next step of
+    // the plan (phase V) - the seam is already the same.
     domain::ThreadRecordingWorker worker;
     domain::RecordingStateMachineOptions machine_options;
     machine_options.mode = settings.recording_mode;
@@ -983,14 +1049,17 @@ int run(int argc, char** argv)
     // Which models are on disk, and the ability to remove one. The .NET page offers
     // the same pair, and a downloaded model showing "Скачать" instead of "Удалить"
     // was reported from the running build.
-    services.model_is_downloaded = [&](bool whisper, int size_index) {
-        std::error_code error;
-        if (whisper) {
-            const auto size = static_cast<domain::ModelSize>(size_index);
-            return std::filesystem::exists(models_directory(paths) / std::filesystem::path(std::string(core::support::whisper_model_file_name(size))), error);
+    services.model_is_downloaded = [&](domain::TranscriptionEngine engine, int size_index) {
+        if (size_index < 0 || size_index >= kModelRowsPerEngine) {
+            return false;
         }
-        const auto size = static_cast<domain::ParakeetModelSize>(size_index);
-        return std::filesystem::exists(models_directory(paths) / std::filesystem::path(std::string(core::support::parakeet_model_file_name(size))), error);
+        const std::string name = model_file_name_for(engine, size_index);
+        if (name.empty()) {
+            return false;
+        }
+        std::error_code error;
+        return std::filesystem::exists(
+            models_directory(paths) / std::filesystem::path(name), error);
     };
     // Model downloads run like the update check: on a worker thread, with progress posted
     // back to the interface. Every row has its own cancellation source, so the user can stop a
@@ -998,26 +1067,25 @@ int run(int argc, char** argv)
     auto transfer_sources =
         std::make_shared<std::vector<std::shared_ptr<domain::CancellationSource>>>(kModelRowSlots);
     services.model_download = [&logger, &update_executor, &ui_executor, &paths, transfer_sources](
-                                 bool whisper, int size_index,
+                                 domain::TranscriptionEngine engine, int size_index,
                                  std::function<void(app::WindowServices::ModelTransfer)> report) {
         if (size_index < 0 || size_index >= kModelRowsPerEngine) {
             return;
         }
-        const int slot = (whisper ? 0 : kModelRowsPerEngine) + size_index;
+        const std::string file_name = model_file_name_for(engine, size_index);
+        if (file_name.empty()) {
+            return;
+        }
+        const int slot = static_cast<int>(engine) * kModelRowsPerEngine + size_index;
         auto source = std::make_shared<domain::CancellationSource>();
         (*transfer_sources)[static_cast<std::size_t>(slot)] = source;
-        static_cast<void>(update_executor.post([&logger, &ui_executor, &paths, whisper, size_index,
+        static_cast<void>(update_executor.post([&logger, &ui_executor, &paths, engine, file_name,
                                                    source, report = std::move(report)] {
             app::QtHttpClient http;
             core::support::ModelDownloadService service(http, models_directory(paths));
-            const auto engine = whisper ? core::support::ModelEngine::whisper
-                                        : core::support::ModelEngine::parakeet;
-            const std::string name = whisper
-                ? std::string(core::support::whisper_model_file_name(
-                      static_cast<domain::ModelSize>(size_index)))
-                : std::string(core::support::parakeet_model_file_name(
-                      static_cast<domain::ParakeetModelSize>(size_index)));
-            const auto status = service.download(engine, name,
+            const auto download_engine = download_model_engine(engine);
+            const std::string& name = file_name;
+            const auto status = service.download(download_engine, name,
                 [&ui_executor, report](const core::support::ModelDownloadProgress& progress) {
                     app::WindowServices::ModelTransfer transfer;
                     transfer.percent = progress.total > 0
@@ -1044,7 +1112,7 @@ int run(int argc, char** argv)
                 return;
             }
             static_cast<void>(logger.write(platform::LogLevel::info, "model downloaded",
-                std::string(whisper ? "whisper " : "parakeet ") + name));
+                std::string(engine_name(engine)) + " " + name));
             static_cast<void>(ui_executor.post([report] {
                 app::WindowServices::ModelTransfer transfer;
                 transfer.percent = 100;
@@ -1052,21 +1120,25 @@ int run(int argc, char** argv)
             }));
         }));
     };
-    services.model_download_cancel = [transfer_sources](bool whisper, int size_index) {
+    services.model_download_cancel = [transfer_sources](domain::TranscriptionEngine engine, int size_index) {
         if (size_index < 0 || size_index >= kModelRowsPerEngine) {
             return;
         }
-        const int slot = (whisper ? 0 : kModelRowsPerEngine) + size_index;
+        const int slot = static_cast<int>(engine) * kModelRowsPerEngine + size_index;
         const auto& sources = *transfer_sources;
         if (static_cast<std::size_t>(slot) < sources.size() && sources[static_cast<std::size_t>(slot)]) {
             sources[static_cast<std::size_t>(slot)]->request_cancellation();
         }
     };
-    services.model_delete = [&](bool whisper, int size_index) {
-        const auto size = static_cast<domain::ModelSize>(size_index);
-        const std::filesystem::path file = whisper
-            ? models_directory(paths) / std::filesystem::path(std::string(core::support::whisper_model_file_name(size)))
-            : models_directory(paths) / std::filesystem::path(std::string(core::support::parakeet_model_file_name(static_cast<domain::ParakeetModelSize>(size_index))));
+    services.model_delete = [&](domain::TranscriptionEngine engine, int size_index) {
+        if (size_index < 0 || size_index >= kModelRowsPerEngine) {
+            return false;
+        }
+        const std::string file_name = model_file_name_for(engine, size_index);
+        if (file_name.empty()) {
+            return false;
+        }
+        const std::filesystem::path file = models_directory(paths) / std::filesystem::path(file_name);
         const std::string name = file.filename().string();
         // Deleting a file is irreversible, so it is confirmed first.
         const auto answer = QMessageBox::question(nullptr, localized(UiKey::k99),
@@ -1127,17 +1199,24 @@ int run(int argc, char** argv)
         static_cast<void>(logger.write(
             platform::LogLevel::info,
             "settings applied",
-            "engine=" + std::string(
-                updated.transcription_engine == domain::TranscriptionEngine::whisper ? "whisper" : "parakeet")));
+            "engine=" + std::string(engine_name(updated.transcription_engine))));
 
-        if (updated.transcription_engine == domain::TranscriptionEngine::whisper) {
+        switch (updated.transcription_engine) {
+        case domain::TranscriptionEngine::whisper:
             static_cast<void>(registry.set_model_path(
                 domain::TranscriptionEngine::whisper,
                 models_directory(paths) / core::support::whisper_model_file_name(updated.model_size)));
-        } else {
+            break;
+        case domain::TranscriptionEngine::parakeet:
             static_cast<void>(registry.set_model_path(
                 domain::TranscriptionEngine::parakeet,
                 models_directory(paths) / core::support::parakeet_model_file_name(updated.parakeet_model_size)));
+            break;
+        case domain::TranscriptionEngine::gigaam:
+            static_cast<void>(registry.set_model_path(
+                domain::TranscriptionEngine::gigaam,
+                models_directory(paths) / core::support::gigaam_model_file_name(updated.gigaam_model_size)));
+            break;
         }
         const auto selected_engine = updated.transcription_engine;
         const std::filesystem::path selected_model
@@ -1149,7 +1228,7 @@ int run(int argc, char** argv)
         // switch" is unanswerable from the log (Alexander checked exactly that).
         static_cast<void>(logger.write(model_present ? platform::LogLevel::info : platform::LogLevel::warn,
             "engine switch requested",
-            std::string(selected_engine == domain::TranscriptionEngine::whisper ? "whisper" : "parakeet")
+            std::string(engine_name(selected_engine))
                 + " model=" + selected_model.string()
                 + (model_present ? " (file present)" : " (MODEL FILE MISSING, the engine cannot load it)")));
         engine_host.select(selected_engine, selected_model);

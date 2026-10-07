@@ -26,8 +26,9 @@
 
 namespace voicetyper::core::support {
 
-/// The two repositories the .NET catalog downloaded from.
-enum class ModelEngine { whisper, parakeet };
+/// The repositories the .NET catalog downloaded from, plus the C++-only GigaAM
+/// repository (handy-computer/gigaam-v3-e2e-rnnt-gguf, MIT weights).
+enum class ModelEngine { whisper, parakeet, gigaam };
 
 /// One transfer may take a long time: the largest Parakeet quant is about 0.9 GB, and a slow
 /// connection is normal rather than an error.
@@ -50,6 +51,7 @@ struct ModelDownloadProgress {
 /// the recognisers use, so the downloader cannot invent a file nothing would open.
 [[nodiscard]] std::string_view whisper_model_file_name(domain::ModelSize size);
 [[nodiscard]] std::string_view parakeet_model_file_name(domain::ParakeetModelSize size);
+[[nodiscard]] std::string_view gigaam_model_file_name(domain::GigaamModelSize size);
 
 /// The address a file is fetched from.
 [[nodiscard]] std::string model_download_url(ModelEngine engine, std::string_view file_name);

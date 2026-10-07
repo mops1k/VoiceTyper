@@ -47,6 +47,17 @@ platform::EngineAvailability NativeEngineRegistry::availability(domain::Transcri
         // The probe loads the DLL, resolves the six frozen symbols and asserts
         // ABI 6. Its verdict is authoritative: the registry never guesses.
         return options_.parakeet_probe(engine, *registered);
+
+    case domain::TranscriptionEngine::gigaam:
+        if (!options_.gigaam_probe) {
+            result.available = false;
+            result.reason = platform::EngineAvailabilityReason::platform_unsupported;
+            return result;
+        }
+        // Same rule as Parakeet: the library probe (version + struct sizes of the
+        // pinned header) is authoritative, and a missing model is reported as
+        // model_missing instead of being hidden behind a generic failure.
+        return options_.gigaam_probe(engine, *registered);
     }
     result.available = false;
     result.reason = platform::EngineAvailabilityReason::platform_unsupported;
@@ -76,6 +87,8 @@ domain::Result<std::unique_ptr<platform::Transcriber>> NativeEngineRegistry::cre
         return options_.whisper_factory(model);
     case domain::TranscriptionEngine::parakeet:
         return options_.parakeet_factory(options_.parakeet_library, model);
+    case domain::TranscriptionEngine::gigaam:
+        return options_.gigaam_factory(options_.gigaam_library, model);
     }
     return domain::Result<std::unique_ptr<platform::Transcriber>>::failure(
         domain::ErrorCode::engine_unavailable, "unknown engine");

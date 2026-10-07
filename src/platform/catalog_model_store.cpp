@@ -25,6 +25,7 @@ std::string_view base_url_for(ModelKind kind)
     case ModelKind::whisper: return kWhisperModelBaseUrl;
     case ModelKind::vad: return kVadModelBaseUrl;
     case ModelKind::parakeet: return kParakeetModelBaseUrl;
+    case ModelKind::gigaam: return kGigaamModelBaseUrl;
     }
     return {};
 }
@@ -42,6 +43,11 @@ bool is_catalog_entry(const ModelDescriptor& descriptor)
         }
     }
     for (const auto& entry : parakeet_catalog()) {
+        if (entry.file_name == descriptor.file_name) {
+            return true;
+        }
+    }
+    for (const auto& entry : gigaam_catalog()) {
         if (entry.file_name == descriptor.file_name) {
             return true;
         }
@@ -69,6 +75,11 @@ bool is_catalog_temp_file_name(std::string_view name)
         }
     }
     for (const auto& entry : parakeet_catalog()) {
+        if (temp_file_name(entry.file_name) == name) {
+            return true;
+        }
+    }
+    for (const auto& entry : gigaam_catalog()) {
         if (temp_file_name(entry.file_name) == name) {
             return true;
         }

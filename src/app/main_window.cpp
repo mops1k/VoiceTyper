@@ -53,6 +53,7 @@ namespace voicetyper::app {
 
 using domain::AppLanguage;
 using domain::AppTheme;
+using domain::GigaamModelSize;
 using domain::ModelSize;
 using domain::ParakeetModelSize;
 using domain::RecognitionLanguage;
@@ -90,6 +91,17 @@ QString parakeet_size_text(ParakeetModelSize size)
     case ParakeetModelSize::q5k: return QStringLiteral("q5_k");
     case ParakeetModelSize::q6k: return QStringLiteral("q6_k");
     case ParakeetModelSize::q8_0: return QStringLiteral("q8_0");
+    }
+    return QStringLiteral("?");
+}
+
+QString gigaam_size_text(GigaamModelSize size)
+{
+    switch (size) {
+    case GigaamModelSize::q4_k_m: return QStringLiteral("q4_k_m");
+    case GigaamModelSize::q5_k_m: return QStringLiteral("q5_k_m");
+    case GigaamModelSize::q6_k: return QStringLiteral("q6_k");
+    case GigaamModelSize::q8_0: return QStringLiteral("q8_0");
     }
     return QStringLiteral("?");
 }
@@ -290,6 +302,48 @@ constexpr ModelRow kParakeetModelRows[] = {
         "Максимальная точность кванта при самом большом размере файла.",
         "The most accurate quant, at the largest file size."},
 };
+
+/// GigaAM-v3 e2e-rnnt (Russian only; punctuation and casing come from the model
+/// itself). The published WER of every quant is within 0.07 pp of the others, so
+/// the sizes differ but the descriptions do not overclaim.
+constexpr ModelRow kGigaamModelRows[] = {
+    {"GigaAM v3 (q4_k_m)", "≈ 184 МБ", "≈ 184 MB", "Очень быстро", "Very fast", "Высокое", "High",
+        "Самый компактный квант: минимум места на диске, точность как у остальных.",
+        "The most compact quant: least disk space, accuracy on par with the rest."},
+    {"GigaAM v3 (q5_k_m)", "≈ 206 МБ", "≈ 206 MB", "Очень быстро", "Very fast", "Высокое", "High",
+        "Чуть больше файл, чуть выше устойчивость на шумной записи.",
+        "A slightly larger file and slightly better robustness on noisy audio."},
+    {"GigaAM v3 (q6_k)", "≈ 228 МБ", "≈ 228 MB", "Очень быстро", "Very fast", "Высокое", "High",
+        "Промежуточный вариант между компактностью и точностью.",
+        "A middle ground between compactness and accuracy."},
+    {"GigaAM v3 (q8_0)", "≈ 274 МБ", "≈ 274 MB", "Очень быстро", "Very fast", "Высокое", "High",
+        "Эталонный квант: русский текст с пунктуацией и регистром сразу, окно ~25 с на фразу.",
+        "Reference quant: Russian with punctuation and casing out of the box, ~25 s per utterance."},
+};
+
+/// The object-name prefix of a model list and its rows: one place decides which
+/// list belongs to which engine, so a row can never be wired to another engine's
+/// download.
+const char* model_list_prefix(ModelList list) noexcept
+{
+    switch (list) {
+    case ModelList::whisper: return "whisper";
+    case ModelList::parakeet: return "parakeet";
+    case ModelList::gigaam: return "gigaam";
+    }
+    return "whisper";
+}
+
+const ModelRow* model_rows(ModelList list, std::size_t& count) noexcept
+{
+    switch (list) {
+    case ModelList::whisper: count = std::size(kWhisperModelRows); return kWhisperModelRows;
+    case ModelList::parakeet: count = std::size(kParakeetModelRows); return kParakeetModelRows;
+    case ModelList::gigaam: count = std::size(kGigaamModelRows); return kGigaamModelRows;
+    }
+    count = 0;
+    return nullptr;
+}
 
 /// The field of a row for the language being shown.
 [[nodiscard]] inline const char* model_field(const char* ru, const char* en, AppLanguage language)
@@ -720,6 +774,7 @@ void MainWindow::build_tabs()
         engine_->setObjectName(QStringLiteral("engineCombo"));
         engine_->addItem(QStringLiteral("Whisper"), static_cast<int>(TranscriptionEngine::whisper));
         engine_->addItem(QStringLiteral("Parakeet"), static_cast<int>(TranscriptionEngine::parakeet));
+        engine_->addItem(QStringLiteral("GigaAM"), static_cast<int>(TranscriptionEngine::gigaam));
         whisper_size_ = new QComboBox(page);
         whisper_size_->setObjectName(QStringLiteral("whisperSizeCombo"));
         for (const auto size : {ModelSize::tiny, ModelSize::base, ModelSize::small, ModelSize::medium, ModelSize::large}) {
@@ -729,6 +784,11 @@ void MainWindow::build_tabs()
         parakeet_size_->setObjectName(QStringLiteral("parakeetSizeCombo"));
         for (const auto size : {ParakeetModelSize::q4k, ParakeetModelSize::q5k, ParakeetModelSize::q6k, ParakeetModelSize::q8_0}) {
             parakeet_size_->addItem(parakeet_size_text(size), static_cast<int>(size));
+        }
+        gigaam_size_ = new QComboBox(page);
+        gigaam_size_->setObjectName(QStringLiteral("gigaamSizeCombo"));
+        for (const auto size : {GigaamModelSize::q4_k_m, GigaamModelSize::q5_k_m, GigaamModelSize::q6_k, GigaamModelSize::q8_0}) {
+            gigaam_size_->addItem(gigaam_size_text(size), static_cast<int>(size));
         }
         temperature_ = new QDoubleSpinBox(page);
         temperature_->setRange(0.0, 1.0);
@@ -762,16 +822,16 @@ void MainWindow::build_tabs()
         // the presenter reads one control per engine.
         whisper_size_->hide();
         parakeet_size_->hide();
+        gigaam_size_->hide();
 
 
         
-        const auto build_model_card = [&](bool whisper) -> QWidget* {
-            const ModelRow* specs = whisper ? kWhisperModelRows : kParakeetModelRows;
-            const std::size_t count =
-                whisper ? std::size(kWhisperModelRows) : std::size(kParakeetModelRows);
+        const auto build_model_card = [&](ModelList list) -> QWidget* {
+            std::size_t count = 0;
+            const ModelRow* specs = model_rows(list, count);
+            const QString prefix = QString::fromLatin1(model_list_prefix(list));
             auto* card = new QWidget(page);
-            card->setObjectName(whisper ? QStringLiteral("whisperModelsCard")
-                                        : QStringLiteral("parakeetModelsCard"));
+            card->setObjectName(prefix + QStringLiteral("ModelsCard"));
             auto* card_layout = new QVBoxLayout(card);
             card_layout->setContentsMargins(0, 0, 0, 0);
             card_layout->setSpacing(0);
@@ -783,8 +843,7 @@ void MainWindow::build_tabs()
                 row_layout->setContentsMargins(4, 8, kRowRightInset, 8);
                 row_layout->setSpacing(12);
                 auto* toggle = new ToggleSwitch(row);
-                toggle->setObjectName(whisper ? QStringLiteral("whisperModelToggle%1").arg(index)
-                                              : QStringLiteral("parakeetModelToggle%1").arg(index));
+                toggle->setObjectName(prefix + QStringLiteral("ModelToggle%1").arg(index));
                 row_layout->addWidget(toggle, 0, Qt::AlignTop);
                 auto* text_box = new QWidget(row);
                 auto* text_layout = new QVBoxLayout(text_box);
@@ -815,7 +874,7 @@ void MainWindow::build_tabs()
                 // Registered so a language change re-letters the card in place, like the
                 // rest of the window.
                 model_card_labels_.push_back(
-                    ModelCardLabels{name, meta, description, whisper, static_cast<int>(index)});
+                    ModelCardLabels{name, meta, description, list, static_cast<int>(index)});
                 row_layout->addWidget(text_box, 1);
                 auto* download = new QPushButton(row);
                 download->setProperty("buttonRole", QStringLiteral("download"));
@@ -824,17 +883,15 @@ void MainWindow::build_tabs()
                 // The download indicator lives in the row and only appears while a transfer
                 // is running, so the row keeps its shape otherwise.
                 auto* transfer = new QProgressBar(row);
-                transfer->setObjectName(whisper ? QStringLiteral("whisperModelProgress%1").arg(index)
-                                                : QStringLiteral("parakeetModelProgress%1").arg(index));
+                transfer->setObjectName(prefix + QStringLiteral("ModelProgress%1").arg(index));
                 transfer->setRange(0, 100);
                 transfer->setValue(0);
                 transfer->setFixedWidth(90);
                 transfer->setTextVisible(false);
                 transfer->hide();
-                (whisper ? whisper_model_progress_ : parakeet_model_progress_).push_back(transfer);
-                (whisper ? whisper_model_busy_ : parakeet_model_busy_).push_back(false);
-                download->setObjectName(whisper ? QStringLiteral("whisperModelButton%1").arg(index)
-                                                : QStringLiteral("parakeetModelButton%1").arg(index));
+                progress_for(list).push_back(transfer);
+                busy_for(list).push_back(false);
+                download->setObjectName(prefix + QStringLiteral("ModelButton%1").arg(index));
                 row_layout->addWidget(transfer, 0, Qt::AlignTop);
                 row_layout->addWidget(download, 0, Qt::AlignTop);
                 // The label depends on whether the model is on disk: a downloaded model
@@ -842,42 +899,45 @@ void MainWindow::build_tabs()
                 // running build, about the models that were already working).
                 // One handler for both states of the button: delete a model that is on disk,
                 // download one that is not.
-                connect(download, &QPushButton::clicked, this, [this, whisper, index] {
-                    const auto& busy = whisper ? whisper_model_busy_ : parakeet_model_busy_;
+                connect(download, &QPushButton::clicked, this, [this, list, index] {
+                    const auto& busy = busy_for(list);
                     if (static_cast<std::size_t>(index) < busy.size() && busy[static_cast<std::size_t>(index)]) {
                         // The same button cancels a transfer that is already running.
                         if (services_.model_download_cancel) {
-                            services_.model_download_cancel(whisper, index);
+                            services_.model_download_cancel(list, index);
                         }
                         return;
                     }
                     const bool downloaded = services_.model_is_downloaded
-                        && services_.model_is_downloaded(whisper, static_cast<int>(index));
+                        && services_.model_is_downloaded(list, static_cast<int>(index));
                     if (downloaded) {
-                        if (services_.model_delete && services_.model_delete(whisper, static_cast<int>(index))) {
+                        if (services_.model_delete && services_.model_delete(list, static_cast<int>(index))) {
                             refresh_model_buttons();
                         }
                         return;
                     }
-                    start_model_download(whisper, static_cast<int>(index));
+                    start_model_download(list, static_cast<int>(index));
                 });
-                (whisper ? whisper_model_buttons_ : parakeet_model_buttons_).push_back(download);
-                connect(toggle, &QAbstractButton::clicked, this, [this, whisper, index] {
-                    select_model(whisper, static_cast<int>(index));
+                buttons_for(list).push_back(download);
+                connect(toggle, &QAbstractButton::clicked, this, [this, list, index] {
+                    select_model(list, static_cast<int>(index));
                 });
-                (whisper ? whisper_model_toggles_ : parakeet_model_toggles_).push_back(toggle);
+                toggles_for(list).push_back(toggle);
                 card_layout->addWidget(row);
             }
             return card;
         };
-        whisper_models_card_ = build_model_card(true);
-        parakeet_models_card_ = build_model_card(false);
+        whisper_models_card_ = build_model_card(ModelList::whisper);
+        parakeet_models_card_ = build_model_card(ModelList::parakeet);
+        gigaam_models_card_ = build_model_card(ModelList::gigaam);
         rows->addWidget(whisper_models_card_);
         rows->addWidget(parakeet_models_card_);
+        rows->addWidget(gigaam_models_card_);
 
         connect(engine_, &QComboBox::currentIndexChanged, this, [this](int) { refresh_model_list(); });
         connect(whisper_size_, &QComboBox::currentIndexChanged, this, [this](int) { refresh_model_list(); });
         connect(parakeet_size_, &QComboBox::currentIndexChanged, this, [this](int) { refresh_model_list(); });
+        connect(gigaam_size_, &QComboBox::currentIndexChanged, this, [this](int) { refresh_model_list(); });
         rows->addWidget(setting_row(UiKey::k36, language_, temperature_));
         best_of_->setToolTip(QStringLiteral("Сколько вариантов распознавания движок сравнивает между собой. "
             "Больше — точнее, но медленнее"));
@@ -1369,12 +1429,72 @@ void MainWindow::capture_hotkey_into(bool record)
     });
 }
 
-void MainWindow::select_model(bool whisper, int index)
+std::vector<ToggleSwitch*>& MainWindow::toggles_for(ModelList list) noexcept
+{
+    switch (list) {
+    case ModelList::whisper: return whisper_model_toggles_;
+    case ModelList::parakeet: return parakeet_model_toggles_;
+    case ModelList::gigaam: return gigaam_model_toggles_;
+    }
+    return whisper_model_toggles_;
+}
+
+std::vector<QPushButton*>& MainWindow::buttons_for(ModelList list) noexcept
+{
+    switch (list) {
+    case ModelList::whisper: return whisper_model_buttons_;
+    case ModelList::parakeet: return parakeet_model_buttons_;
+    case ModelList::gigaam: return gigaam_model_buttons_;
+    }
+    return whisper_model_buttons_;
+}
+
+std::vector<QProgressBar*>& MainWindow::progress_for(ModelList list) noexcept
+{
+    switch (list) {
+    case ModelList::whisper: return whisper_model_progress_;
+    case ModelList::parakeet: return parakeet_model_progress_;
+    case ModelList::gigaam: return gigaam_model_progress_;
+    }
+    return whisper_model_progress_;
+}
+
+std::vector<bool>& MainWindow::busy_for(ModelList list) noexcept
+{
+    switch (list) {
+    case ModelList::whisper: return whisper_model_busy_;
+    case ModelList::parakeet: return parakeet_model_busy_;
+    case ModelList::gigaam: return gigaam_model_busy_;
+    }
+    return whisper_model_busy_;
+}
+
+QComboBox* MainWindow::size_combo_for(ModelList list) const noexcept
+{
+    switch (list) {
+    case ModelList::whisper: return whisper_size_;
+    case ModelList::parakeet: return parakeet_size_;
+    case ModelList::gigaam: return gigaam_size_;
+    }
+    return nullptr;
+}
+
+QWidget* MainWindow::card_for(ModelList list) const noexcept
+{
+    switch (list) {
+    case ModelList::whisper: return whisper_models_card_;
+    case ModelList::parakeet: return parakeet_models_card_;
+    case ModelList::gigaam: return gigaam_models_card_;
+    }
+    return nullptr;
+}
+
+void MainWindow::select_model(ModelList list, int index)
 {
     // The hidden combo carries the choice to the presenter, exactly as if the user
     // had picked it in the old combo box; the other toggles are cleared because a
     // model choice is exclusive.
-    QComboBox* combo = whisper ? whisper_size_ : parakeet_size_;
+    QComboBox* combo = size_combo_for(list);
     if (combo == nullptr || index < 0 || index >= combo->count()) {
         return;
     }
@@ -1385,11 +1505,10 @@ void MainWindow::select_model(bool whisper, int index)
 void MainWindow::refresh_model_list()
 {
     const auto engine = static_cast<TranscriptionEngine>(engine_->currentData().toInt());
-    if (whisper_models_card_ != nullptr) {
-        whisper_models_card_->setVisible(engine == TranscriptionEngine::whisper);
-    }
-    if (parakeet_models_card_ != nullptr) {
-        parakeet_models_card_->setVisible(engine == TranscriptionEngine::parakeet);
+    for (const auto list : {ModelList::whisper, ModelList::parakeet, ModelList::gigaam}) {
+        if (QWidget* card = card_for(list)) {
+            card->setVisible(list == engine);
+        }
     }
 
     const auto sync = [](const std::vector<ToggleSwitch*>& toggles, int selected) {
@@ -1402,11 +1521,10 @@ void MainWindow::refresh_model_list()
         }
     };
     refresh_model_buttons();
-    if (whisper_size_ != nullptr) {
-        sync(whisper_model_toggles_, whisper_size_->currentIndex());
-    }
-    if (parakeet_size_ != nullptr) {
-        sync(parakeet_model_toggles_, parakeet_size_->currentIndex());
+    for (const auto list : {ModelList::whisper, ModelList::parakeet, ModelList::gigaam}) {
+        if (QComboBox* combo = size_combo_for(list)) {
+            sync(toggles_for(list), combo->currentIndex());
+        }
     }
 }
 
@@ -1426,6 +1544,7 @@ void MainWindow::bind_settings_to_controls()
     select(engine_, static_cast<int>(settings.transcription_engine));
     select(whisper_size_, static_cast<int>(settings.model_size));
     select(parakeet_size_, static_cast<int>(settings.parakeet_model_size));
+    select(gigaam_size_, static_cast<int>(settings.gigaam_model_size));
     select(theme_, static_cast<int>(settings.theme));
     temperature_->setValue(settings.temperature);
     terms_->setPlainText(to_q(settings.terms_dictionary));
@@ -1479,6 +1598,12 @@ void MainWindow::bind_settings_to_controls()
         presenter_.update(SettingsChange::model, [this, index](domain::AppSettings& settings) {
             settings.parakeet_model_size = static_cast<ParakeetModelSize>(parakeet_size_->itemData(index).toInt());
         });
+    });
+    connect(gigaam_size_, &QComboBox::currentIndexChanged, this, [this](int index) {
+        presenter_.update(SettingsChange::model, [this, index](domain::AppSettings& settings) {
+            settings.gigaam_model_size = static_cast<GigaamModelSize>(gigaam_size_->itemData(index).toInt());
+        });
+        pending_service_change_ = SettingsChange::model;
     });
     connect(theme_, &QComboBox::currentIndexChanged, this, [this](int index) {
         presenter_.update(SettingsChange::appearance, [this, index](domain::AppSettings& settings) {
@@ -1692,9 +1817,8 @@ void MainWindow::retranslate()
         if (card.name == nullptr || card.index < 0) {
             continue;
         }
-        const ModelRow* rows = card.whisper ? kWhisperModelRows : kParakeetModelRows;
-        const std::size_t count =
-            card.whisper ? std::size(kWhisperModelRows) : std::size(kParakeetModelRows);
+        std::size_t count = 0;
+        const ModelRow* rows = model_rows(card.list, count);
         if (static_cast<std::size_t>(card.index) >= count) {
             continue;
         }
@@ -1842,20 +1966,17 @@ void MainWindow::bind_microphone_controls()
     });
 }
 
-void MainWindow::start_model_download(bool whisper, int index)
+void MainWindow::start_model_download(ModelList list, int index)
 {
     if (!services_.model_download) {
         return;
     }
-    const auto& bars = whisper ? whisper_model_progress_ : parakeet_model_progress_;
+    const auto& bars = progress_for(list);
     if (index < 0 || static_cast<std::size_t>(index) >= bars.size()) {
         return;
     }
     QProgressBar* bar = bars[static_cast<std::size_t>(index)];
-    auto& busy = whisper ? whisper_model_busy_ : parakeet_model_busy_;
-    const auto& buttons = whisper ? whisper_model_buttons_ : parakeet_model_buttons_;
-    QPushButton* button = index < static_cast<int>(buttons.size()) ? buttons[static_cast<std::size_t>(index)]
-                                                                  : nullptr;
+    auto& busy = busy_for(list);
     // A percentage, not a cycling animation: the server reports the length, so the bar shows
     // real progress from the first report on.
     bar->setRange(0, 100);
@@ -1868,8 +1989,8 @@ void MainWindow::start_model_download(bool whisper, int index)
     set_status_message(ui_text(UiKey::k105, language_));
 
     QPointer<MainWindow> self(this);
-    services_.model_download(whisper, index,
-        [self, whisper, index](WindowServices::ModelTransfer report) {
+    services_.model_download(list, index,
+        [self, list, index](WindowServices::ModelTransfer report) {
         if (self == nullptr) {
             return;
         }
@@ -1878,17 +1999,17 @@ void MainWindow::start_model_download(bool whisper, int index)
         // is what produced «QWidget::repaint: Recursive repaint detected» and then a crash
         // inside Qt6Gui on the device (07.10.2026), so the whole handler is marshalled onto
         // the interface thread, the way the rest of this file already does it.
-        QMetaObject::invokeMethod(self, [self, whisper, index, report] {
+        QMetaObject::invokeMethod(self, [self, list, index, report] {
         if (self == nullptr) {
             return;
         }
-        const auto& list = whisper ? self->whisper_model_progress_ : self->parakeet_model_progress_;
-        auto& busy = whisper ? self->whisper_model_busy_ : self->parakeet_model_busy_;
-        if (index < 0 || static_cast<std::size_t>(index) >= list.size()
+        const auto& progress = self->progress_for(list);
+        auto& busy = self->busy_for(list);
+        if (index < 0 || static_cast<std::size_t>(index) >= progress.size()
             || static_cast<std::size_t>(index) >= busy.size()) {
             return;
         }
-        QProgressBar* bar = list[static_cast<std::size_t>(index)];
+        QProgressBar* bar = progress[static_cast<std::size_t>(index)];
         const auto finish = [&] {
             busy[static_cast<std::size_t>(index)] = false;
             bar->hide();
@@ -1919,14 +2040,15 @@ void MainWindow::refresh_model_buttons()
 {
     // "Скачать" is disabled with the reason, because the model download service is
     // not written yet; "Удалить" is live as soon as the file exists.
-    const auto update = [this](const std::vector<QPushButton*>& buttons, bool whisper) {
+    const auto update = [this](ModelList list) {
+        const auto& buttons = buttons_for(list);
         for (std::size_t index = 0; index < buttons.size(); ++index) {
             QPushButton* button = buttons[index];
-            const auto& busy_flags = whisper ? whisper_model_busy_ : parakeet_model_busy_;
+            const auto& busy_flags = busy_for(list);
             const bool busy = static_cast<std::size_t>(index) < busy_flags.size()
                 && busy_flags[static_cast<std::size_t>(index)];
             const bool downloaded = !busy && services_.model_is_downloaded
-                && services_.model_is_downloaded(whisper, static_cast<int>(index));
+                && services_.model_is_downloaded(list, static_cast<int>(index));
             if (busy) {
                 button->setIcon(drawn_icon(DrawnIcon::cancel, 18, QColor(QStringLiteral("#E5484D"))));
                 button->setToolTip(ui_text(UiKey::k109, language_));
@@ -1951,8 +2073,9 @@ void MainWindow::refresh_model_buttons()
             button->style()->polish(button);
         }
     };
-    update(whisper_model_buttons_, true);
-    update(parakeet_model_buttons_, false);
+    update(ModelList::whisper);
+    update(ModelList::parakeet);
+    update(ModelList::gigaam);
 }
 
 void MainWindow::refresh_page_title(int index)

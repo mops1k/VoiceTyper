@@ -164,6 +164,72 @@
           "sha256": "4f97ea7fed7670e91a99cc7ba233efc86f04de9e8cfb9e8f8da5bc08d16944e0"
         }
       ]
+    },
+    {
+      "id": "transcribe.cpp",
+      "role": "asr-gigaam",
+      "kind": "prebuilt-dll",
+      "repository": "https://github.com/handy-computer/transcribe.cpp",
+      "pinnedCommit": "3f32fbcc7bb3246851a0234263438bc3c0fa1cac",
+      "pinnedTag": "v0.3.1",
+      "pinnedDate": "2026-10-07",
+      "license": "MIT",
+      "licenseHolder": "Copyright (c) 2026 the transcribe.cpp authors",
+      "licenseFile": "https://github.com/handy-computer/transcribe.cpp/blob/3f32fbcc7bb3246851a0234263438bc3c0fa1cac/LICENSE",
+      "abiVersion": null,
+      "abiNote": "transcribe.cpp has no numeric ABI constant below 1.0. The binding asserts the exact library version (transcribe_version() == 0.3.1) AND re-checks the public struct sizes the binding passes across the ABI (transcribe_abi_struct_size() for model_load_params, session_params, run_params, capabilities) against the vendored header; a mismatch is an error, never a fallback.",
+      "sourceArchive": {
+        "url": "https://github.com/handy-computer/transcribe.cpp/archive/3f32fbcc7bb3246851a0234263438bc3c0fa1cac.tar.gz",
+        "bytes": 43842201,
+        "sha256": "aab406e988dc2b3e58f6ba7cb4badfd735ff4cb15a966c4e157dcde7d7b302ee"
+      },
+      "toolchain": "MinGW-W64 x86_64-ucrt-posix-seh (Brecht Sanders r1) 13.1.0 from the Qt toolchain (C:\\Users\\Kvintilyanov\\tools\\Qt\\Tools\\Tools\\mingw1310_64) with cmake/ninja from WinLibs; TRANSCRIBE_BUILD_SHARED=ON, TRANSCRIBE_VULKAN=OFF, TRANSCRIBE_GGML_BACKEND_DL=OFF, TRANSCRIBE_USE_SYSTEM_BLAS=OFF, -D_WIN32_WINNT=0x0601. The MinGW generation MUST match the application: a GCC 16 build dies with 0xC0000139 / error 127 in-process (measured 2026-10-07).",
+      "buildNotes": "native/transcribe/BUILD.txt",
+      "integration": {
+        "module": "src/asr/transcribe_engine.hpp + src/platform/windows/transcribe_runtime.cpp",
+        "loader": "LoadLibraryExW(LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32) / GetProcAddress — no link-time dependency, no import library; the module is kept for the process lifetime because ggml installs a global terminate handler at load time and reloading after a FreeLibrary aborts the process",
+        "requiredSymbols": [
+          "transcribe_version",
+          "transcribe_abi_struct_size",
+          "transcribe_model_load_params_init",
+          "transcribe_session_params_init",
+          "transcribe_run_params_init",
+          "transcribe_capabilities_init",
+          "transcribe_open",
+          "transcribe_session_free",
+          "transcribe_get_model",
+          "transcribe_model_get_capabilities",
+          "transcribe_set_abort_callback",
+          "transcribe_was_aborted",
+          "transcribe_run",
+          "transcribe_full_text"
+        ],
+        "symbolPolicy": "Only the fourteen symbols above are resolved. A missing or differently-versioned library is an explicit error (engine_unavailable / unsupported), never a silent substitution of another engine.",
+        "assertion": "transcribe_version() must equal 0.3.1 and the four struct sizes must match the vendored header (native/transcribe/transcribe.h, sha256 d3617a0638387157af4f99596322d4c6bade2463aae88e0e76506fcd2130a082).",
+        "modelWindow": "transcribe_capabilities::max_audio_ms is read at load time (25.0 s for GigaAM-v3) and used to cut a longer dictation at a pause instead of degrading silently."
+      },
+      "artifacts": [
+        {
+          "path": "native/transcribe/libtranscribe.dll",
+          "bytes": 2679873,
+          "sha256": "e1f74843382e2a36398c22a82d46d208eca2ac34ea49b372121ee3cac1e8e4e0"
+        },
+        {
+          "path": "native/transcribe/ggml.dll",
+          "bytes": 112861,
+          "sha256": "da0989f0cbe0d144e9ca5f8d89b7ed623db31a116bc3416fb9783d3c952e2b64"
+        },
+        {
+          "path": "native/transcribe/ggml-base.dll",
+          "bytes": 1010572,
+          "sha256": "d51879f16e423fecdde3441dd325f91a6a32a6c25ab5be031c018609e3ef3807"
+        },
+        {
+          "path": "native/transcribe/ggml-cpu.dll",
+          "bytes": 1489298,
+          "sha256": "ea49b1ca3e89787158fa619ab4bea32464db62b225eb4f6b2fb0fa929440b913"
+        }
+      ]
     }
   ],
   "models": {

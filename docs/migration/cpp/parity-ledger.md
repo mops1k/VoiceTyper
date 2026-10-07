@@ -120,3 +120,43 @@ direction: unknown properties are ignored by the .NET reader.
 Deployment note: the runtime must be built with the SAME MinGW generation as the
 application. A GCC 16 build of the same source dies in-process with 0xC0000139 or
 error 127 (module-name reuse by the loader); see `native/transcribe/BUILD.txt`.
+
+## Terms dictionary: prompt, exact pairs and a similarity rule
+
+The .NET reference stored `termsDictionary` and passed the whole string to its
+Whisper engine as an initial prompt (`WithPrompt(...).WithCarryInitialPrompt(true)`).
+A prompt is only a hint: measured 2026-10-07 on the target machine with a
+synthesised Russian clip (Microsoft Irina, "Добавь коммит в ветку и отправь на
+ревью"), GigaAM answered `Добавь комит в ветку и отправь на ревью.` and did not
+change it with a context prompt, while the library itself reported
+`model 'gigaam' does not support vocabulary` for a vocabulary attempt. The Parakeet
+C API has neither a prompt nor a vocabulary. So "the dictionary must work on every
+engine" (Alexander, 2026-10-07) cannot be satisfied by an engine-side mechanism,
+and the C++ build deliberately goes beyond the reference:
+
+| Row | What | C++ contract evidence | Windows evidence | Status |
+| --- | --- | --- | --- | --- |
+| ASR-05 | Terms dictionary read as a prompt for engines that declare one, plus explicit `as heard=as written` pairs and a similarity rule applied by `domain::TermsDictionaryPort` to the finished text of EVERY engine | `terms-dictionary-contract`: parsing (pairs, duplicates, first `=`, empty sides), prompt building and its byte budget, exact replacement with whole-word boundaries and the capital rule, similarity matrix (`комит/камит/коммит/comit/comite` corrected; `комик/камин/комитет/команда` untouched), ambiguity skip, short-term guard, idempotency, and the port decorator applying the same rule to any engine | `voicetyper-asr-native-smoke` with `VOICETYPER_ENGINE=gigaam`: transcript `Добавь комит в ветку и отправь на ревью.` -> `final_text` `Добавь commit в ветку и отправь на ревью.` (exit 0), i.e. on an engine that has no native dictionary at all | done |
+
+The similarity rule in one line: both words are transliterated to Latin, their
+consonant skeletons must be equal, and their full forms may differ by at most one
+edit for a six-letter word (two from eight letters). A skeleton shorter than three
+consonants is never matched that way - `API`, `CPU` and `IDE` therefore still need
+an explicit pair - and a word that matches two different entries is left alone
+instead of guessed. Residual risk is stated rather than hidden: a rare word that
+shares both the skeleton and the form could still be rewritten.
+
+Measured effect of the prompt itself (same clip, Whisper small q8, 2026-10-07):
+
+| Engine prompt | Transcript of "Добавь коммит в ветку и отправь на ревью" |
+| --- | --- |
+| none | `Добавь коммит в ветку и отправь на ревью.` |
+| legacy comma list with `commit` | `Добавь комит в ветку и отправь на ревью.` (Cyrillic, and the Russian word got worse) |
+| built sentence `Термины пишутся латиницей: ... commit.` | `Добавь коммит в ветку и отправь на ревью.` (correct again, still Cyrillic) |
+
+So a prompt does **not** deliver the Latin spelling on this material: neither form
+made Whisper write `commit`. The sentence form at least stops degrading the Russian
+word that the legacy comma list damaged. This is why the prompt is kept as a hint
+that costs nothing, while the promise of the feature rests on the replacement
+(`TermsDictionaryPort`), which was verified to produce `commit` on both Whisper and
+GigaAM for the same clip.

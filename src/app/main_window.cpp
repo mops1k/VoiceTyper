@@ -944,6 +944,18 @@ void MainWindow::build_tabs()
         rows->addWidget(setting_row(UiKey::k55, language_, best_of_));
         rows->addWidget(setting_row(UiKey::k33, language_, nullptr));
         rows->addWidget(terms_);
+        // How the field is understood, in one line. Without it the editor looks
+        // like a plain prompt list, and "the term is in the dictionary but the text
+        // still says комит" was exactly the reported confusion.
+        auto* terms_hint = new QLabel(ui_text(UiKey::k110, language_), page);
+        terms_hint->setObjectName(QStringLiteral("mutedLabel"));
+        terms_hint->setWordWrap(true);
+        terms_hint->setProperty("uiKey", static_cast<int>(UiKey::k110));
+        auto* terms_hint_row = new QWidget(page);
+        auto* terms_hint_layout = new QHBoxLayout(terms_hint_row);
+        terms_hint_layout->setContentsMargins(4, 0, kRowRightInset, 8);
+        terms_hint_layout->addWidget(terms_hint);
+        rows->addWidget(terms_hint_row);
         add_page_to_nav(page, ui_text(UiKey::k18, language_));
     }
 

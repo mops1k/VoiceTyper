@@ -12,7 +12,7 @@ struct Entry {
 };
 
 /// One row per UiKey, in the same order as the enum.
-constexpr std::array<Entry, 110> kTexts{{
+constexpr std::array<Entry, 111> kTexts{{
     Entry{" мс", " ms"},
     Entry{"%1 (недоступен)", "%1 (unavailable)"},
     Entry{"%1 · Скорость: %2 · Качество: %3", "%1 · Speed: %2 · Quality: %3"},
@@ -135,6 +135,10 @@ constexpr std::array<Entry, 110> kTexts{{
     Entry{"Скачивание: %1%", "Downloading: %1%"},
     Entry{"Загрузка отменена", "The download was cancelled"},
     Entry{"Отменить загрузку", "Cancel the download"},
+    Entry{"Термины через запятую ищутся и по звучанию (\u00abкомит\u00bb \u2192 commit). Пара со знаком "
+          "\u00ab=\u00bb \u2014 строгое правило: \u00abкомит=commit\u00bb.",
+        "Comma-separated terms are also matched by sound (\u00ab\u043a\u043e\u043c\u0438\u0442\u00bb "
+        "\u2192 commit). A pair with '=' is an exact rule: \u00ab\u043a\u043e\u043c\u0438\u0442=commit\u00bb."},
 }};
 
 } // namespace

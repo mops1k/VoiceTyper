@@ -34,6 +34,8 @@
 #include "domain/app_paths.hpp"
 #include "domain/file_logger.hpp"
 #include "domain/recording_state_machine.hpp"
+#include "domain/terms_dictionary.hpp"
+#include "domain/terms_dictionary_port.hpp"
 #include "domain/version.hpp"
 #include "domain/text_output.hpp"
 #include "platform/windows/win32_clock.hpp"
@@ -659,8 +661,15 @@ int run(int argc, char** argv)
     LoggedRecordingPort logged_capture(capture, logger,
         selected.has_value() ? *selected : std::string("(system default)"),
         [&capture] { return capture.backend_description(); }, &capture_guard);
+    // The dictionary is applied to the engine's text by a decorator, not inside an
+    // engine: the explicit "as heard=as written" pairs are the only dictionary
+    // mechanism that reaches all three engines (measured 2026-10-07 - GigaAM
+    // reports no vocabulary support and ignores a context prompt, and the
+    // Parakeet C API has neither).
+    domain::TermsDictionaryPort dictionary_port(
+        engine_host, [&presenter] { return presenter.settings().terms_dictionary; });
     domain::RecordingStateMachine machine(
-        logged_capture, engine_host, output, worker, machine_options, &segmenter);
+        logged_capture, dictionary_port, output, worker, machine_options, &segmenter);
     // The machine reads its per-session parameters and its mode from the live
     // settings, exactly like the .NET machine asking the settings view model.
     // Without this every field the user changes - language, temperature, terms
@@ -733,7 +742,12 @@ int run(int argc, char** argv)
         // The setting the Models page calls "noise reduction".
         options.noise_suppression = presenter.settings().noise_reduction_enabled;
         options.language = current.language;
-        options.prompt = current.terms_dictionary;
+        // The prompt is the terms dictionary turned into a sentence: an engine
+        // that declares no prompt support ignores it (Whisper is the only one that
+        // has it today), and the explicit pairs are applied afterwards by
+        // TermsDictionaryPort for every engine.
+        options.prompt =
+            domain::terms_initial_prompt(domain::parse_terms_dictionary(current.terms_dictionary));
         options.temperature = current.temperature;
         options.condition_on_previous_text = current.condition_on_previous_text;
         options.auto_paste = current.auto_paste_enabled;

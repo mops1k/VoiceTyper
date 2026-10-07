@@ -13,9 +13,12 @@
 #include "asr/native_engine_registry.hpp"
 #include "asr/native_transcribers.hpp"
 #include "domain/audio_wav.hpp"
+#include "domain/terms_dictionary.hpp"
 
 #include <chrono>
 #include <cstdlib>
+#include <fstream>
+#include <sstream>
 #include <filesystem>
 #include <iomanip>
 #include <iostream>
@@ -168,6 +171,14 @@ int main()
 
     voicetyper::platform::TranscriptionRequest request;
     request.language = voicetyper::domain::RecognitionLanguage::ru;
+    // The engine prompt, so the effect of the terms dictionary on an engine that
+    // has one (Whisper) can be measured against the same clip: empty, the legacy
+    // comma list, or the sentence domain::terms_initial_prompt builds.
+    request.prompt = voicetyper::domain::terms_initial_prompt(
+        voicetyper::domain::parse_terms_dictionary(environment("VOICETYPER_ASR_DICTIONARY")));
+    if (const std::string raw = environment("VOICETYPER_ASR_RAW_PROMPT"); !raw.empty()) {
+        request.prompt = raw;
+    }
     request.best_of = 3;
 
     const auto transcribe_started = std::chrono::steady_clock::now();
@@ -187,7 +198,25 @@ int main()
     report("load_ms", std::to_string(load_ms));
     report("deep_warmup_ms", std::to_string(warm_ms));
     report("transcribe_ms", std::to_string(transcribe_ms));
+    // The dictionary is applied here exactly as TermsDictionaryPort applies it in
+    // the product (the same pure function), so a clip plus a pair proves the
+    // mechanism on a real engine - including the two engines that have no native
+    // dictionary at all.
+    // A file is the reliable way to pass Cyrillic on Windows: an environment
+    // variable travels through the process code page, a file does not.
+    std::string dictionary_text = environment("VOICETYPER_ASR_DICTIONARY");
+    const std::string dictionary_file = environment("VOICETYPER_ASR_DICTIONARY_FILE");
+    if (dictionary_text.empty() && !dictionary_file.empty()) {
+        std::ifstream stream(dictionary_file, std::ios::binary);
+        std::ostringstream buffer;
+        buffer << stream.rdbuf();
+        dictionary_text = buffer.str();
+    }
+    const auto dictionary = voicetyper::domain::parse_terms_dictionary(dictionary_text);
+    const std::string final_text = voicetyper::domain::apply_terms(transcript.value(), dictionary);
+    report("dictionary", dictionary_text);
     report("transcript", transcript.value());
+    report("final_text", final_text);
     std::cout << "  \"note\": \"pipeline evidence only; every checked-in fixture is sine or silence, so this is not a quality claim\"\n";
     std::cout << "}\n";
     std::cout << "asr-native-smoke: OK\n";

@@ -33,7 +33,7 @@
 | `transcriptionEngine` | `whisper` / `parakeet` | `whisper` |
 | `parakeetModelSize` | `q4K` / `q5K` / `q6K` / `q8_0` | `q8_0` |
 | `autoPasteEnabled` | bool | `true` |
-| `termsDictionary` | string | `API,CPU,GPU,ASR,STT,TTS,LLM,JSON,IDE,SQL` |
+| `termsDictionary` | string | `API,CPU,GPU,ASR,STT,TTS,LLM,JSON,IDE,SQL` — comma or newline separated. A plain entry is a term: it feeds a prompt where the engine has one (Whisper) and is also matched against the transcript by sound and shape (`комит`/`камит` -> `commit`). An entry with `=` is an exact rule (`комит=commit`). The .NET reader passed the whole string to Whisper as a prompt and would ignore both extra behaviours, so a rollback degrades to the old hint-only behaviour, never to a broken setting. |
 | `silenceThresholdMs` | integer | `1200` |
 | `startWithWindows` | bool | `false` |
 | `startMinimized` | bool | `false` |

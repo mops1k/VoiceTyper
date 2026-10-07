@@ -135,6 +135,17 @@ add_library(voicetyper_vad STATIC
 target_link_libraries(voicetyper_vad PUBLIC voicetyper_domain)
 voicetyper_set_warnings(voicetyper_vad)
 
+# The terms dictionary: parsing the settings string and the explicit
+# "as heard=as written" replacements applied to a finished transcript. Portable
+# on purpose - the replacement is the only dictionary mechanism that reaches all
+# three engines (measured: GigaAM reports no vocabulary support, the Parakeet C
+# API has neither prompt nor vocabulary).
+add_library(voicetyper_terms STATIC
+    src/domain/terms_dictionary.cpp
+)
+target_link_libraries(voicetyper_terms PUBLIC voicetyper_domain)
+voicetyper_set_warnings(voicetyper_terms)
+
 add_library(voicetyper_state STATIC
     src/domain/recording_state_machine.cpp
 )
@@ -296,7 +307,7 @@ if(VOICETYPER_BUILD_ASR)
     add_executable(voicetyper-asr-native-smoke EXCLUDE_FROM_ALL
         tests/integration/asr_native_smoke.cpp
     )
-    target_link_libraries(voicetyper-asr-native-smoke PRIVATE voicetyper_asr_native)
+    target_link_libraries(voicetyper-asr-native-smoke PRIVATE voicetyper_asr_native voicetyper_terms)
 
     # Diagnostic, not a contract: it answers "which decoder parameter set
     # actually recognises this audio" by running the same fixture through
@@ -422,6 +433,9 @@ endif()
                 voicetyper_model_download
                 voicetyper_state
                 voicetyper_output
+                # The terms dictionary port wraps the engine host, so the
+                # composition that builds it needs the replacement code linked.
+                voicetyper_terms
                 # FileLogger backs the Журнал page; without it the composition
                 # cannot report anything the user would need to debug a run.
                 voicetyper_core_support
@@ -561,6 +575,18 @@ if(VOICETYPER_BUILD_TESTS)
     add_test(NAME speech-segments-contract COMMAND voicetyper-speech-segments-contract)
     set_tests_properties(speech-segments-contract PROPERTIES
         PASS_REGULAR_EXPRESSION "speech-segments-contract: OK"
+    )
+
+    add_executable(voicetyper-terms-dictionary-contract EXCLUDE_FROM_ALL
+        tests/contract/terms_dictionary_contract.cpp
+    )
+    # voicetyper_audio carries SampleBuffer, which the port decorator's test needs
+    # to build a (deliberately empty) audio buffer.
+    target_link_libraries(voicetyper-terms-dictionary-contract PRIVATE voicetyper_terms voicetyper_audio)
+    voicetyper_set_warnings(voicetyper-terms-dictionary-contract)
+    add_test(NAME terms-dictionary-contract COMMAND voicetyper-terms-dictionary-contract)
+    set_tests_properties(terms-dictionary-contract PROPERTIES
+        PASS_REGULAR_EXPRESSION "terms-dictionary-contract: OK"
     )
 
     add_executable(voicetyper-gigaam-engine-contract EXCLUDE_FROM_ALL
@@ -1319,6 +1345,7 @@ add_custom_target(voicetyper-tests
         voicetyper-audio-dsp-contract
         voicetyper-vad-contract
         voicetyper-speech-segments-contract
+        voicetyper-terms-dictionary-contract
         voicetyper-gigaam-engine-contract
         voicetyper-mc-wasapi-contract
         voicetyper-microphone-level-contract

@@ -133,6 +133,8 @@ enum class UiKey : int {
     k107,
     k108,
     k109,
+    /// Как работает словарь терминов: термины ищутся и по звучанию, пары — строгое правило.
+    k110,
     /// Not a string: the number of keys. The table is checked against it at compile
     /// time, so a key without an entry (or an entry without a key - which silently
     /// shifts every later label, as happened once) cannot survive a build.

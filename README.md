@@ -32,6 +32,7 @@
 - Two engines to choose from: **Whisper** (models from Tiny to Large turbo) and **Parakeet v3** by NVIDIA — large-level quality at small speed.
 - Recognition language: Russian, English, or detected automatically.
 - Fine tuning: temperature, number of candidates, a dictionary of terms and names, and whether to condition on the previous text.
+- **Background noise suppression** — the filter removes the rumble and damps quiet noise without squeezing a calm voice.
 
 **Microphone**
 - Device selection, a sensitivity slider, and a **microphone test** right in the settings: the application tells you whether it hears you and what it heard.
@@ -74,7 +75,7 @@ To remove it, use the usual "Apps" page in Windows settings.
 ## First run
 
 1. On the "Microphone" page pick your device and press "Test microphone" — make sure the indicator reacts to your voice.
-2. On the "Models" page choose an engine and a model, and put the model file into the models folder.
+2. On the "Models" page choose an engine and a model, and press "Download" in its row: the file is fetched into the models folder (from 42 MB to about 1 GB, depending on the model).
 3. Press the hotkey (by default <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Space</kbd>) and say a phrase — the text appears in the active field.
 
 Any combination can be reassigned: the "Record" field in the settings captures the gesture itself.
@@ -82,8 +83,6 @@ Any combination can be reassigned: the "Record" field in the settings captures t
 ## Not done yet
 
 - Only the Windows version is published.
-- Downloading models from inside the application is not wired up yet: the model file is placed into the models folder by hand.
-- Noise suppression exists in the settings but does not affect audio processing yet.
 
 ## Building from source
 

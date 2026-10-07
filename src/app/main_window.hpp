@@ -106,6 +106,12 @@ struct WindowServices {
     /// Downloads the installer, verifies it and starts it. `percent` below zero means
     /// "unknown size"; `stage` is "download" or "done"; a non-empty `error` failed.
     std::function<void(std::function<void(int percent, QString stage, QString error)>)> update_install;
+    /// Starts a model download. Progress arrives on the UI thread: `percent` below zero
+    /// means the size is unknown, a non-empty `error` means the download failed. An empty
+    /// service leaves the download buttons disabled with a reason.
+    std::function<void(bool whisper, int index,
+        std::function<void(int percent, QString error)>)>
+        model_download;
     /// Live log lines.
     std::function<QString()> log_text;
     /// Called after a settings change that affects a running service (engine,
@@ -214,6 +220,9 @@ private:
     /// window is never rebuilt for a language change.
     void retranslate();
 
+    /// Starts downloading one model and shows its progress in the row.
+    void start_model_download(bool whisper, int index);
+
     /// Wires the update controls on the About page.
     void bind_update_controls();
     /// A settings row whose left column is a live status label and whose right column
@@ -271,6 +280,10 @@ private:
         int index = -1;
     };
     std::vector<ModelCardLabels> model_card_labels_;
+
+    /// The progress bar of every model row, in the same order as the buttons.
+    std::vector<QProgressBar*> whisper_model_progress_;
+    std::vector<QProgressBar*> parakeet_model_progress_;
 
     /// The update controls (About page).
     QLabel* update_version_ = nullptr;

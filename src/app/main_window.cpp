@@ -822,19 +822,36 @@ void MainWindow::build_tabs()
                 download->setProperty("buttonRole", QStringLiteral("download"));
                 download->setIconSize(QSize(18, 18));
                 download->setFixedWidth(46);
+                // The download indicator lives in the row and only appears while a transfer
+                // is running, so the row keeps its shape otherwise.
+                auto* transfer = new QProgressBar(row);
+                transfer->setObjectName(whisper ? QStringLiteral("whisperModelProgress%1").arg(index)
+                                                : QStringLiteral("parakeetModelProgress%1").arg(index));
+                transfer->setRange(0, 100);
+                transfer->setValue(0);
+                transfer->setFixedWidth(90);
+                transfer->setTextVisible(false);
+                transfer->hide();
+                (whisper ? whisper_model_progress_ : parakeet_model_progress_).push_back(transfer);
                 download->setObjectName(whisper ? QStringLiteral("whisperModelButton%1").arg(index)
                                                 : QStringLiteral("parakeetModelButton%1").arg(index));
+                row_layout->addWidget(transfer, 0, Qt::AlignTop);
                 row_layout->addWidget(download, 0, Qt::AlignTop);
                 // The label depends on whether the model is on disk: a downloaded model
                 // must offer "Удалить", not a pointless "Скачать" (reported from the
                 // running build, about the models that were already working).
+                // One handler for both states of the button: delete a model that is on disk,
+                // download one that is not.
                 connect(download, &QPushButton::clicked, this, [this, whisper, index] {
-                    if (!services_.model_delete) {
+                    const bool downloaded = services_.model_is_downloaded
+                        && services_.model_is_downloaded(whisper, static_cast<int>(index));
+                    if (downloaded) {
+                        if (services_.model_delete && services_.model_delete(whisper, static_cast<int>(index))) {
+                            refresh_model_buttons();
+                        }
                         return;
                     }
-                    if (services_.model_delete(whisper, static_cast<int>(index))) {
-                        refresh_model_buttons();
-                    }
+                    start_model_download(whisper, static_cast<int>(index));
                 });
                 (whisper ? whisper_model_buttons_ : parakeet_model_buttons_).push_back(download);
                 connect(toggle, &QAbstractButton::clicked, this, [this, whisper, index] {
@@ -1817,6 +1834,55 @@ void MainWindow::bind_microphone_controls()
     });
 }
 
+void MainWindow::start_model_download(bool whisper, int index)
+{
+    if (!services_.model_download) {
+        return;
+    }
+    const auto& bars = whisper ? whisper_model_progress_ : parakeet_model_progress_;
+    if (index < 0 || static_cast<std::size_t>(index) >= bars.size()) {
+        return;
+    }
+    QProgressBar* bar = bars[static_cast<std::size_t>(index)];
+    const auto& buttons = whisper ? whisper_model_buttons_ : parakeet_model_buttons_;
+    QPushButton* button = index < static_cast<int>(buttons.size()) ? buttons[static_cast<std::size_t>(index)]
+                                                                  : nullptr;
+    bar->setRange(0, 0); // unknown until the first progress report
+    bar->show();
+    if (button != nullptr) {
+        button->setEnabled(false);
+        button->setToolTip(ui_text(UiKey::k105, language_));
+    }
+    set_status_message(ui_text(UiKey::k105, language_));
+
+    QPointer<MainWindow> self(this);
+    services_.model_download(whisper, index, [self, whisper, index](int percent, QString error) {
+        if (self == nullptr) {
+            return;
+        }
+        const auto& list = whisper ? self->whisper_model_progress_ : self->parakeet_model_progress_;
+        if (index < 0 || static_cast<std::size_t>(index) >= list.size()) {
+            return;
+        }
+        QProgressBar* bar = list[static_cast<std::size_t>(index)];
+        if (!error.isEmpty()) {
+            bar->hide();
+            self->set_status_message(ui_text(UiKey::k106, self->language_) + QStringLiteral(": ") + error);
+            self->refresh_model_buttons();
+            return;
+        }
+        if (percent >= 0) {
+            bar->setRange(0, 100);
+            bar->setValue(percent);
+        }
+        if (percent >= 100) {
+            bar->hide();
+            self->set_status_message(QString());
+            self->refresh_model_buttons();
+        }
+    });
+}
+
 void MainWindow::refresh_model_buttons()
 {
     // "Скачать" is disabled with the reason, because the model download service is
@@ -1836,9 +1902,9 @@ void MainWindow::refresh_model_buttons()
                 button->setIcon(drawn_icon(DrawnIcon::download, 18, QColor(QStringLiteral("#4FD1A5"))));
                 button->setToolTip(ui_text(UiKey::k31, language_));
                 button->setProperty("buttonRole", QStringLiteral("download"));
-                button->setEnabled(false);
-                button->setToolTip(QStringLiteral(
-                    "Загрузка моделей появится вместе с сервисом обновлений; сейчас файл модели кладётся в папку моделей вручную"));
+                button->setEnabled(static_cast<bool>(services_.model_download));
+                button->setToolTip(services_.model_download ? ui_text(UiKey::k31, language_)
+                                                            : ui_text(UiKey::k106, language_));
             }
             // A dynamic property change only reaches the stylesheet after a repolish.
             button->style()->unpolish(button);

@@ -351,7 +351,14 @@ domain::Result<std::string> EngineHost::transcribe(
 
     // Capture audio -> the canonical WAV the frozen transcriber contract takes.
     std::string wav_bytes;
-    const auto written = domain::write_wav_pcm16(audio.samples(), wav_bytes);
+    // The .NET build ran exactly this suppressor inside WavBuilder, while the recording
+    // buffer was assembled; here that is the moment just before the canonical WAV is written.
+    // A copy is made because the buffer belongs to the caller.
+    std::vector<float> samples = audio.samples();
+    if (options.noise_suppression) {
+        domain::suppress_noise(samples, domain::kTargetSampleRate);
+    }
+    const auto written = domain::write_wav_pcm16(samples, wav_bytes);
     if (written.is_error()) {
         return domain::Result<std::string>::failure(written.code(), written.message());
     }

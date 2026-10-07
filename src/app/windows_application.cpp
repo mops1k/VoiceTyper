@@ -18,6 +18,7 @@
 #include "app/application_font.hpp"
 #include "app/qt_http_client.hpp"
 #include "app/ui_text.hpp"
+#include "core/support/model_download_service.hpp"
 #include "core/support/update_service.hpp"
 #include "platform/api/capture_guard.hpp"
 #include "platform/windows/win32_update_launcher.hpp"
@@ -230,31 +231,6 @@ private:
     platform::CaptureGuard* guard_ = nullptr;
 };
 
-/// Catalog file name for the selected size. The names come from
-/// src/platform/model_catalog.cpp, so the UI cannot invent a file the download
-/// logic would never produce.
-std::string whisper_file_for(domain::ModelSize size)
-{
-    switch (size) {
-    case domain::ModelSize::tiny: return "ggml-tiny-q8_0.bin";
-    case domain::ModelSize::base: return "ggml-base-q8_0.bin";
-    case domain::ModelSize::small: return "ggml-small-q8_0.bin";
-    case domain::ModelSize::medium: return "ggml-medium-q8_0.bin";
-    case domain::ModelSize::large: return "ggml-large-v3-turbo-q8_0.bin";
-    }
-    return "ggml-small-q8_0.bin";
-}
-
-std::string parakeet_file_for(domain::ParakeetModelSize size)
-{
-    switch (size) {
-    case domain::ParakeetModelSize::q4k: return "tdt-0.6b-v3-q4_k.gguf";
-    case domain::ParakeetModelSize::q5k: return "tdt-0.6b-v3-q5_k.gguf";
-    case domain::ParakeetModelSize::q6k: return "tdt-0.6b-v3-q6_k.gguf";
-    case domain::ParakeetModelSize::q8_0: return "tdt-0.6b-v3-q8_0.gguf";
-    }
-    return "tdt-0.6b-v3-q8_0.gguf";
-}
 
 } // namespace
 
@@ -559,8 +535,8 @@ int run(int argc, char** argv)
     // forbids.
     const auto startup_engine = settings.transcription_engine;
     const auto startup_model = startup_engine == domain::TranscriptionEngine::parakeet
-        ? models_directory(paths) / parakeet_file_for(settings.parakeet_model_size)
-        : models_directory(paths) / whisper_file_for(settings.model_size);
+        ? models_directory(paths) / std::filesystem::path(std::string(core::support::parakeet_model_file_name(settings.parakeet_model_size)))
+        : models_directory(paths) / std::filesystem::path(std::string(core::support::whisper_model_file_name(settings.model_size)));
     const auto* model_override = std::getenv("VOICETYPER_WHISPER_MODEL");
 
     if (startup_engine == domain::TranscriptionEngine::whisper
@@ -690,6 +666,8 @@ int run(int argc, char** argv)
     machine.set_options_provider([&presenter] {
         const auto& current = presenter.settings();
         domain::SessionOptions options;
+        // The setting the Models page calls "noise reduction".
+        options.noise_suppression = presenter.settings().noise_reduction_enabled;
         options.language = current.language;
         options.prompt = current.terms_dictionary;
         options.temperature = current.temperature;
@@ -994,16 +972,55 @@ int run(int argc, char** argv)
         std::error_code error;
         if (whisper) {
             const auto size = static_cast<domain::ModelSize>(size_index);
-            return std::filesystem::exists(models_directory(paths) / whisper_file_for(size), error);
+            return std::filesystem::exists(models_directory(paths) / std::filesystem::path(std::string(core::support::whisper_model_file_name(size))), error);
         }
         const auto size = static_cast<domain::ParakeetModelSize>(size_index);
-        return std::filesystem::exists(models_directory(paths) / parakeet_file_for(size), error);
+        return std::filesystem::exists(models_directory(paths) / std::filesystem::path(std::string(core::support::parakeet_model_file_name(size))), error);
+    };
+    // Model downloads run like the update check: on a worker thread, with progress posted
+    // back to the interface. The file goes into the models folder under the name the catalog
+    // and the recognisers use.
+    services.model_download = [&logger, &update_executor, &ui_executor, &paths](
+                                 bool whisper, int size_index,
+                                 std::function<void(int, QString)> report) {
+        static_cast<void>(update_executor.post([&logger, &ui_executor, &paths, whisper, size_index,
+                                                   report = std::move(report)] {
+            app::QtHttpClient http;
+            core::support::ModelDownloadService service(http, models_directory(paths));
+            const auto engine = whisper ? core::support::ModelEngine::whisper
+                                        : core::support::ModelEngine::parakeet;
+            const std::string name = whisper
+                ? std::string(core::support::whisper_model_file_name(
+                      static_cast<domain::ModelSize>(size_index)))
+                : std::string(core::support::parakeet_model_file_name(
+                      static_cast<domain::ParakeetModelSize>(size_index)));
+            const auto status = service.download(engine, name,
+                [&ui_executor, report](const core::support::ModelDownloadProgress& progress) {
+                    const int percent = progress.total > 0
+                        ? static_cast<int>(progress.fraction() * 100.0)
+                        : -1;
+                    static_cast<void>(ui_executor.post([report, percent] {
+                        report(percent, QString());
+                    }));
+                },
+                domain::CancellationToken{});
+            if (status.is_error()) {
+                const QString message = QString::fromStdString(status.error().to_string());
+                static_cast<void>(logger.write(platform::LogLevel::warn, "model download failed",
+                    name + ": " + status.error().to_string()));
+                static_cast<void>(ui_executor.post([report, message] { report(-1, message); }));
+                return;
+            }
+            static_cast<void>(logger.write(platform::LogLevel::info, "model downloaded",
+                std::string(whisper ? "whisper " : "parakeet ") + name));
+            static_cast<void>(ui_executor.post([report] { report(100, QString()); }));
+        }));
     };
     services.model_delete = [&](bool whisper, int size_index) {
         const auto size = static_cast<domain::ModelSize>(size_index);
         const std::filesystem::path file = whisper
-            ? models_directory(paths) / whisper_file_for(size)
-            : models_directory(paths) / parakeet_file_for(static_cast<domain::ParakeetModelSize>(size_index));
+            ? models_directory(paths) / std::filesystem::path(std::string(core::support::whisper_model_file_name(size)))
+            : models_directory(paths) / std::filesystem::path(std::string(core::support::parakeet_model_file_name(static_cast<domain::ParakeetModelSize>(size_index))));
         const std::string name = file.filename().string();
         // Deleting a file is irreversible, so it is confirmed first.
         const auto answer = QMessageBox::question(nullptr, localized(UiKey::k99),
@@ -1070,11 +1087,11 @@ int run(int argc, char** argv)
         if (updated.transcription_engine == domain::TranscriptionEngine::whisper) {
             static_cast<void>(registry.set_model_path(
                 domain::TranscriptionEngine::whisper,
-                models_directory(paths) / whisper_file_for(updated.model_size)));
+                models_directory(paths) / core::support::whisper_model_file_name(updated.model_size)));
         } else {
             static_cast<void>(registry.set_model_path(
                 domain::TranscriptionEngine::parakeet,
-                models_directory(paths) / parakeet_file_for(updated.parakeet_model_size)));
+                models_directory(paths) / core::support::parakeet_model_file_name(updated.parakeet_model_size)));
         }
         const auto selected_engine = updated.transcription_engine;
         const std::filesystem::path selected_model

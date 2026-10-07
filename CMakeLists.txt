@@ -110,6 +110,16 @@ voicetyper_set_warnings(voicetyper_core_support)
 add_library(voicetyper_audio STATIC
     src/domain/audio_wav.cpp
 )
+
+add_library(voicetyper_model_download STATIC
+    src/core/support/model_download_service.cpp
+)
+target_link_libraries(voicetyper_model_download
+    PUBLIC
+        voicetyper_domain
+        voicetyper_platform
+)
+voicetyper_set_warnings(voicetyper_model_download)
 target_link_libraries(voicetyper_audio PUBLIC voicetyper_domain)
 voicetyper_set_warnings(voicetyper_audio)
 
@@ -366,6 +376,7 @@ endif()
                 voicetyper_capture_guard
                 voicetyper_platform_win32_update_launcher
                 voicetyper_update
+                voicetyper_model_download
                 voicetyper_state
                 voicetyper_output
                 # FileLogger backs the Журнал page; without it the composition
@@ -447,6 +458,26 @@ if(VOICETYPER_BUILD_TESTS)
     add_test(NAME microphone-level-contract COMMAND voicetyper-microphone-level-contract)
     set_tests_properties(microphone-level-contract PROPERTIES
         PASS_REGULAR_EXPRESSION "microphone-level-contract: OK"
+    )
+
+    add_executable(voicetyper-noise-suppression-contract EXCLUDE_FROM_ALL
+        tests/contract/noise_suppression_contract.cpp
+    )
+    target_link_libraries(voicetyper-noise-suppression-contract PRIVATE voicetyper_audio)
+    voicetyper_set_warnings(voicetyper-noise-suppression-contract)
+    add_test(NAME noise-suppression-contract COMMAND voicetyper-noise-suppression-contract)
+    set_tests_properties(noise-suppression-contract PROPERTIES
+        PASS_REGULAR_EXPRESSION "noise-suppression-contract: OK"
+    )
+
+    add_executable(voicetyper-model-download-contract EXCLUDE_FROM_ALL
+        tests/contract/model_download_contract.cpp
+    )
+    target_link_libraries(voicetyper-model-download-contract PRIVATE voicetyper_model_download)
+    voicetyper_set_warnings(voicetyper-model-download-contract)
+    add_test(NAME model-download-contract COMMAND voicetyper-model-download-contract)
+    set_tests_properties(model-download-contract PROPERTIES
+        PASS_REGULAR_EXPRESSION "model-download-contract: OK"
     )
 
     add_executable(voicetyper-capture-guard-contract EXCLUDE_FROM_ALL
@@ -1237,4 +1268,6 @@ add_custom_target(voicetyper-tests
         voicetyper-win32-platform-contract
         voicetyper-win32-input-contract
         voicetyper-win32-startup-contract
-)
+
+    DEPENDS voicetyper-noise-suppression-contract
+    DEPENDS voicetyper-model-download-contract)

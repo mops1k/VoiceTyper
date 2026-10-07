@@ -88,6 +88,9 @@ struct SessionOptions {
     /// Passed through to the text output port (clipboard first, paste optional).
     bool auto_paste = true;
     int best_of = kFinalBestOf;
+    /// Background noise suppression, ported from the .NET build. Off by default, exactly
+    /// like the setting it comes from.
+    bool noise_suppression = false;
 };
 
 // ---------------------------------------------------------------------------

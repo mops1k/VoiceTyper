@@ -221,7 +221,17 @@ platform::Result<std::unique_ptr<platform::HttpByteStream>> QtHttpClient::open(
     QObject::connect(&poll, &QTimer::timeout, &loop, &QEventLoop::quit);
     QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
     poll.start();
-    while (reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).isNull() && !reply->isFinished()) {
+    // A redirect is not an answer. Hugging Face (and github.com before it) replies with 302
+    // and expects the client to follow it; Qt does follow it, but it publishes the status
+    // code of the redirecting response first. Waiting only for a non-null code therefore
+    // caught the 302 and reported "the model host answered with status 302" (reported from
+    // the running build). The loop now waits for the reply to settle or for a final answer.
+    const auto is_redirect = [](int status) { return status >= 300 && status < 400; };
+    while (!reply->isFinished()) {
+        const QVariant attribute = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute);
+        if (!attribute.isNull() && !is_redirect(attribute.toInt())) {
+            break;
+        }
         loop.exec();
         if (cancellation.is_cancellation_requested()) {
             break;

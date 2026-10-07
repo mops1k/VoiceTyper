@@ -258,17 +258,10 @@ int run(int argc, char** argv)
         application.setWindowIcon(product_icon);
     }
     if (!selftest && !claim_single_instance()) {
-        // A live instance already owns the microphone and the global hotkeys;
-        // starting a second recorder would fight it. Ask the first one to show.
-        auto* socket = new QLocalSocket;
-        socket->connectToServer(QStringLiteral("VoiceTyper-single-instance"));
-        if (socket->waitForConnected(500)) {
-            socket->write("show", 4);
-            socket->flush();
-            socket->waitForBytesWritten(500);
-        }
-        socket->disconnectFromServer();
-        delete socket;
+        // A live instance already owns the microphone and the global hotkeys; starting a
+        // second recorder would fight it. Ask the first one to show itself and leave. The
+        // owner logs the request, so nothing is logged here (the log is not open yet either).
+        static_cast<void>(notify_running_instance());
         return 0;
     }
     application.setApplicationName(QStringLiteral("VoiceTyper"));
@@ -1262,6 +1255,21 @@ int run(int argc, char** argv)
     wire_tray_window();
     // The tray menu is built once, so it is told the language now and on every change.
     apply_language_to_tray = [&tray](domain::AppLanguage language) { tray.set_language(language); };
+
+    // A second launch asks this instance to come to the front. The window exists from here on;
+    // a request that arrived while it was still being built is honoured right away.
+    set_activation_hook([&logger, weak = std::weak_ptr<MainWindow>(window)] {
+        if (auto raised = weak.lock()) {
+            // Logged because a second launch is otherwise invisible: the window simply appears,
+            // and during a check it must be possible to tell that from a fresh start.
+            static_cast<void>(logger.write(platform::LogLevel::info, "single instance",
+                "another launch asked to show; raising the window"));
+            raised->bring_to_front();
+        }
+    });
+    if (take_pending_activation()) {
+        window->bring_to_front();
+    }
     tray.set_language(presenter.settings().app_language);
     QObject::connect(&tray, &TrayController::quit_requested, &application, &QCoreApplication::quit);
     if (QSystemTrayIcon::isSystemTrayAvailable()) {

@@ -8,9 +8,9 @@
 #include "app/application_font.hpp"
 #include "app/status_overlay.hpp"
 #include "platform/api/status_overlay.hpp"
-#include "app/tray_controller.hpp"
 #include "app/ui_text.hpp"
 #include "app/main_window.hpp"
+#include "app/tray_controller.hpp"
 #include "app/settings_presenter.hpp"
 #include "platform/portable/portable_runtime.hpp"
 
@@ -1183,6 +1183,7 @@ private slots:
         QCOMPARE(ui_text(UiKey::k107, voicetyper::domain::AppLanguage::en), QStringLiteral("Downloading: %1%"));
         QCOMPARE(ui_text(UiKey::k108, voicetyper::domain::AppLanguage::en), QStringLiteral("The download was cancelled"));
     }
+
 
     // Прогресс загрузки модели: показываем настоящие проценты, а не циклическую анимацию, и
     // то же нажатие отменяет начатую загрузку (требование Александра, 07.10.2026).

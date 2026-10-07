@@ -39,6 +39,21 @@ namespace {
 
 constexpr auto kSingleInstanceChannel = "VoiceTyper-single-instance";
 
+/// Raised in this process when another launch asks the window to come forward. The window is
+/// created after the single-instance claim, so such a request can arrive before there is
+/// anything to raise; it is remembered and taken once the window exists.
+std::function<void()> g_activation_hook;
+bool g_activation_pending = false;
+
+void request_activation()
+{
+    if (g_activation_hook) {
+        g_activation_hook();
+        return;
+    }
+    g_activation_pending = true;
+}
+
 /// The product icon, embedded as a Qt resource so no file has to be deployed
 /// next to the executable. Alexander supplied it on 2026-10-06
 /// (assets/voiceTyper.png); the drawn microphone below is the fallback for a
@@ -152,12 +167,23 @@ bool claim_single_instance()
     // Created once and held for the life of the process; the handle is deliberately not
     // closed, because the mutex must disappear exactly when the process does.
     if (g_installer_mutex == nullptr) {
+        // CreateMutexW leaves the last error untouched when it creates the object, so the
+        // value has to be cleared first: otherwise a stale ERROR_ALREADY_EXISTS from an
+        // unrelated earlier call would make the very first launch believe somebody owns the
+        // name (exactly what the Windows test run showed).
+        ::SetLastError(ERROR_SUCCESS);
         g_installer_mutex = ::CreateMutexW(nullptr, FALSE, kInstallerMutexName);
+        if (g_installer_mutex != nullptr && ::GetLastError() == ERROR_ALREADY_EXISTS) {
+            // Somebody already owns the name: a live instance, or one that is starting this
+            // very moment. The kernel decides who created it first, so two simultaneous
+            // launches cannot both continue - and the channel below is deliberately left
+            // untouched, because touching it is what could steal a running instance.
+            return false;
+        }
     }
 #endif
-    // Remove a stale socket from a crashed run, but never silently steal a live
-    // instance: a ping that is answered means somebody is already running.
-    QLocalServer::removeServer(QString::fromLatin1(kSingleInstanceChannel));
+    // Ask whether somebody is alive before touching the channel: removing the socket first is
+    // exactly what steals a running instance on platforms where that socket is a real file.
     auto* probe = new QLocalSocket;
     probe->connectToServer(QString::fromLatin1(kSingleInstanceChannel));
     const bool alive = probe->waitForConnected(200);
@@ -166,23 +192,61 @@ bool claim_single_instance()
     if (alive) {
         return false;
     }
+    // Nobody answered, so any socket left behind belongs to a crashed run and can go.
+    QLocalServer::removeServer(QString::fromLatin1(kSingleInstanceChannel));
     auto* server = new QLocalServer(qApp);
     server->setSocketOptions(QLocalServer::UserAccessOption);
     if (!server->listen(QString::fromLatin1(kSingleInstanceChannel))) {
         delete server;
-        return true; // cannot claim, but refusing to start would be worse
+        // We own the name and still cannot listen, so the channel is unusable. Refusing to
+        // start is the safe answer: a second recorder would fight the first one for the
+        // microphone and the global hotkeys, which is worse than not starting at all.
+        qWarning() << "single instance: cannot listen on the instance channel";
+        return false;
     }
     QObject::connect(server, &QLocalServer::newConnection, [server] {
         auto* incoming = server->nextPendingConnection();
         if (incoming == nullptr) {
             return;
         }
-        incoming->write("show");
-        incoming->flush();
+        incoming->waitForReadyRead(200);
+        const QByteArray request = incoming->readAll();
         incoming->disconnectFromServer();
-        delete incoming;
+        incoming->deleteLater();
+        // A launch connecting here means "show yourself": that is the whole point of the
+        // channel, and a reply written back to the caller would be read by nobody.
+        if (request.startsWith("show")) {
+            request_activation();
+        }
     });
     return true;
+}
+
+/// Tells the instance that owns the channel to come forward.
+bool notify_running_instance()
+{
+    QLocalSocket socket;
+    socket.connectToServer(QString::fromLatin1(kSingleInstanceChannel));
+    if (!socket.waitForConnected(500)) {
+        return false;
+    }
+    socket.write("show", 4);
+    socket.flush();
+    static_cast<void>(socket.waitForBytesWritten(500));
+    socket.disconnectFromServer();
+    return true;
+}
+
+void set_activation_hook(std::function<void()> hook)
+{
+    g_activation_hook = std::move(hook);
+}
+
+bool take_pending_activation()
+{
+    const bool pending = g_activation_pending;
+    g_activation_pending = false;
+    return pending;
 }
 
 } // namespace voicetyper::app

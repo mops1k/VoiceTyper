@@ -1,5 +1,7 @@
 #pragma once
 
+#include <functional>
+
 // Tray presence and the single-instance guard.
 //
 // The .NET app keeps running with no main window: closing the window hides it
@@ -58,5 +60,16 @@ private:
 /// instance is already running: the caller should ask it to show its window and
 /// exit without touching the microphone or the hotkeys.
 bool claim_single_instance();
+
+/// Tells the instance that owns the single-instance channel to come forward. True when it
+/// answered, in which case the caller exits instead of starting a second recorder.
+bool notify_running_instance();
+
+/// Called when another launch asks this instance to show itself. The window is created after
+/// the claim, so a request arriving earlier is remembered for take_pending_activation().
+void set_activation_hook(std::function<void()> hook);
+
+/// True once, when a launch asked to show before the window existed.
+[[nodiscard]] bool take_pending_activation();
 
 } // namespace voicetyper::app

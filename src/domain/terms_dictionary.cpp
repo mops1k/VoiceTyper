@@ -401,8 +401,107 @@ std::size_t edit_budget(std::size_t form_length)
     return std::min(base, form_length / 4);
 }
 
+/// ---------------------------------------------------------------------------
+/// Third stage: a dictated acronym.
+///
+/// The model writes the English letter names in Cyrillic: "C-P-U" comes back as
+/// "сипиу", "M-C-P" as "мцп", "D-S-H" as "деша"/"десяч". No word-similarity rule
+/// can reach that, because the result is not a similar word - it is a spelled one.
+///
+/// The table maps a Cyrillic piece to the letter(s) it names; a word is decoded by
+/// backtracking over every split, and a term matches only when one decoding equals
+/// its letters EXACTLY. The exactness is the protection: with any tolerance "иди"
+/// (a real Russian word) would become "IDE".
+/// ---------------------------------------------------------------------------
+
+struct LetterName {
+    std::string_view cyrillic;
+    std::string_view latin;
+};
+
+/// Longest pieces first: the backtracking tries them in this order, so "ша" wins
+/// over "ш"+"а".
+constexpr LetterName kLetterNames[] = {
+    {"даблъю", "w"}, {"кью", "q"}, {"экс", "x"}, {"эйч", "h"}, {"джи", "g"}, {"кей", "k"},
+    {"эл", "l"}, {"эм", "m"}, {"эн", "n"}, {"пи", "p"}, {"би", "b"}, {"си", "c"}, {"ци", "c"},
+    {"ди", "d"}, {"де", "d"}, {"эф", "f"}, {"ар", "r"}, {"эр", "r"}, {"эс", "s"}, {"ти", "t"},
+    {"ви", "v"}, {"зед", "z"}, {"ша", "sh"}, {"ай", "a"}, {"ай", "i"}, {"эй", "a"}, {"ей", "a"},
+    {"оу", "o"}, {"ги", "g"}, {"ка", "k"}, {"ю", "u"}, {"кэ", "k"},
+    {"а", "a"}, {"б", "b"}, {"в", "v"}, {"г", "g"}, {"д", "d"}, {"е", "e"}, {"ж", "zh"}, {"з", "z"},
+    {"и", "i"}, {"й", "i"}, {"к", "k"}, {"л", "l"}, {"м", "m"}, {"н", "n"}, {"о", "o"}, {"п", "p"},
+    {"р", "r"}, {"с", "s"}, {"т", "t"}, {"у", "u"}, {"ф", "f"}, {"х", "h"}, {"ц", "c"}, {"ч", "h"},
+    {"ш", "s"}, {"щ", "sh"}, {"ы", "i"}, {"э", "e"}, {"я", ""},
+};
+
+/// How many decodings of one word are tried. A word is short, so this is a guard
+/// against pathological input rather than a real limit.
+constexpr std::size_t kAcronymBudget = 64;
+/// A term longer than this is a word, not something dictated letter by letter.
+constexpr std::size_t kAcronymMaxLetters = 6;
+
+void collect_spellings(std::string_view word, std::size_t index, std::string& current,
+    std::vector<std::string>& out)
+{
+    if (out.size() >= kAcronymBudget) {
+        return;
+    }
+    if (index == word.size()) {
+        out.push_back(current);
+        return;
+    }
+    for (const auto& piece : kLetterNames) {
+        if (word.compare(index, piece.cyrillic.size(), piece.cyrillic) != 0) {
+            continue;
+        }
+        const auto length = current.size();
+        current.append(piece.latin);
+        collect_spellings(word, index + piece.cyrillic.size(), current, out);
+        current.resize(length);
+        if (out.size() >= kAcronymBudget) {
+            return;
+        }
+    }
+}
+
+/// The spelling an acronym term is compared against: lower-case letters only, for a
+/// short all-letter term ("CPU" yes, "kilocode" no).
+std::string acronym_spelling(std::string_view written)
+{
+    std::string letters;
+    for (const char byte : written) {
+        if (byte >= 'A' && byte <= 'Z') {
+            letters.push_back(static_cast<char>(byte - 'A' + 'a'));
+            continue;
+        }
+        if (byte >= 'a' && byte <= 'z') {
+            letters.push_back(byte);
+            continue;
+        }
+        return std::string();
+    }
+    if (letters.size() < 2 || letters.size() > kAcronymMaxLetters) {
+        return std::string();
+    }
+    return letters;
+}
+
 constexpr std::size_t kMinimumSkeleton = 3;
 constexpr std::size_t kMaximumLengthDifference = 3;
+/// One consonant off is allowed only between skeletons this long: a short skeleton
+/// is not specific enough ("комод" and "commit" share "kmd"/"kmt" and are different
+/// words, while "кивакод" and "kilocode" really are the same one).
+constexpr std::size_t kLooseSkeleton = 4;
+/// How close the full forms must be for that looser path.
+constexpr double kLooseSimilarity = 0.6;
+
+double similarity_ratio(const std::string& left, const std::string& right)
+{
+    const std::size_t longest = std::max(left.size(), right.size());
+    if (longest == 0) {
+        return 1.0;
+    }
+    return 1.0 - static_cast<double>(edit_distance(left, right)) / static_cast<double>(longest);
+}
 
 /// The prompt is read by Whisper as text it has already produced, so it is a
 /// sentence that carries the target spellings rather than a bare list. It is
@@ -490,6 +589,8 @@ std::string apply_terms(const std::string& text, const TermsDictionary& dictiona
         std::string written;
         std::string form;
         std::string skeleton;
+        /// Empty unless the term is a short all-letter acronym.
+        std::string spelling;
     };
 
     std::vector<CompiledRule> rules;
@@ -506,11 +607,12 @@ std::string apply_terms(const std::string& text, const TermsDictionary& dictiona
     // spelling, a pair by the spelling the user wants in the text.
     std::vector<FuzzyTarget> targets;
     for (const auto& term : dictionary.terms) {
-        targets.push_back(FuzzyTarget{term, normalized_form(term), consonant_skeleton(term)});
+        targets.push_back(FuzzyTarget{term, normalized_form(term), consonant_skeleton(term),
+            acronym_spelling(term)});
     }
     for (const auto& rule : dictionary.replacements) {
-        targets.push_back(
-            FuzzyTarget{rule.written, normalized_form(rule.written), consonant_skeleton(rule.written)});
+        targets.push_back(FuzzyTarget{rule.written, normalized_form(rule.written),
+            consonant_skeleton(rule.written), acronym_spelling(rule.written)});
     }
 
     const std::vector<char32_t> source = decode(text);
@@ -585,23 +687,61 @@ std::string apply_terms(const std::string& text, const TermsDictionary& dictiona
                         source.begin() + static_cast<std::ptrdiff_t>(end)));
                     const std::string form = normalized_form(word);
                     const std::string skeleton = consonant_skeleton(word);
+                    std::vector<std::string> spellings;
+                    bool spellings_ready = false;
+                    const auto decoded = [&]() -> const std::vector<std::string>& {
+                        if (!spellings_ready) {
+                            std::string current;
+                            collect_spellings(word, 0, current, spellings);
+                            spellings_ready = true;
+                        }
+                        return spellings;
+                    };
                     const std::string* match = nullptr;
                     bool ambiguous = false;
-                    if (skeleton.size() >= kMinimumSkeleton) {
-                        for (const auto& target : targets) {
-                            const std::size_t difference = form.size() > target.form.size()
-                                ? form.size() - target.form.size()
-                                : target.form.size() - form.size();
-                            if (target.skeleton != skeleton || difference > kMaximumLengthDifference
-                                || edit_distance(form, target.form) > edit_budget(target.form.size())) {
-                                continue;
-                            }
-                            if (match != nullptr && *match != target.written) {
-                                ambiguous = true;
-                                break;
-                            }
-                            match = &target.written;
+                    for (const auto& target : targets) {
+                        const std::size_t difference = form.size() > target.form.size()
+                            ? form.size() - target.form.size()
+                            : target.form.size() - form.size();
+                        if (difference > kMaximumLengthDifference) {
+                            continue;
                         }
+                        // The three stages are tried in order, and a failed stage
+                        // must not stop the next one: "деша" has the right consonant
+                        // skeleton but is too far as a form, and only the spelled
+                        // stage reaches it.
+                        bool similar = false;
+                        if (form == target.form) {
+                            // An exact phonetic match is not a guess: it is the same
+                            // word, however short the term is ("апи" is exactly "api",
+                            // "дев" is exactly "dev").
+                            similar = true;
+                        }
+                        if (!similar && skeleton.size() >= kMinimumSkeleton
+                            && target.skeleton.size() >= kMinimumSkeleton
+                            && skeleton == target.skeleton) {
+                            similar = edit_distance(form, target.form) <= edit_budget(target.form.size());
+                        }
+                        if (!similar && skeleton.size() >= kLooseSkeleton
+                            && target.skeleton.size() >= kLooseSkeleton
+                            && edit_distance(skeleton, target.skeleton) <= 1) {
+                            similar = similarity_ratio(form, target.form) >= kLooseSimilarity;
+                        }
+                        if (!similar && !target.spelling.empty()) {
+                            const auto& variants = decoded();
+                            similar = std::any_of(variants.begin(), variants.end(),
+                                [&target](const std::string& candidate) {
+                                    return candidate == target.spelling;
+                                });
+                        }
+                        if (!similar) {
+                            continue;
+                        }
+                        if (match != nullptr && *match != target.written) {
+                            ambiguous = true;
+                            break;
+                        }
+                        match = &target.written;
                     }
                     if (match != nullptr && !ambiguous) {
                         const bool capitalised =

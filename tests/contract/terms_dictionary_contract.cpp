@@ -190,12 +190,16 @@ void check_longest_rule_wins()
     check_text(apply_terms("джи", dictionary), "G", "the shorter rule still applies alone");
 }
 
+/// A plain term is a prompt hint AND a replacement source when the sound matches:
+/// that is what "the dictionary must fix апи to API" means (Alexander, 2026-10-07).
+/// Text that does not sound like the term stays untouched.
 void check_replacements_do_not_apply_to_the_prompt_terms()
 {
-    // A plain term is a prompt hint only: it must never rewrite Cyrillic text.
     const auto dictionary = parse_terms_dictionary("API");
-    check_text(apply_terms("Отправь апи на сервер.", dictionary), "Отправь апи на сервер.",
-        "a plain term is not a replacement rule");
+    check_text(apply_terms("Отправь апи на сервер.", dictionary), "Отправь API на сервер.",
+        "a plain term is corrected where the sound matches");
+    check_text(apply_terms("Отправь письмо на сервер.", dictionary), "Отправь письмо на сервер.",
+        "text that does not sound like the term is untouched");
 }
 
 /// The engine does not always write a term the way the dictionary spells it: the
@@ -272,11 +276,13 @@ void check_similarity_keeps_punctuation()
 void check_short_terms_need_an_exact_pair()
 {
     const auto dictionary = parse_terms_dictionary("API, IDE, CPU");
-    check_text(apply_terms("апи иде кпу", dictionary), "апи иде кпу",
-        "short terms are not matched by similarity");
-    const auto with_pairs = parse_terms_dictionary("апи=API, иде=IDE");
-    check_text(apply_terms("апи иде кпу", with_pairs), "API IDE кпу",
-        "an explicit pair still replaces a short term");
+    // "иди" is one letter off "ide": not an exact sound, so it is left alone. A
+    // short skeleton is not specific enough to loosen (rule of 2026-10-07).
+    check_text(apply_terms("иди", dictionary), "иди",
+        "an approximate short match is not guessed");
+    const auto with_pairs = parse_terms_dictionary("иди=IDE, кпу=CPU");
+    check_text(apply_terms("иди кпу", with_pairs), "IDE CPU",
+        "an explicit pair still replaces an approximate short form");
 }
 
 /// Two different terms may share a key ("commit" and "comit" normalize the same
@@ -313,6 +319,110 @@ void check_multiword_terms_are_exact_only()
     const auto pair = parse_terms_dictionary("джи сон=JSON");
     check_text(apply_terms("джи сон", pair), "JSON",
         "a multi-word pair still replaces exactly");
+}
+
+/// A short acronym comes back spelled phonetically: "апи" is exactly "api" after
+/// normalisation, and an exact phonetic match is not a guess however short the
+/// term is (Alexander, 2026-10-07, from a live dictation).
+void check_short_terms_match_by_exact_sound()
+{
+    const auto dictionary = parse_terms_dictionary("API, IDE, CPU, dev, prod");
+    check_text(apply_terms("апи иде кпу", dictionary), "API IDE CPU",
+        "short terms: an exact phonetic match is replaced");
+    check_text(apply_terms("Апи", dictionary), "API",
+        "short terms: capitalisation does not stop the match");
+    check_text(apply_terms("дев прод", dictionary), "dev prod",
+        "short terms: a lowercase term matches its Russian spelling");
+    // The guard still holds for anything that is NOT an exact phonetic match.
+    check_text(apply_terms("апис", dictionary), "апис",
+        "short terms: a longer word is not touched");
+}
+
+/// The engine garbles more than one letter: "кивакод" for "kilocode" is one
+/// consonant off, and the term is long enough for that to be specific.
+void check_one_consonant_off_is_still_the_term()
+{
+    const auto dictionary = parse_terms_dictionary("kilocode");
+    check_text(apply_terms("кивакод", dictionary), "kilocode",
+        "garbled: one consonant off is the same term");
+    check_text(apply_terms("Кивакод", dictionary), "Kilocode",
+        "garbled: capitalisation follows the source word");
+    check_text(apply_terms("отправь кивакод в ветку", dictionary), "отправь kilocode в ветку",
+        "garbled: the word inside a sentence is replaced");
+}
+
+/// The looser rule must not start eating ordinary speech. Every word here is a
+/// real Russian word (or a plausible one) that merely resembles a term.
+void check_the_looser_rule_still_protects_words()
+{
+    const auto dictionary = parse_terms_dictionary("kilocode, commit, dsh");
+    for (const char* word : {"кивок", "кивка", "комод", "комок", "комик", "колода", "кило",
+             "килокалория", "молоко"}) {
+        check_text(apply_terms(word, dictionary), word,
+            std::string("protected: ") + word + " is not a term");
+    }
+    // Two forms are simply too far for similarity: reaching them would need a
+    // threshold that starts replacing ordinary words, so they take a pair.
+    check_text(apply_terms("кивот", dictionary), "кивот",
+        "protected: кивот is too far from kilocode by similarity");
+    check_text(apply_terms("десыч", dictionary), "десыч",
+        "protected: десыч is too far from dsh by similarity");
+    const auto with_pairs = parse_terms_dictionary("кивот=kilocode, десыч=dsh");
+    check_text(apply_terms("кивот и десыч", with_pairs), "kilocode и dsh",
+        "an explicit pair reaches what similarity cannot");
+}
+
+/// A dictated acronym comes back as the English letter names written in Cyrillic
+/// ("C-P-U" -> "сипиу"), which no word-similarity rule can catch. Reported by
+/// Alexander on 2026-10-07 with his own dictation.
+void check_spelled_acronyms_are_decoded()
+{
+    const auto dictionary = parse_terms_dictionary("CPU, ASR, IDE, MCP, kcm, dsh");
+    struct Case {
+        const char* heard;
+        const char* expected;
+    };
+    for (const Case& item : {
+             Case{"сипиу", "CPU"},
+             Case{"цпу", "CPU"},
+             Case{"айсар", "ASR"},
+             Case{"айде", "IDE"},
+             Case{"мцп", "MCP"},
+             Case{"кацм", "kcm"},
+             Case{"кцм", "kcm"},
+             Case{"деша", "dsh"},
+             Case{"десяч", "dsh"},
+         }) {
+        check_text(apply_terms(item.heard, dictionary), item.expected,
+            std::string("acronym: ") + item.heard + " is decoded");
+    }
+    check_text(apply_terms("отправь сипиу на сервер", dictionary), "отправь CPU на сервер",
+        "acronym: decoded inside a sentence");
+}
+
+/// The acronym stage must not touch ordinary words: it matches the SPELLED letters
+/// exactly, so "иди" (a real word) never becomes IDE.
+void check_the_acronym_stage_protects_words()
+{
+    const auto dictionary = parse_terms_dictionary("IDE, CPU, ASR, kcm, dsh, MCP");
+    for (const char* word : {"иди", "дом", "комод", "комик", "кивок", "колода", "молоко", "иду",
+             "сом", "код"}) {
+        check_text(apply_terms(word, dictionary), word,
+            std::string("acronym protection: ") + word + " stays");
+    }
+}
+
+/// A word that reaches two different terms is a coin toss: leave it alone. Here
+/// "сипиу" is CPU by spelling and "sipiu" by exact form.
+void check_ambiguous_acronyms_are_skipped()
+{
+    const auto dictionary = parse_terms_dictionary("CPU, sipiu");
+    check_text(apply_terms("сипиу", dictionary), "сипиу",
+        "ambiguous acronym: two different terms, no guess");
+    // One term only: the same word is decoded without hesitation.
+    const auto single = parse_terms_dictionary("CPU");
+    check_text(apply_terms("сипиу", single), "CPU",
+        "a single term is decoded");
 }
 
 void check_prompt_is_built_from_terms()
@@ -473,6 +583,12 @@ int main()
     check_replacements_do_not_apply_to_the_prompt_terms();
     check_prompt_is_built_from_terms();
     check_prompt_is_bounded();
+    check_spelled_acronyms_are_decoded();
+    check_the_acronym_stage_protects_words();
+    check_ambiguous_acronyms_are_skipped();
+    check_short_terms_match_by_exact_sound();
+    check_one_consonant_off_is_still_the_term();
+    check_the_looser_rule_still_protects_words();
     check_similar_words_are_replaced();
     check_latin_digraphs_are_one_sound();
     check_lookalikes_are_left_alone();

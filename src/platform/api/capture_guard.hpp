@@ -59,4 +59,10 @@ private:
 /// such hooks it does nothing and the guard still works through release_now().
 void install_crash_release_hook(CaptureGuard& guard);
 
+/// Appends a symbolised stack of the CALLING thread to wrong-thread-<pid>.txt in the log
+/// directory. For the case where the process is healthy but something is being done from
+/// the wrong thread: Qt's own warning names the symptom and this names the culprit.
+/// A no-op on a platform without dbghelp.
+void log_stack_trace(const char* reason);
+
 } // namespace voicetyper::platform

@@ -91,6 +91,25 @@ public:
     /// it returns invalid_state and touches nothing.
     [[nodiscard]] Result<domain::SampleBuffer> stop() override;
 
+    /// The peak of the last ~0.2 s, 0..1: the settings window reads it while the
+    /// microphone test runs, so the level meter follows the voice instead of showing a
+    /// single number when the probe is over (Alexander, 08.10.2026). Inline on purpose -
+    /// it is three lines over the members this class already owns.
+    [[nodiscard]] double live_peak() const
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        const std::size_t window = std::min<std::size_t>(session_.size(), 8000);
+        double peak = 0.0;
+        for (std::size_t index = session_.size() - window; index < session_.size(); ++index) {
+            const double value = session_[index] < 0.0f ? -static_cast<double>(session_[index])
+                                                        : static_cast<double>(session_[index]);
+            if (value > peak) {
+                peak = value;
+            }
+        }
+        return peak;
+    }
+
     /// Stops the device and discards the session. Idempotent: a second call (or
     /// a call with no session) is a success and touches no device.
     Status cancel() override;

@@ -79,6 +79,13 @@ enum class RecordingState : std::uint8_t {
 /// The .NET machine always asks for 3 greedy candidates for the final result.
 inline constexpr int kFinalBestOf = 3;
 
+/// The persisted setting starts at the machine's own value, so the first dictation
+/// after an update behaves exactly as before. settings.hpp cannot include this
+/// header (it includes settings.hpp), so the two defaults are repeated and pinned
+/// here instead of drifting apart silently.
+static_assert(kFinalBestOf == kDefaultBestOf,
+    "AppSettings::best_of must default to the recording machine's candidate count");
+
 /// Per-session recognition/output parameters, read on every session so a settings
 /// change applies without recreating the machine (the .NET optionsProvider).
 struct SessionOptions {

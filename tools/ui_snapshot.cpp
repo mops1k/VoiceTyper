@@ -60,7 +60,8 @@ int main(int argc, char** argv)
     static_cast<void>(presenter.load());
 
     voicetyper::app::MainWindow window(presenter, voicetyper::app::WindowServices{});
-    window.resize(980, 640);
+    // The mockup's own window size, so a snapshot can be compared with it directly.
+    window.resize(1220, 800);
     window.show();
     QApplication::processEvents();
 

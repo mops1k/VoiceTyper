@@ -725,8 +725,12 @@ int run(int argc, char** argv)
             const std::string name = describe_state(state);
             static_cast<void>(logger.write(
                 platform::LogLevel::info, std::string("recording state=") + name));
-            status_channel->post(localized(UiKey::k84) + QStringLiteral(": ")
-                + QString::fromStdString(name));
+            // The state name is localized: the strip used to read "запись: idle", mixing a
+            // Russian prefix with the enum's English name (Alexander, 08.10.2026).
+            const QString localized_name = localized(state == domain::RecordingState::recording
+                    ? UiKey::k180
+                    : state == domain::RecordingState::processing ? UiKey::k7 : UiKey::k179);
+            status_channel->post(localized(UiKey::k84) + QStringLiteral(": ") + localized_name);
             // The overlay is the frameless "Захват"/"Распознавание" indicator.
             // post_state is queued onto the UI thread: this handler runs on the
             // recording worker, and a widget must never be touched from there.
@@ -789,9 +793,12 @@ int run(int argc, char** argv)
         options.prompt =
             domain::terms_initial_prompt(domain::parse_terms_dictionary(current.terms_dictionary));
         options.temperature = current.temperature;
+        // The Models page control. Clamped here as well as in the UI, because a
+        // hand-edited settings.json can carry any integer and the engine rejects
+        // best_of outside kMinBestOf..kMaxBestOf instead of clamping it.
+        options.best_of = std::clamp(current.best_of, domain::kBestOfMin, domain::kBestOfMax);
         options.condition_on_previous_text = current.condition_on_previous_text;
         options.auto_paste = current.auto_paste_enabled;
-        options.best_of = domain::kFinalBestOf;
         return options;
     });
     machine.set_live_settings_provider([&presenter] {
@@ -848,6 +855,11 @@ int run(int argc, char** argv)
     }
 
     WindowServices services;
+    // The footer dot is green only when the engine can really work: a missing model, a load
+    // in progress or a failed start all keep it red (Alexander, 08.10.2026).
+    services.engine_ready = [&engine_host] {
+        return engine_host.state().readiness == asr::EngineReadiness::ready;
+    };
     services.engine_status = [&engine_host] {
         const auto snapshot = engine_host.state();
         switch (snapshot.readiness) {
@@ -906,6 +918,11 @@ int run(int argc, char** argv)
             ? platform::LogLevel::warn
             : platform::LogLevel::info;
         static_cast<void>(message_logger->write(level, "qt", message.toStdString()));
+        // Qt names the symptom when a widget is touched off the UI thread; the stack names
+        // the culprit, because its own warning does not say who did it.
+        if (message.contains(QStringLiteral("different thread"))) {
+            platform::log_stack_trace("qt: cross-thread widget use");
+        }
     });
 
     // The update controls of the About page. The .NET build checked the release feed
@@ -1031,9 +1048,17 @@ int run(int argc, char** argv)
     // The microphone test runs its own capture: the dictation machine owns its session
     // and the native library allows one capture at a time, so the probe never touches
     // the machine. Capturing blocks, hence the capture worker and the UI-thread reply.
-    services.microphone_probe = [&capture_options, &logger, &capture_executor, &ui_executor](
+    // The live peak of the running probe, published for the settings window's meter.
+    auto probe_level = std::make_shared<std::atomic<double>>(0.0);
+    auto probe_cancel = std::make_shared<std::atomic<bool>>(false);
+    services.microphone_probe_level = [probe_level] { return probe_level->load(); };
+    services.microphone_probe_cancel = [probe_cancel] { probe_cancel->store(true); };
+    services.microphone_probe = [&capture_options, &logger, &capture_executor, &ui_executor,
+                                    probe_level, probe_cancel](
                                     std::function<void(bool, double, QString)> report) {
+        probe_cancel->store(false);
         static_cast<void>(capture_executor.post([&capture_options, &logger, &ui_executor,
+                                                    probe_level, probe_cancel,
                                                     report = std::move(report)] {
             platform::WindowsAudioCapture probe(capture_options);
             const auto started = probe.start(domain::CancellationToken{});
@@ -1045,7 +1070,25 @@ int run(int argc, char** argv)
                 }));
                 return;
             }
-            std::this_thread::sleep_for(std::chrono::milliseconds(2500));
+            // The level is published every 50 ms, which is what lets the meter move with
+            // the voice. The probe runs for up to half a minute instead of the old 2.5 s
+            // sleep so the indicator stays alive while the user speaks, and the button
+            // stops it early.
+            // Eight seconds: long enough to watch the meter follow the voice and to press
+            // "Остановить", short enough that the block never hangs without a verdict.
+            const auto probe_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(8);
+            int ticks = 0;
+            while (!probe_cancel->load() && std::chrono::steady_clock::now() < probe_deadline) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                probe_level->store(probe.live_peak());
+                // One line per half second: the numbers behind the meter, so a silent
+                // indicator can be told from a silent microphone from the log alone.
+                if (++ticks % 10 == 0) {
+                    static_cast<void>(logger.write(platform::LogLevel::info, "microphone level",
+                        "peak=" + std::to_string(probe_level->load())));
+                }
+            }
+            probe_level->store(0.0);
             const auto stopped = probe.stop();
             double peak = 0.0;
             if (stopped.is_ok()) {
@@ -1235,6 +1278,11 @@ int run(int argc, char** argv)
             "the platform has no level control; the slider is disabled"));
     }
 
+    // The button follows the machine, because a session can also end by itself (silence,
+    // the hotkey, a failure) and then the UI kept showing "Остановить".
+    services.recording_active = [&machine] {
+        return machine.state() == domain::RecordingState::recording;
+    };
     services.start_recording = [&machine] { static_cast<void>(machine.press_record()); };
     services.stop_recording = [&machine] { static_cast<void>(machine.release_record()); };
     // Settings changes reach the running services here, and only here. The engine

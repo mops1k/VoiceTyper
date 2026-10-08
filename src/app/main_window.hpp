@@ -14,6 +14,8 @@
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <QSet>
+
 #include <optional>
 #include <string>
 #include <vector>
@@ -77,11 +79,16 @@ using ModelList = domain::TranscriptionEngine;
 struct WindowServices {
     /// Human-readable engine/model state for the status line.
     std::function<QString()> engine_status;
+    /// True only when the engine is ready to transcribe; the footer dot follows it.
+    std::function<bool()> engine_ready;
     /// Registered record hotkey, empty when registration failed.
     std::function<QString()> record_hotkey_state;
     /// Available input devices as (id, display name).
     std::function<std::vector<std::pair<std::string, std::string>>()> microphones;
     /// Start/stop a dictation through the recording state machine.
+    /// Whether a session is running right now. The button follows it, so a recording that
+    /// ends on its own does not leave the window stuck on "Остановить".
+    std::function<bool()> recording_active;
     std::function<void()> start_recording;
     std::function<void()> stop_recording;
     /// Starts a hotkey capture for the settings dialog: the user presses the
@@ -103,6 +110,13 @@ struct WindowServices {
     /// A short capture for the "test the microphone" button: whether sound arrived,
     /// its peak, and a detail line for the log. The callback runs on the UI thread.
     std::function<void(std::function<void(bool heard, double peak, QString detail)>)> microphone_probe;
+    /// The live peak (0..1) of the capture the running probe started, or unset on a
+    /// platform whose probe cannot report while it runs. The meter polls it while the
+    /// test is on.
+    std::function<double()> microphone_probe_level;
+    /// Asks the running probe to stop early. The probe otherwise runs until its own
+    /// deadline, because the level meter has to follow the voice while the user speaks.
+    std::function<void()> microphone_probe_cancel;
     /// The running version, for the About page.
     std::function<QString()> application_version;
     /// Asks the release feed. The reply arrives on the UI thread; empty services mean
@@ -138,6 +152,11 @@ struct WindowServices {
     /// a model reload can never be triggered twice for one edit.
     std::function<void(const domain::AppSettings&)> settings_applied;
 };
+
+/// Which window button a title-bar button is. The mockup drew three, but the port keeps
+/// the two Alexander asked for (minimize and close, 08.10.2026); the kind decides both
+/// the glyph and what a click does.
+enum class TitleButtonKind { minimize, close };
 
 class MainWindow final : public QMainWindow {
     Q_OBJECT
@@ -214,6 +233,15 @@ private:
     /// settings dialog does the same, and typing "Alt+Win+Space" by hand is not a
     /// thing a user can do.
     void capture_hotkey_into(bool record);
+    /// Shows the Whisper-only rows (temperature, candidates) for that engine and hides
+    /// them for the engines that ignore those parameters.
+    void update_engine_specific_rows();
+    /// Keeps the footer's record button and state dot in step with the recording machine.
+    void sync_record_button();
+    /// Rebuilds the key chips in the footer from the stored combination.
+    void sync_hotkey_display();
+    /// Colours the footer's engine dot: green when the engine is ready, red otherwise.
+    void sync_engine_dot();
     /// Sets the status line the footer shows and repaints it immediately.
     void set_status_message(const QString& message);
     /// Selects one model in the list: the hidden combo carries the change to the
@@ -234,6 +262,12 @@ private:
     void refresh_model_list();
     /// Shows the title of the page that is now on screen.
     void refresh_page_title(int index);
+    /// Keeps the accent bar of the selected navigation row in place.
+    void position_navigation_accent();
+    /// Centres the 820 px column of every converted page inside its scroll area.
+    void layout_page_columns(int viewport_width);
+    /// Watches the page viewports: their width is what the column is computed from.
+    bool eventFilter(QObject* watched, QEvent* event) override;
     /// Labels the model buttons for what the models really are: "Скачать" only while
     /// the file is missing, "Удалить" once it is there.
     void refresh_model_buttons();
@@ -252,9 +286,6 @@ private:
 
     /// Wires the update controls on the About page.
     void bind_update_controls();
-    /// A settings row whose left column is a live status label and whose right column
-    /// is the action (used by the update rows).
-    QWidget* setting_row_control(QWidget* status, QWidget* control);
 
     void resizeEvent(QResizeEvent* event) override;
     /// Handles the focus-loss hiding (the "hide on focus loss" setting).
@@ -275,17 +306,56 @@ private:
     /// built by hand: 32 px title row, 210 px navigation sidebar, page stack and
     /// the footer (MainWindow.axaml:130-200).
     QListWidget* nav_ = nullptr;
+    /// The centred content column of each page that uses the mockup's card layout.
+    std::vector<QWidget*> page_columns_;
+    /// Viewports of the pages that carry such a column.
+    QSet<QObject*> page_viewports_;
+    /// The 3x19 px accent bar on the selected navigation row (index.css: nav button i).
+    QWidget* nav_accent_ = nullptr;
     QStackedWidget* pages_ = nullptr;
     /// label -> page, in build order; finalize_pages() reorders them.
     std::vector<std::pair<QString, QWidget*>> built_pages_;
     QLabel* status_ = nullptr;
+    /// The 7x7 px state dot in front of the status text (index.css: .status-dot).
+    QWidget* status_dot_ = nullptr;
+    /// The quiet "Запись:" in front of the state.
+    QLabel* status_prefix_ = nullptr;
+    /// The green dot of the engine state (index.css: .status-right span i).
+    QWidget* engine_dot_ = nullptr;
+    /// The combination is drawn as key chips, like the mockup's kbd elements, and the
+    /// service's own line only appears when it reports a problem with the hook.
+    QLabel* hotkey_label_ = nullptr;
+    QWidget* hotkey_chips_ = nullptr;
+    QString hotkey_chips_source_;
+    /// The right-hand groups of the footer, so an indicator hugs its own text.
+    QWidget* engine_group_ = nullptr;
+    QWidget* hotkey_group_ = nullptr;
     QLabel* engine_state_ = nullptr;
     QLabel* hotkey_state_ = nullptr;
     QTextEdit* log_view_ = nullptr;
+    /// The log text the view currently shows: the view holds formatted columns, so the
+    /// raw service text cannot be compared with toPlainText() any more.
+    QString log_shown_text_;
+    /// Journal page: the log view and its "Журнал очищен" state share a stack, so
+    /// clearing the log does not make the card jump; the heading carries the
+    /// copy/clear actions.
+    QStackedWidget* log_stack_ = nullptr;
+    QLabel* log_empty_ = nullptr;
+    QPushButton* log_copy_ = nullptr;
+    QPushButton* log_clear_ = nullptr;
+    /// True while the cleared view shows "Журнал очищен": the refresh tick repeats
+    /// the same text and would otherwise print the old lines right back.
+    bool log_cleared_ = false;
+    QString log_cleared_at_;
+    /// The Launch page's banner glyph: painted in apply_theme, which knows the palette.
+    QLabel* launch_icon_ = nullptr;
     QPushButton* record_button_ = nullptr;
     QComboBox* app_language_ = nullptr;
     QComboBox* recognition_language_ = nullptr;
     QComboBox* engine_ = nullptr;
+    /// The two rows that only the Whisper engine understands; hidden for the others.
+    QWidget* temperature_row_ = nullptr;
+    QWidget* best_of_row_ = nullptr;
     QComboBox* whisper_size_ = nullptr;
     QComboBox* parakeet_size_ = nullptr;
     QComboBox* gigaam_size_ = nullptr;
@@ -308,6 +378,9 @@ private:
         QLabel* name = nullptr;
         QLabel* meta = nullptr;
         QLabel* description = nullptr;
+        /// The "Активна" badge of the row (index.css: .model-badge): visible only on the
+        /// model the engine currently uses.
+        QLabel* badge = nullptr;
         ModelList list = ModelList::whisper;
         int index = -1;
     };
@@ -322,25 +395,55 @@ private:
     std::vector<QProgressBar*> parakeet_model_progress_;
     std::vector<QProgressBar*> gigaam_model_progress_;
 
-    /// The update controls (About page).
+    /// The update controls (About page). The running version lives in the hero's chip
+    /// (index.css: .version-chip), not in a row of its own.
     QLabel* update_version_ = nullptr;
     QPushButton* update_check_ = nullptr;
     QLabel* update_status_ = nullptr;
     QLabel* update_notes_ = nullptr;
     QPushButton* update_install_ = nullptr;
+    /// The row around the install button: hidden as a whole, so no empty card is left.
+    QWidget* update_row_ = nullptr;
     QProgressBar* update_progress_ = nullptr;
     /// Set when a check found something installable; the install button appears then.
     bool update_available_ = false;
+    /// The hero of the About page: the brand wave and the tick of the privacy line.
+    /// Both are painted by apply_theme, which owns the palette.
+    QLabel* about_hero_logo_ = nullptr;
+    QLabel* about_privacy_icon_ = nullptr;
 
     /// Microphone level and test (the page the .NET build left empty).
     QSlider* microphone_level_ = nullptr;
     QLabel* microphone_level_value_ = nullptr;
     QPushButton* microphone_test_ = nullptr;
+    /// The sentence under "Проверить микрофон": the mockup's two states
+    /// (.microphone-test span) and, when the probe answers, its verdict.
+    QLabel* microphone_test_state_ = nullptr;
     QLabel* microphone_test_result_ = nullptr;
-    QProgressBar* microphone_level_meter_ = nullptr;
+    /// The mockup's 22-bar level meter (.level-meter). A plain QWidget because the class
+    /// lives in the anonymous namespace of main_window.cpp; level_meter_set_level() and
+    /// its two neighbours are the only door to it.
+    QWidget* microphone_level_meter_ = nullptr;
+    /// Ticks while the microphone test runs, feeding the meter the live level.
+    QTimer* microphone_level_timer_ = nullptr;
+    /// Polls the recording machine so the record button never stays on "Остановить".
+    QTimer* record_button_timer_ = nullptr;
+    /// True while the probe runs: the button offers "Остановить" then.
+    bool microphone_testing_ = false;
+    /// Bumped on every start and every stop, so the reply of a probe the user stopped is
+    /// dropped instead of overwriting the idle state.
+    int microphone_probe_generation_ = 0;
     QWidget* page_header_ = nullptr;
     QLabel* page_title_ = nullptr;
-    QComboBox* theme_ = nullptr;
+    /// "НАСТРОЙКИ" above the page title and the version at the right, like the mockup.
+    QLabel* page_breadcrumb_ = nullptr;
+    QLabel* page_version_ = nullptr;
+    /// The three theme tiles of the appearance page (index.css: .theme-options). Their
+    /// class lives in the anonymous namespace of main_window.cpp, so they are held as
+    /// plain QWidgets; apply_theme() re-dresses them through the theme_tile_* helpers.
+    std::vector<QWidget*> theme_tiles_;
+    /// "Вернуть стандартное оформление" (index.css: .reset-button).
+    QPushButton* appearance_reset_ = nullptr;
     QComboBox* recording_mode_ = nullptr;
     QComboBox* microphone_ = nullptr;
     QLineEdit* record_hotkey_ = nullptr;
@@ -366,7 +469,7 @@ private:
     /// Fg.Muted of the active palette, used to draw the navigation glyphs.
     QString muted_text_;
     /// (button, is_close) pairs of the custom title bar, drawn as geometry.
-    std::vector<std::pair<QPushButton*, bool>> title_button_icons_;
+    std::vector<std::pair<QPushButton*, TitleButtonKind>> title_button_icons_;
     QString status_message_;
     std::shared_ptr<StatusChannel> status_channel_;
     SettingsChange pending_service_change_ = SettingsChange::none;

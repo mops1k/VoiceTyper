@@ -198,6 +198,10 @@ add_library(voicetyper_capture_guard STATIC
     src/platform/capture_guard.cpp
 )
 target_link_libraries(voicetyper_capture_guard PUBLIC voicetyper_domain)
+if(WIN32)
+    # The crash handler writes a symbolised stack and a minidump through dbghelp.
+    target_link_libraries(voicetyper_capture_guard PUBLIC dbghelp)
+endif()
 voicetyper_set_warnings(voicetyper_capture_guard)
 
 # The microphone's own input level and mute state (Windows: IAudioEndpointVolume on

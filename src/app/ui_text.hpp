@@ -138,6 +138,89 @@ enum class UiKey : int {
     /// Not a string: the number of keys. The table is checked against it at compile
     /// time, so a key without an entry (or an entry without a key - which silently
     /// shifts every later label, as happened once) cannot survive a build.
+    k111,
+    k112,
+    k113,
+    k114,
+    k115,
+    k116,
+    k117,
+    k118,
+    k119,
+    k120,
+    k121,
+    k122,
+    k123,
+    /// Страница «Запуск».
+    k124,
+    k125,
+    k126,
+    k127,
+    k128,
+    k129,
+    /// Страница «Хоткеи».
+    k130,
+    k131,
+    k132,
+    k133,
+    k134,
+    k135,
+    k136,
+    k137,
+    /// Страница «Журнал».
+    k138,
+    k139,
+    k140,
+    k141,
+    k142,
+    /// Страница «Микрофон» (макет Figma Make: карточки «Источник звука»/«Обработка звука»
+    /// и блок .microphone-test).
+    k143,
+    k144,
+    k145,
+    k146,
+    k147,
+    k148,
+    k149,
+    k150,
+    k151,
+    k152,
+    /// Страница «О программе» (HERO-карточка .about-hero, .privacy-note, .about-links).
+    k153,
+    k154,
+    k155,
+    k156,
+    k157,
+    k158,
+    k159,
+    k160,
+    /// Страница «Внешний вид»: карточка «Тема приложения» с плитками-превью
+    /// (.theme-options / .theme-preview), карточка «Интерфейс» и кнопка сброса
+    /// оформления (.reset-button).
+    k161,
+    k162,
+    k163,
+    k164,
+    k165,
+    k166,
+    k167,
+    k168,
+    k169,
+    /// Общее с «Моделями»: бейдж активной строки (.model-badge).
+    k170,
+    /// Страница «Модели»: карточки «Движок и модели» и «Точность распознавания»
+    /// с блоком словаря (.dictionary).
+    k171,
+    k172,
+    k173,
+    k174,
+    k175,
+    k176,
+    k177,
+    k178,
+    k179,
+    k180,
+    k181,
     kCount,
 };
 

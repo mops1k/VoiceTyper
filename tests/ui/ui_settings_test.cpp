@@ -78,10 +78,11 @@ private slots:
         QVERIFY(theme_index >= 0);
         window.show_page(theme_index);
 
-        auto* theme = window.page_widget(theme_index)->findChild<QComboBox*>();
+        // The theme is chosen by clicking the tile of the mockup's .theme-options
+        // (it replaced the combo box of the appearance page).
+        auto* theme = window.page_widget(theme_index)->findChild<QWidget*>(QStringLiteral("themeTileDark"));
         QVERIFY(theme != nullptr);
-        // Index 1 is the dark theme in the appearance page.
-        theme->setCurrentIndex(1);
+        QTest::mouseClick(theme, Qt::LeftButton);
         QVERIFY(presenter.dirty());
 
         // The window's own debounce timer writes 700 ms after the last edit; the
@@ -101,6 +102,92 @@ private slots:
         voicetyper::app::MainWindow second(reloaded, voicetyper::app::WindowServices{});
         QVERIFY(second.tab_title(theme_index) == QObject::tr("Внешний вид"));
 
+        std::filesystem::remove(path);
+    }
+
+    // «Внешний вид» is the theme page of the mockup now: three preview tiles in the
+    // order system/light/dark (App.tsx:123-138), the stored theme marked with the check
+    // disc (index.css: .theme-options em), and the .reset-button under the cards, which
+    // puts the appearance back to the defaults of AppSettings.
+    void the_appearance_tiles_choose_the_theme_and_the_reset_restores_it()
+    {
+        const auto path = std::filesystem::temp_directory_path() / "voicetyper-ui-appearance-test.json";
+        std::filesystem::remove(path);
+        voicetyper::platform::PortableClock clock;
+        voicetyper::platform::PortableFileSystem file_system;
+        voicetyper::app::SettingsPresenter presenter(path, file_system, clock);
+        static_cast<void>(presenter.load());
+
+        voicetyper::app::MainWindow window(presenter, voicetyper::app::WindowServices{});
+        window.resize(980, 640);
+        window.show();
+
+        int appearance_index = -1;
+        for (int i = 0; i < window.page_count(); ++i) {
+            if (window.tab_title(i) == QStringLiteral("Внешний вид")) {
+                appearance_index = i;
+            }
+        }
+        QVERIFY(appearance_index >= 0);
+        window.show_page(appearance_index);
+        QCoreApplication::processEvents();
+        QWidget* page = window.page_widget(appearance_index);
+
+        auto* system_tile = page->findChild<QWidget*>(QStringLiteral("themeTileSystem"));
+        auto* light_tile = page->findChild<QWidget*>(QStringLiteral("themeTileLight"));
+        auto* dark_tile = page->findChild<QWidget*>(QStringLiteral("themeTileDark"));
+        QVERIFY(system_tile != nullptr && light_tile != nullptr && dark_tile != nullptr);
+        // The three tiles sit side by side in one row, in the order of the mockup.
+        QVERIFY2(system_tile->x() < light_tile->x() && light_tile->x() < dark_tile->x(),
+            "the theme tiles are not laid out in the order of the mockup");
+        QCOMPARE(system_tile->y(), light_tile->y());
+        QCOMPARE(light_tile->y(), dark_tile->y());
+        // The shipped default theme is "system", and that tile is the marked one.
+        QCOMPARE(static_cast<int>(presenter.settings().theme),
+            static_cast<int>(voicetyper::domain::AppSettings::defaults().theme));
+        QVERIFY2(system_tile->property("selected").toBool(), "the system tile is not selected by default");
+        QVERIFY(system_tile->findChild<QLabel*>(QStringLiteral("themeCheck"))->isVisible());
+        QVERIFY2(!dark_tile->findChild<QLabel*>(QStringLiteral("themeCheck"))->isVisible(),
+            "a tile that is not selected shows the check disc");
+
+        // A click picks that theme and the marker follows it.
+        QTest::mouseClick(dark_tile, Qt::LeftButton);
+        QCoreApplication::processEvents();
+        QCOMPARE(static_cast<int>(presenter.settings().theme),
+            static_cast<int>(voicetyper::domain::AppTheme::dark));
+        QVERIFY2(dark_tile->property("selected").toBool(), "the clicked tile is not marked as selected");
+        QVERIFY2(!system_tile->property("selected").toBool(), "the previously selected tile is still marked");
+        // The window itself follows the stored theme: the dark palette is on the sheet.
+        QVERIFY2(qApp->styleSheet().contains(QStringLiteral("#1D1F22")),
+            "the window did not apply the dark theme after the tile was clicked");
+
+        // The reset button puts the appearance back to the defaults.
+        auto* toggle = page->findChild<QAbstractButton*>(QStringLiteral("hideOnFocusLossToggle"));
+        QVERIFY(toggle != nullptr);
+        toggle->click();
+        QCoreApplication::processEvents();
+        QVERIFY(toggle->isChecked());
+        auto* reset = window.findChild<QPushButton*>(QStringLiteral("appearanceResetButton"));
+        QVERIFY(reset != nullptr);
+        reset->click();
+        QCoreApplication::processEvents();
+        QCOMPARE(static_cast<int>(presenter.settings().theme),
+            static_cast<int>(voicetyper::domain::AppSettings::defaults().theme));
+        QCOMPARE(presenter.settings().hide_on_focus_loss,
+            voicetyper::domain::AppSettings::defaults().hide_on_focus_loss);
+        QVERIFY2(!toggle->isChecked(), "the reset did not put the focus-loss switch back to its default");
+        QVERIFY2(system_tile->property("selected").toBool(), "the reset did not select the system tile again");
+
+        // And the value is written like every other edit of the page.
+        QTest::qWait(1200);
+        QVERIFY(!presenter.dirty());
+        const auto reread = voicetyper::domain::SettingsCodec::load(
+            file_system.read_text(path).value_or(std::string{}));
+        QCOMPARE(static_cast<int>(reread.settings.theme),
+            static_cast<int>(voicetyper::domain::AppSettings::defaults().theme));
+        QCOMPARE(reread.settings.hide_on_focus_loss,
+            voicetyper::domain::AppSettings::defaults().hide_on_focus_loss);
+        window.hide();
         std::filesystem::remove(path);
     }
 
@@ -200,6 +287,81 @@ private slots:
         const auto reread = voicetyper::domain::SettingsCodec::load(
             file_system.read_text(path).value_or(std::string{}));
         QCOMPARE(reread.settings.silence_threshold_ms, 2500);
+        std::filesystem::remove(path);
+    }
+
+    // "Вариантов распознавания" used to be a dead control: always 3, disabled, never
+    // stored, while the engine read the kFinalBestOf constant. It is a real setting now,
+    // so this drives the real widget, lets the autosave write the file, and builds a
+    // second window on that same file - the check the request asked for by name.
+    void best_of_is_editable_and_survives_a_restart()
+    {
+        using voicetyper::app::UiKey;
+        using voicetyper::app::ui_text;
+        using voicetyper::domain::AppLanguage;
+        using voicetyper::domain::kBestOfMax;
+        using voicetyper::domain::kBestOfMin;
+        using voicetyper::domain::kDefaultBestOf;
+
+        const auto path = std::filesystem::temp_directory_path() / "voicetyper-ui-bestof-test.json";
+        std::filesystem::remove(path);
+        voicetyper::platform::PortableClock clock;
+        voicetyper::platform::PortableFileSystem file_system;
+        voicetyper::app::SettingsPresenter presenter(path, file_system, clock);
+        static_cast<void>(presenter.load());
+
+        voicetyper::app::MainWindow window(presenter, voicetyper::app::WindowServices{});
+        window.show();
+        QCoreApplication::processEvents();
+
+        int models_index = -1;
+        for (int i = 0; i < window.page_count(); ++i) {
+            if (window.tab_title(i) == QStringLiteral("Модели")) {
+                models_index = i;
+            }
+        }
+        QVERIFY(models_index >= 0);
+        window.show_page(models_index);
+        QCoreApplication::processEvents();
+
+        auto* best_of = window.page_widget(models_index)
+            ->findChild<QSpinBox*>(QStringLiteral("bestOfSpin"));
+        QVERIFY2(best_of != nullptr, "the recognition-candidates control is not on the models page");
+        QVERIFY2(best_of->isEnabled(), "the recognition-candidates control is still disabled");
+        QCOMPARE(best_of->minimum(), kBestOfMin);
+        QCOMPARE(best_of->maximum(), kBestOfMax);
+        QCOMPARE(best_of->value(), kDefaultBestOf);
+        QVERIFY2(!best_of->toolTip().isEmpty(), "the control has no tooltip");
+        // The stale ".NET always asks for 3" sentence must not be what explains it now.
+        QVERIFY2(best_of->toolTip() != ui_text(UiKey::k41, AppLanguage::ru),
+            "the control still explains itself with the .NET constant");
+
+        best_of->setValue(5);
+        // The 700 ms autosave debounce, plus room for the write itself.
+        QTest::qWait(1200);
+        QCOMPARE(presenter.settings().best_of, 5);
+
+        const auto written = file_system.read_text(path).value_or(std::string{});
+        QVERIFY2(written.find("\"bestOf\": 5,") != std::string::npos,
+            "bestOf was not written to settings.json");
+        const auto reread = voicetyper::domain::SettingsCodec::load(written);
+        QVERIFY2(!reread.used_defaults, "the saved document falls back to defaults");
+        QCOMPARE(reread.settings.best_of, 5);
+
+        // Restart: a fresh presenter and a fresh window on the same file show 5.
+        voicetyper::app::SettingsPresenter reloaded(path, file_system, clock);
+        static_cast<void>(reloaded.load());
+        QCOMPARE(reloaded.settings().best_of, 5);
+        voicetyper::app::MainWindow second(reloaded, voicetyper::app::WindowServices{});
+        second.show_page(models_index);
+        QCoreApplication::processEvents();
+        auto* second_best_of = second.page_widget(models_index)
+            ->findChild<QSpinBox*>(QStringLiteral("bestOfSpin"));
+        QVERIFY(second_best_of != nullptr);
+        QCOMPARE(second_best_of->value(), 5);
+
+        window.hide();
+        second.hide();
         std::filesystem::remove(path);
     }
 
@@ -326,7 +488,7 @@ private slots:
 
         const struct { const char* label; const char* control; } expected[] = {
             {"Общие", "silenceThresholdSpin"},
-            {"Внешний вид", "themeCombo"},
+            {"Внешний вид", "themeTileSystem"},
             {"Модели", "engineCombo"},
             {"Хоткеи", "recordHotkeyEdit"},
             {"Микрофон", "microphoneCombo"},
@@ -923,9 +1085,11 @@ private slots:
         window.show_page(about_row);
         QCoreApplication::processEvents();
 
-        auto* version = window.findChild<QLabel*>(QStringLiteral("updateVersion"));
+        // The running version is the pill of the hero (index.css: .version-chip reads
+        // "Версия 2.1.1"), not the old "Версия" row with a bare number on the right.
+        auto* version = window.findChild<QLabel*>(QStringLiteral("aboutVersionChip"));
         QVERIFY(version != nullptr);
-        QCOMPARE(version->text(), QStringLiteral("1.2.3"));
+        QCOMPARE(version->text(), QStringLiteral("Версия 1.2.3"));
 
         auto* status = window.findChild<QLabel*>(QStringLiteral("updateStatus"));
         QVERIFY(status != nullptr);
@@ -1249,7 +1413,13 @@ private slots:
         QVERIFY2(report != nullptr, "загрузка передана сервису");
         QVERIFY2(!bar->isHidden(), "во время загрузки индикатор показан");
         QCOMPARE(bar->maximum(), 100);
-        QVERIFY2(bar->isTextVisible(), "проценты должны быть видны числом");
+        // The number moved off the bar to the label beside it (Alexander, 08.10.2026): the
+        // slim bar has no room for text, so drawing it there made it invisible.
+        QVERIFY2(!bar->isTextVisible(), "процент не рисуется на самой полосе");
+        auto* percent = window.findChild<QLabel*>(QStringLiteral("whisperModelProgress0Percent"));
+        QVERIFY2(percent != nullptr, "рядом с полосой есть подпись с процентом");
+        QVERIFY2(!percent->isHidden(), "во время загрузки процент показан");
+        QCOMPARE(percent->text(), QStringLiteral("0%"));
         QCOMPARE(button->property("buttonRole").toString(), QStringLiteral("remove"));
 
         voicetyper::app::WindowServices::ModelTransfer progress;
@@ -1257,6 +1427,59 @@ private slots:
         report(progress);
         QCoreApplication::processEvents();
         QCOMPARE(bar->value(), 42);
+        QCOMPARE(percent->text(), QStringLiteral("42%"));
+
+        // The glyph has to sit exactly in the middle of its button whatever the display
+        // scale is, and a pixmap built in logical pixels is clipped by its own paper at a
+        // fractional ratio - that is what pushed the arrow off centre on a 125% display
+        // (Alexander, 08.10.2026). This suite is run with QT_SCALE_FACTOR=1, 1.25, 1.5 and
+        // 2, so the requirement is checked at four ratios rather than assumed.
+        {
+            const QImage image = button->grab().toImage();
+            QHash<QRgb, int> histogram;
+            for (int y = 4; y < image.height() - 4; ++y) {
+                for (int x = 4; x < image.width() - 4; ++x) {
+                    ++histogram[image.pixel(x, y)];
+                }
+            }
+            QRgb background = 0;
+            int best = 0;
+            for (auto it = histogram.constBegin(); it != histogram.constEnd(); ++it) {
+                if (it.value() > best) {
+                    best = it.value();
+                    background = it.key();
+                }
+            }
+            const QColor base(background);
+            int min_x = image.width();
+            int max_x = -1;
+            int min_y = image.height();
+            int max_y = -1;
+            for (int y = 4; y < image.height() - 4; ++y) {
+                for (int x = 4; x < image.width() - 4; ++x) {
+                    const QColor colour = image.pixelColor(x, y);
+                    if (qAbs(colour.red() - base.red()) + qAbs(colour.green() - base.green())
+                            + qAbs(colour.blue() - base.blue()) > 70) {
+                        min_x = qMin(min_x, x);
+                        max_x = qMax(max_x, x);
+                        min_y = qMin(min_y, y);
+                        max_y = qMax(max_y, y);
+                    }
+                }
+            }
+            QVERIFY2(max_x >= min_x && max_y >= min_y, "значок на кнопке виден");
+            const double ratio = image.devicePixelRatio() > 0.0 ? image.devicePixelRatio() : 1.0;
+            // Proof that this run really is at a scaled display: the grab has device pixels.
+            QCOMPARE(image.width(), qRound(button->width() * ratio));
+            qDebug() << "icon centring probe: ratio" << ratio << "image" << image.size();
+            const double glyph_x = (min_x + max_x) / 2.0 / ratio;
+            const double glyph_y = (min_y + max_y) / 2.0 / ratio;
+            const double centre_x = (image.width() - 1) / 2.0 / ratio;
+            const double centre_y = (image.height() - 1) / 2.0 / ratio;
+            QVERIFY2(qAbs(glyph_x - centre_x) <= 1.0 && qAbs(glyph_y - centre_y) <= 1.0,
+                qPrintable(QStringLiteral("значок смещён от центра кнопки: (%1,%2) против (%3,%4) при масштабе %5")
+                    .arg(glyph_x).arg(glyph_y).arg(centre_x).arg(centre_y).arg(ratio)));
+        }
 
         button->click(); // то же нажатие — отмена
         QCoreApplication::processEvents();
@@ -1268,6 +1491,7 @@ private slots:
         report(cancelled);
         QCoreApplication::processEvents();
         QVERIFY2(bar->isHidden(), "после отмены индикатор убран");
+        QVERIFY2(percent->isHidden(), "после отмены процент тоже убран");
         QCOMPARE(button->property("buttonRole").toString(), QStringLiteral("download"));
 
         window.hide();
@@ -1293,12 +1517,16 @@ private slots:
         auto* nav = window.findChild<QListWidget*>(QStringLiteral("sideNav"));
         QVERIFY2(nav != nullptr, "левое меню не найдено");
         QVERIFY(nav->count() > 0);
-        QCOMPARE(nav->iconSize(), QSize(18, 18));
+        // The mockup's navigation icons are 19 px (App.tsx: Icon size default 19).
+        QCOMPARE(nav->iconSize(), QSize(19, 19));
         // Пункты не должны растягиваться на высоту колонки: у каждого своя фиксированная
         // высота, иначе меню разъезжается (сообщение и скриншот Александра, 06.10.2026).
         for (int row = 0; row < nav->count(); ++row) {
             const int height = nav->visualItemRect(nav->item(row)).height();
-            QVERIFY2(height <= 34, qPrintable(QStringLiteral("пункт %1 растянут: %2px").arg(row).arg(height)));
+            // The mockup's row is 43 px tall (index.css: nav button height 43px); the
+            // check stays the same - a row must keep its own height instead of
+            // stretching over the whole column.
+            QVERIFY2(height <= 43, qPrintable(QStringLiteral("пункт %1 растянут: %2px").arg(row).arg(height)));
         }
         qDebug() << "test sees count" << nav->count() << "icon0null" << nav->item(0)->icon().isNull();
         for (int row = 0; row < nav->count(); ++row) {

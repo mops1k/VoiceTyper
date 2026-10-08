@@ -6,8 +6,10 @@
 // VoiceTyper.Core/Models/AppSettings.cs + VoiceTyper.Core/Services/SettingsService.cs.
 //
 // What is frozen here:
-//   * the 21 property names, in AppSettings *declaration order*, which is also
-//     the current serializer output order (byte fixtures depend on it);
+//   * the 23 property names, in AppSettings *declaration order*, which is also
+//     the current serializer output order (byte fixtures depend on it). 21 of them
+//     are the .NET properties; gigaamModelSize and bestOf are C++-only extensions
+//     the .NET serializer ignores on read;
 //   * the camelCase wire spelling of every enum value;
 //   * every default value;
 //   * the nullability of recordGamepadButton / cancelGamepadButton /
@@ -205,7 +207,7 @@ inline constexpr std::string_view to_wire(AppLanguage value) noexcept
 
 /// Number of persisted properties, in declaration order. Golden fixtures assert
 /// this value; changing it is a schema change.
-inline constexpr std::size_t kAppSettingsPropertyCount = 22;
+inline constexpr std::size_t kAppSettingsPropertyCount = 23;
 
 /// Default hotkey that starts/stops recording.
 inline constexpr std::string_view kDefaultRecordHotkey = "Ctrl+Alt+Space";
@@ -220,6 +222,18 @@ inline constexpr int kDefaultSilenceThresholdMs = 1200;
 /// layer keeps those two paths distinguishable.
 inline constexpr int kSilenceThresholdMsMin = 300;
 inline constexpr int kSilenceThresholdMsMax = 10000;
+/// Inclusive bounds for `bestOf`, the number of recognition candidates the engine
+/// compares for the final result. They repeat the engine's own limits on purpose
+/// (asr/engine_parameters.hpp kMinBestOf = 1, kMaxBestOf = 8): the domain layer
+/// must not include asr/, and the engine has to have the last word anyway, so the
+/// app clamps with its own copy on the way in.
+inline constexpr int kBestOfMin = 1;
+inline constexpr int kBestOfMax = 8;
+/// Default `bestOf`: the same 3 greedy candidates the .NET state machine always
+/// asked for (domain::kFinalBestOf in recording_state_machine.hpp, which is where
+/// a static_assert keeps the two in step). The number is repeated here because
+/// that header includes this one and cannot be included back.
+inline constexpr int kDefaultBestOf = 3;
 /// UI autosave debounce, milliseconds.
 inline constexpr int kSettingsAutosaveDebounceMs = 700;
 
@@ -280,6 +294,16 @@ struct AppSettings {
     bool noise_reduction_enabled = false;
     /// JSON: temperature. Default 0.0.
     double temperature = 0.0;
+    /// JSON: bestOf. Default 3 (kDefaultBestOf), the value the .NET machine
+    /// always asked for.
+    ///
+    /// C++-only extension: the .NET serializer has no such property, so a rollback
+    /// ignores it on read and falls back to the machine's own 3 candidates instead
+    /// of breaking dictation. Written next to temperature because both are the
+    /// decoder's generation parameters; the engine accepts 1..8 (asr/engine_parameters.hpp
+    /// kMinBestOf/kMaxBestOf) and out-of-range values fail validate() and are
+    /// clamped before they reach the engine.
+    int best_of = kDefaultBestOf;
     /// JSON: conditionOnPreviousText. Default false.
     ///
     /// Intent-parity note: in the current .NET build this only selects
@@ -297,7 +321,7 @@ struct AppSettings {
 
     /// The value every property takes when settings.json is missing, corrupt,
     /// unreadable or rejected by the serializer. Exactly the "settings-defaults"
-    /// golden fixture.
+    /// golden fixture plus the C++-only extensions (gigaamModelSize, bestOf).
     [[nodiscard]] static AppSettings defaults() { return AppSettings{}; }
 
     /// Deep copy. Mirrors the .NET `AppSettings.Clone()` contract: independent
@@ -447,6 +471,11 @@ inline Status AppSettings::validate() const
     }
     if (temperature < 0.0) {
         return Status::failure(ErrorCode::out_of_range, "temperature must not be negative");
+    }
+    if (best_of < kBestOfMin || best_of > kBestOfMax) {
+        return Status::failure(
+            ErrorCode::out_of_range,
+            "bestOf must be within the engine range");
     }
     return Status::success();
 }

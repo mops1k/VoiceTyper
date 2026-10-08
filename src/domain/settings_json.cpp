@@ -833,6 +833,12 @@ SettingsLoadResult SettingsCodec::load(std::string_view json)
                 (void)detail::read_bool(value, field, result.settings.noise_reduction_enabled, result.diagnostics, error);
             } else if (detail::equals_ignore_ascii_case(key, "temperature")) {
                 (void)detail::read_double(value, field, result.settings.temperature, result.diagnostics, error);
+            } else if (detail::equals_ignore_ascii_case(key, "bestOf")) {
+                // Read verbatim, exactly like silenceThresholdMs: the range belongs
+                // to AppSettings::validate() and to the engine clamp, and a
+                // hand-edited out-of-range value must not turn the whole document
+                // into defaults.
+                (void)detail::read_int(value, field, result.settings.best_of, result.diagnostics, error);
             } else if (detail::equals_ignore_ascii_case(key, "conditionOnPreviousText")) {
                 (void)detail::read_bool(value, field, result.settings.condition_on_previous_text, result.diagnostics, error);
             } else if (detail::equals_ignore_ascii_case(key, "microphoneDeviceId")) {
@@ -913,6 +919,7 @@ std::string SettingsCodec::serialize(const AppSettings& settings, std::string_vi
     detail::append_enum_field(output, "appLanguage", to_wire(settings.app_language), line_ending);
     detail::append_bool_field(output, "noiseReductionEnabled", settings.noise_reduction_enabled, line_ending);
     detail::append_double_field(output, "temperature", settings.temperature, line_ending);
+    detail::append_int_field(output, "bestOf", settings.best_of, line_ending);
     detail::append_bool_field(output, "conditionOnPreviousText", settings.condition_on_previous_text, line_ending);
     detail::append_optional_field(output, "microphoneDeviceId", settings.microphone_device_id, line_ending, false);
     output += "}";

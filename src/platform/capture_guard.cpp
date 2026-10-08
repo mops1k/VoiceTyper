@@ -261,6 +261,25 @@ void write_thread_stack(const char* reason)
     ::CloseHandle(file);
 }
 
+/// Heap corruption (STATUS_HEAP_CORRUPTION) is raised as a fail-fast exception, and that
+/// kind of exception skips SetUnhandledExceptionFilter entirely - which is why the crash
+/// after an update check left no report while our own self-test did. A vectored handler is
+/// consulted before the SEH search, so it sees the exception first; the process still dies,
+/// we only want the stack.
+LONG WINAPI crash_vectored_handler(EXCEPTION_POINTERS* info)
+{
+    const DWORD code = (info != nullptr && info->ExceptionRecord != nullptr)
+        ? info->ExceptionRecord->ExceptionCode
+        : 0;
+    if (code == 0xC0000374 // STATUS_HEAP_CORRUPTION
+        || code == 0xC0000409 // STATUS_STACK_BUFFER_OVERRUN
+        || code == 0xC0000602 // STATUS_FAIL_FAST_EXCEPTION
+        || code == 0xC0000005) { // STATUS_ACCESS_VIOLATION
+        write_crash_report(info);
+    }
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+
 LONG WINAPI crash_release_filter(EXCEPTION_POINTERS* info)
 {
     if (g_guard != nullptr) {
@@ -324,6 +343,12 @@ void install_crash_release_hook(CaptureGuard& guard)
             std::this_thread::sleep_for(std::chrono::seconds(3));
             ::RaiseException(EXCEPTION_ACCESS_VIOLATION, EXCEPTION_NONCONTINUABLE, 0, nullptr);
         }).detach();
+    }
+    // First in the chain, and always consulted: this is what catches a fail-fast.
+    static bool vectored_installed = false;
+    if (!vectored_installed) {
+        ::AddVectoredExceptionHandler(1, &crash_vectored_handler);
+        vectored_installed = true;
     }
     static bool signals_installed = false;
     if (!signals_installed) {

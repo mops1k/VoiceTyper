@@ -2733,7 +2733,9 @@ void MainWindow::build_tabs()
 
         // The notes and the progress bar are states of the flow, not rows of the mockup:
         // they keep their own widget and only take the card's insets.
-        update_notes_ = new QLabel(content);
+        // WrappingLabel: it answers with the height its text needs at the current width, so
+        // the block no longer has to be given a height by hand.
+        update_notes_ = new WrappingLabel(content);
         update_notes_->setObjectName(QStringLiteral("updateNotes"));
         update_notes_->setWordWrap(true);
         update_notes_->hide();
@@ -3716,27 +3718,19 @@ void MainWindow::bind_update_controls()
                 return;
             }
             self->update_status_->setText(ui_text(UiKey::k67, self->language_).arg(version));
-            self->update_notes_->setText(notes);
+            // The release body is markdown and the card is plain text: the emphasis markers
+            // are dropped instead of shown raw ("**Full Changelog**:").
+            QString shown_notes = notes;
+            shown_notes.remove(QStringLiteral("**"));
+            self->update_notes_->setText(shown_notes);
             set_inset_visible(self->update_notes_, !notes.isEmpty());
             if (self->update_row_ != nullptr) {
                 self->update_row_->setVisible(true);
             }
             self->update_install_->setVisible(true);
-            // A word-wrapped label reports the height of a single line, and the card kept
-            // the height it had before the notes existed, so the text was cut mid-line
-            // (reported from the running build). Its width is only known after the layout
-            // has run, hence the deferred reservation.
-            QPointer<QLabel> notes_label(self->update_notes_);
-            QTimer::singleShot(0, self, [notes_label] {
-                if (notes_label == nullptr || notes_label->width() <= 0) {
-                    return;
-                }
-                const int needed = notes_label->heightForWidth(notes_label->width());
-                if (needed > 0) {
-                    notes_label->setMinimumHeight(needed + 2);
-                    notes_label->updateGeometry();
-                }
-            });
+            // The height comes from WrappingLabel now: the deferred setMinimumHeight that
+            // used to stand here only ever grew, so every check added a little more blank
+            // space to the block (Alexander, 08.10.2026).
         });
     });
 

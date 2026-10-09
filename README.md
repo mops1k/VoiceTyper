@@ -15,7 +15,7 @@
 ## Why it is pleasant to use
 
 - **Works offline.** Neither the audio nor the recognised text leaves your machine — everything is computed on your CPU.
-- **No graphics card needed.** The engine runs on the CPU, so the application stays light and quiet.
+- **No graphics card needed.** The engines run on the CPU, so the application stays light and quiet.
 - **Lives in the tray.** The settings window never gets in the way: hide it and keep dictating.
 - **Fast.** The native C++ and Qt 6 build recognises noticeably faster than the earlier .NET version.
 - **Russian first.** The interface and Russian speech recognition work out of the box; English is there too.
@@ -29,9 +29,9 @@
 - The combination is captured by clicking: press "Record" and type the gesture you want; Escape cancels.
 
 **Recognition**
-- Two engines to choose from: **Whisper** (models from Tiny to Large turbo) and **Parakeet v3** by NVIDIA — large-level quality at small speed.
+- Three engines to choose from: **Whisper** (models from Tiny to Large turbo), **Parakeet v3** by NVIDIA — large-level quality at small speed — and **GigaAM v3** by SberDevices/SaluteDevices (Russian only, punctuation and casing out of the box).
 - Recognition language: Russian, English, or detected automatically.
-- Fine tuning: temperature, number of candidates, a dictionary of terms and names, and whether to condition on the previous text.
+- Fine tuning: a dictionary of terms and names (works with every engine), plus temperature for Whisper.
 - **Background noise suppression** — the filter removes the rumble and damps quiet noise without squeezing a calm voice.
 
 **Microphone**
@@ -53,6 +53,7 @@
 |---|---|---|---|
 | **Whisper** (whisper.cpp) | Tiny, Base, Small, Medium, Large turbo — q8 quants | 42 MB … 834 MB | The classic choice, predictable quality |
 | **Parakeet v3** (NVIDIA, 0.6B) | q4_k, q5_k, q6_k, q8_0 | 0.64 … 0.9 GB | Multilingual (25 languages, Russian included), very fast on the CPU |
+| **GigaAM v3** (SberDevices/SaluteDevices, e2e-rnnt) | q4_k_m, q5_k_m, q6_k, q8_0 | 184 … 274 MB | Russian only, punctuation and casing out of the box; a phrase longer than ~25 s is cut at a pause |
 
 The engine and the model are chosen in the application, next to their size and speed.
 

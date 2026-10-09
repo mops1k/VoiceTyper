@@ -76,7 +76,7 @@ src/domain/      settings, hotkey grammar, recording state machine, models, erro
 src/core/        recognition, audio, VAD, update service, SHA-256, support
 src/platform/    platform boundaries: ports and their Windows implementations
 src/app/         Qt: window, pages, tray, status overlay, HTTP client, composition
-native/          shipped native libraries (mc_wasapi.dll, parakeet.dll) and their licences
+native/          shipped native libraries (mc_wasapi.dll, parakeet.dll, transcribe/libtranscribe.dll + ggml) and their licences
 tests/           contract and UI tests, plus the .NET-generated migration fixtures
 installer/       Inno Setup script and the build script
 tools/           diagnostics, UI snapshot, fixture generators

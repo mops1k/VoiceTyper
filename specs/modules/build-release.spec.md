@@ -1,0 +1,300 @@
+# VoiceTyper — Build, Release and Test Specification
+
+**Covers:** `CMakeLists.txt`, `CMakePresets.json`, `cmake/` (toolchain, native dependency
+verification, portable header audit), `installer/`, `.github/workflows/`, `tests/`, `tools/`,
+`assets/`, `packaging/`, `dist/`.
+**Baseline:** `main` @ `3cc4c5a9a602afb96c2f478a562005f5eb850068` (v2.2.1).
+**Requirement keywords:** RFC 2119. Parent document: [index.spec.md](../index.spec.md).
+**Prefix:** `VT-BLD-*`.
+
+---
+
+## 1. Project definition (`VT-BLD-1xx`)
+
+- **VT-BLD-101.** The build MUST require CMake **3.28+**, C++20 with extensions off, and produce
+  the project `VoiceTyperCpp` ([CMakeLists.txt:1-7](../../CMakeLists.txt#L1-L7)).
+- **VT-BLD-102.** The three options MUST be:
+
+| Option | Default | Meaning |
+|---|---|---|
+| `VOICETYPER_BUILD_GUI` | `ON` | build the Qt Widgets shell |
+| `VOICETYPER_BUILD_TESTS` | `ON` | register the CTest suite |
+| `VOICETYPER_BUILD_ASR` | `${VOICETYPER_BUILD_GUI}` | build the pinned whisper.cpp dependency (needs the network once) |
+
+- **VT-BLD-103.** The product version MUST live in exactly one place, the cache variable
+  `VOICETYPER_VERSION` (currently `2.2.1`), injected as a compile definition into
+  `voicetyper_domain` only, with the source fallback `"0.0.0-dev"`. It is what the About page
+  shows and what the update check compares against the release tag, so a release build MUST pass
+  the tag (`-DVOICETYPER_VERSION=<tag>`).
+- **VT-BLD-104.** The Qt floor MUST be `6.9` (`find_package(Qt6 6.9 REQUIRED COMPONENTS Core Gui
+  Widgets Network)`), not an exact version: CI installs the newest published Qt (6.9.3) while the
+  developer machine has 6.11.2, and an `EXACT` requirement broke the release build.
+- **VT-BLD-105.** Python 3 MUST be optional; when absent the `fixture-check` and
+  `differential-compare-smoke` CTest entries MUST be omitted with an explicit configure status
+  message rather than silently skipped.
+- **VT-BLD-106.** Warnings MUST be per target: `/W4 /permissive-` on MSVC, otherwise
+  `-Wall -Wextra -Wpedantic`.
+
+---
+
+## 2. Targets (`VT-BLD-2xx`)
+
+- **VT-BLD-201.** `voicetyper_platform` MUST be a header-only `INTERFACE` target that links
+  nothing (no Qt, no OS SDK, no third-party library).
+- **VT-BLD-202.** Each layer MUST be its own static library so a test can link the real code:
+
+| Target | Sources / purpose |
+|---|---|
+| `voicetyper_domain` | portable core + version injection |
+| `voicetyper_settings` | settings JSON codec |
+| `voicetyper_core_support` | app paths, file logger, CPU topology |
+| `voicetyper_audio` | WAV I/O, DSP, trimming |
+| `voicetyper_model_download` | model downloader |
+| `voicetyper_vad` | segmenters, trim/chunk policy |
+| `voicetyper_terms` | terms dictionary |
+| `voicetyper_state` | recording state machine |
+| `voicetyper_presenter` | settings presenter |
+| `voicetyper_output` | text output |
+| `voicetyper_asr` | engine-independent request mapping (no Qt, no native lib) |
+| `voicetyper_asr_registry` | concrete registry with injected factories |
+| `voicetyper_asr_lifecycle` | engine host (epochs, background load, readiness) |
+| `voicetyper_capture_guard` | microphone release fuse (`dbghelp` on Windows) |
+| `voicetyper_microphone_level` | input level/mute seam |
+| `voicetyper_model_store` | catalog + download policy |
+| `voicetyper_parakeet_runtime` | binding to the shipped `parakeet.dll` (built on every platform) |
+| `voicetyper_transcribe_runtime` | binding to `libtranscribe.dll` (private include dir `native/transcribe`) |
+| `voicetyper_gigaam` | GigaAM engine |
+| `voicetyper_asr_whisper` (ASR only) | thin wrapper; the only TU including the real `whisper.h` |
+| `voicetyper_asr_silero` (ASR only) | Silero VAD over the same whisper library |
+| `voicetyper_asr_native` (ASR only) | the real engines + concrete registry |
+| `voicetyper_portable_runtime` | portable fallbacks for UI seams |
+| `voicetyper_update` (GUI) | release manifest + launcher bytes (QtCore only) |
+| `voicetyper_ui` (GUI) | window, overlay, tray, fonts, HTTP client |
+| `voicetyper_audio_capture` (WIN32) | WASAPI capture + WindowsMicrophone + `mc_wasapi.cpp` |
+| `voicetyper_platform_win32` (WIN32) | clock, clipboard, executor, filesystem, logger, paste |
+| `voicetyper_platform_win32_input` (WIN32) | hotkeys + low-level keyboard hook + XInput gamepad |
+| `voicetyper_platform_win32_startup` (WIN32) | HKCU Run autostart |
+| `voicetyper_platform_win32_update_launcher` (WIN32+GUI) | writes and starts `run-update.cmd` |
+
+- **VT-BLD-203.** The executable MUST be `voicetyper-qt-shell` (`qt_add_executable ... WIN32`) from
+  `src/app/main.cpp` plus, on Windows, `src/app/windows_application.cpp`, linking the real engines
+  and backends only on `WIN32 AND VOICETYPER_BUILD_ASR`.
+- **VT-BLD-204.** The product icon and the bundled Inter family MUST travel inside the executable
+  as a Qt resource (`assets/voiceTyper.png`, `spin-up.png`, `spin-down.png`, four Inter faces),
+  and the executable MUST additionally carry `assets/voiceTyper.rc` on Windows for the file icon.
+- **VT-BLD-205.** `voicetyper-diagnostics` MUST exist as an `EXCLUDE_FROM_ALL` tool linking the
+  domain, and the ASR-only smoke/probe executables (`voicetyper-asr-native-smoke`,
+  `voicetyper-asr-whisper-probe`) and `voicetyper-mme-probe` MUST be available on their platform.
+- **VT-BLD-206.** **Every test and tool MUST be `EXCLUDE_FROM_ALL`.** A plain build MUST produce
+  exactly the application (plus `voicetyper-deploy`), not two dozen test executables; the tests are
+  built on demand through the aggregate target `voicetyper-tests`.
+- **VT-BLD-207.** `cmake --build <dir> --target voicetyper-tests` MUST build every registered test
+  executable, and CI MUST run it before `ctest` (a plain build otherwise leaves every test
+  "Not Run").
+
+---
+
+## 3. Pinned dependencies and portable-header audit (`VT-BLD-3xx`)
+
+- **VT-BLD-301.** Configuration MUST verify the native dependency pins **before** any target is
+  built: `voicetyper_verify_native_pins()`, `voicetyper_verify_shipped_dll()` for
+  `native/parakeet.dll`, `native/mc_wasapi.dll` and `native/transcribe/libtranscribe.dll`, and the
+  manifest-artifact lookups that export the expected hashes.
+- **VT-BLD-302.** The machine-readable source of truth MUST be
+  `docs/migration/cpp/native-dependencies.json`, read by `cmake/NativeAsr.cmake`; the Parakeet
+  pin and ABI MUST be cross-checked against `src/platform/api/engine_registry.hpp`.
+- **VT-BLD-303.** whisper.cpp MUST be fetched from the commit archive with `URL_HASH` (not a git
+  clone: CMake documents `GIT_SHALLOW` as incompatible with a hash `GIT_TAG`), its commit MUST be
+  validated in the URL, and three files inside MUST be re-hashed against independent pins. A
+  configure MAY instead use `VOICETYPER_WHISPER_PREFETCHED_DIR` with the same content pins.
+- **VT-BLD-304.** The vendored whisper/ggml sub-build MUST be forced offline and minimal:
+  `BUILD_SHARED_LIBS=OFF`, tests/examples/server/tools off, `WHISPER_CURL=OFF`, `GGML_NATIVE=OFF`,
+  `GGML_OPENMP=OFF`, all accelerators off, `GGML_CPU_ALL_VARIANTS=OFF`, with the generic x86-64
+  AVX2 baseline pinned because `CMAKE_CROSSCOMPILING` is true for any toolchain-file build.
+- **VT-BLD-305.** The portable-header audit MUST run at configure time
+  (`voicetyper_check_portable_headers`) and again as the `portable-headers` CTest, so a header that
+  starts including `windows.h`, X11/ALSA or Qt fails the suite.
+- **VT-BLD-306.** The `_WIN32_WINNT=0x0601` deviation for the vendored targets MUST be recorded and
+  overridable (`-DVOICETYPER_WHISPER_WINDOWS_API_LEVEL=default`).
+
+---
+
+## 4. Presets and toolchain (`VT-BLD-4xx`)
+
+- **VT-BLD-401.** Configure/build/test presets MUST include:
+  `linux-arch-debug`, `linux-arch-release`, `linux-arch-debug-asan`, `linux-arch-debug-ubsan`,
+  `linux-arch-debug-tsan`, `linux-arch-native-gui-off` (Release, GUI off, ASR on),
+  `windows-mingw-debug`, `windows-mingw-release`.
+- **VT-BLD-402.** `VOICETYPER_BUILD_GUI=OFF` MUST produce a build that does not see Qt at all and
+  stays offline (`VOICETYPER_BUILD_ASR` on only when explicitly requested).
+- **VT-BLD-403.** Sanitizer presets MUST halt on error
+  (`ASAN_OPTIONS`/`UBSAN_OPTIONS`/`TSAN_OPTIONS` with halt/abort on error).
+- **VT-BLD-404.** The Windows test preset MUST export `PATH` with the Qt `bin` first,
+  `QT_PLUGIN_PATH` and `QT_QPA_PLATFORM=offscreen`.
+- **VT-BLD-405.** The MinGW toolchain file MUST require `VOICETYPER_MINGW_ROOT` (or `MINGW_ROOT`)
+  and verify `gcc/g++/windres`, and MUST require `VOICETYPER_QT_ROOT` (or `-DQt6_DIR`) containing
+  `lib/cmake/Qt6/Qt6Config.cmake`; it MUST print the compiler version.
+- **VT-BLD-406.** On Windows the MinGW 13.1 `bin` directory MUST precede the WinLibs `bin` on
+  `PATH`; the inverted order makes GCC-13-linked executables load a newer `libstdc++-6.dll` and
+  die with `0xC0000139 STATUS_ENTRYPOINT_NOT_FOUND`, which looks like a tree regression. This MUST
+  be stated in the smoke procedure (VT-BLD-607).
+
+---
+
+## 5. Deploy tree, installer and release (`VT-BLD-5xx`)
+
+### Deploy tree
+
+- **VT-BLD-501.** `voicetyper-deploy` (Windows + GUI) MUST write a runnable tree into
+  `VOICETYPER_DEPLOY_DIR` (default `<build>/deploy`) containing:
+  1. `voicetyper-qt-shell.exe`;
+  2. `mc_wasapi.dll` copied from the tracked `native/` location the manifest verifies (`dist/` is
+     a build output and is not in the repository);
+  3. Qt6 `Core/Gui/Widgets/Network` DLLs from `VOICETYPER_QT_ROOT/bin`;
+  4. `platforms/qwindows.dll`;
+  5. `tls/qschannelbackend.dll` and `tls/qcertonlybackend.dll` (required for every HTTPS request;
+     the OpenSSL backend is deliberately excluded because the product does not ship
+     `libssl`/`libcrypto`);
+  6. the MinGW 13 runtime `libgcc_s_seh-1.dll`, `libstdc++-6.dll`, `libwinpthread-1.dll` from
+     `VOICETYPER_MINGW_ROOT`, never the WinLibs copies;
+  7. `native/parakeet.dll`;
+  8. `transcribe/` with `libtranscribe.dll`, `ggml.dll`, `ggml-base.dll`, `ggml-cpu.dll`.
+- **VT-BLD-502.** With `VOICETYPER_QT_ROOT` or `VOICETYPER_MINGW_ROOT` missing, deploy support MUST
+  be reported OFF instead of producing a broken tree.
+- **VT-BLD-503.** `install()` MUST install the diagnostics tool and (with the GUI) the shell into
+  `bin`.
+
+### Installer
+
+- **VT-BLD-510.** The installer MUST be Inno Setup 6 (`installer/installer-native.iss`), driven by
+  `installer/build-native-installer.ps1 [-Version X] [-Preset windows-mingw-release]`.
+- **VT-BLD-511.** Installation MUST be **per user**:
+  `DefaultDirName={localappdata}\Programs\VoiceTyper`, `PrivilegesRequired=lowest`,
+  `PrivilegesRequiredOverridesAllowed=dialog`, `ArchitecturesAllowed=x64compatible`.
+- **VT-BLD-512.** The AppId MUST be the same as the legacy .NET installer
+  (`{{9F22F58D-8CFB-4E7C-9D85-0B6B12D9A5E0}`), so an earlier installation is removed first.
+- **VT-BLD-513.** `AppMutex` MUST be `Global\VoiceTyper_SingleInstance` (the same name the
+  application holds), with `CloseApplications=yes` and `RestartApplications=no`.
+- **VT-BLD-514.** `OutputBaseFilename` MUST be `VoiceTyper-<version>-win64-Setup`; the `win64`
+  marker is what the application's updater checks before running a downloaded installer.
+- **VT-BLD-515.** `[Files]` MUST install the shell as `{app}\VoiceTyper.exe` plus the rest of the
+  deploy tree; `[Run]` MUST start the application post-install unless `/AutoUpdate` (the switch is
+  detected by scanning the whole command tail, because Inno has no built-in
+  `CmdLineParamExists`).
+- **VT-BLD-516.** Settings and models MUST live outside `{app}` (`%LOCALAPPDATA%\VoiceTyper`), so
+  an upgrade never touches them.
+- **VT-BLD-517.** The installer language MUST remain Russian-only.
+
+### Release pipeline
+
+- **VT-BLD-520.** `.github/workflows/release.yml` MUST trigger on `v*` tags (and manual dispatch
+  with a version), derive the version from the tag without the leading `v`, install Qt 6.9.3 with
+  MinGW 13.1, install Inno Setup, configure with `cmake --preset windows-mingw-release
+  "-DVOICETYPER_VERSION=<tag>"` (the quotes are load-bearing: PowerShell otherwise splits a
+  version such as `2.0.0`), build `voicetyper-deploy`, run the installer script, and publish
+  exactly `build/windows-mingw-release/VoiceTyper-<version>-win64-Setup.exe` with generated
+  release notes.
+- **VT-BLD-521.** `.github/workflows/cpp-spike.yml` MUST build on Windows with the same preset and
+  explicitly build `voicetyper-tests` before running `ctest`; the Arch job MUST be manual-only.
+- **VT-BLD-522.** A release MUST be reproducible from the tag: the tag version reaches the binary
+  through `VOICETYPER_VERSION`, so the About page and the update check always agree with the
+  release.
+- **VT-BLD-523.** The build directory MUST NOT be a deliverable: `dist/` is stale, untracked
+  legacy output and `packaging/` is an empty placeholder; the deliverables are
+  `build/<preset>/deploy` and the Setup executable.
+
+---
+
+## 6. Test suite (`VT-BLD-6xx`)
+
+- **VT-BLD-601.** Every contract test MUST print a greppable success banner (mostly
+  `"<name>: OK"`) that CTest matches with `PASS_REGULAR_EXPRESSION`; the UI tests use
+  `ui-settings-test: result=passed` / `ui-status-overlay-test: result=passed`.
+- **VT-BLD-602.** Hardware-dependent and environment-dependent tests MUST skip explicitly rather
+  than pass: `windows-audio-capture-contract` uses `SKIP_RETURN_CODE 77`,
+  `asr-native-smoke` skips with a reason and exit 0 without `VOICETYPER_WHISPER_MODEL` /
+  `VOICETYPER_GIGAAM_MODEL` / fixture, `silero-vad-contract` skips its model-dependent checks
+  without `VOICETYPER_VAD_MODEL`, and `native-dependency-contract` treats an absent shipped DLL in
+  a source-only checkout as SKIP, never as a pass. A green suite therefore does not prove capture,
+  real inference or real VAD in a given environment.
+- **VT-BLD-603.** The suite MUST cover at least: settings JSON defaults/all-fields/legacy/numeric
+  enums/round-trip/atomic failure; the settings presenter debounce; the recording state machine;
+  VAD and Silero VAD; speech segments; silence trimming; the terms dictionary; text output; audio
+  DSP and noise suppression; core support (paths, Windows roots, logger, CPU); capture guard;
+  microphone level; model store and model download; update manifest and update service; the ASR
+  parameters and lifecycle; the native engine registry; the GigaAM engine; the whisper native pin;
+  the native dependency pin audit; the platform contract smoke; the executor contract; both UI
+  suites; the diagnostics CLI; and the Python fixture/differential checks.
+- **VT-BLD-604.** The diagnostics CLI tests MUST derive the expected version from
+  `VOICETYPER_VERSION` (a literal version string in a test becomes stale and broke the suite at
+  v2.0.0).
+- **VT-BLD-605.** The fixture check MUST verify every materialized fixture in
+  `tests/fixtures/migration/manifest.json` by byte count and SHA-256 and validate JSON and the WAV
+  container (`RIFF size + 8 == file size`, chunk padding `size + (size & 1)`, `fmt` + `data`
+  present, declared `audioFormat`).
+- **VT-BLD-606.** There MUST be no test or script that downloads a model or loads a native model,
+  because that would break the offline contract (VT-ASR-804).
+
+### Manual Windows smoke
+
+- **VT-BLD-607.** The physical procedure in `docs/migration/cpp/windows-smoke.md` MUST be followed
+  for release acceptance and MUST include: the MinGW-13-before-WinLibs `PATH` rule, the prefetched
+  whisper directory when the Windows build cannot verify github.com, the runtime DLLs beside the
+  executable, the `--selftest` JSON start proof, and the scenarios with their parity rows.
+- **VT-BLD-608.** The following MUST be verified on real hardware and MUST NOT be replaced by a
+  unit test: microphone capture (including the Intel Smart Sound array), hotkey registration and
+  capture, VAD behaviour, both engines end to end, model switch/dispose, clipboard/paste, tray and
+  overlay over a focused window, settings persistence, update, and clean install/upgrade/uninstall.
+- **VT-BLD-609.** `--selftest` MUST be the automated start proof and MUST NOT write the Run value
+  or take the single-instance lock.
+- **VT-BLD-610.** The release gates from `docs/migration/cpp/release-gates.md` MUST be recorded as
+  proposals (not accepted budgets) with the measurement method: same machine/power plan/microphone/
+  fixtures, ≥5 cold and 20 warm launches, 30 cycles per mode, p50 **and** p95, CPU time, working
+  set, peak private bytes, model-load time, package size. ASR-relevant budgets: p95 latency
+  ≤ measured .NET × 1.25 and normalized WER/CER not worse by more than **0.02 absolute** on the
+  frozen corpus — which currently does not exist (see [asr.spec.md](asr.spec.md) §G-6).
+- **VT-BLD-611.** Arch Linux acceptance requires a physical Arch machine with KDE Plasma 6;
+  WSL may compile and run portable unit tests only and MUST NOT be reported as acceptance.
+
+---
+
+## 7. Tools and assets (`VT-BLD-7xx`)
+
+| Tool | Purpose |
+|---|---|
+| `tools/voicetyper-diagnostics.cpp` | `--help`, `--version`, `--json`, `--wav-info <file>`; usage errors exit 2 |
+| `tools/ui_snapshot.cpp` | renders all settings pages to `page-<index>.png` offscreen (1220×800) for visual review |
+| `tools/mme_probe.cpp` | scratch MME (`waveIn`) capture probe |
+| `tools/compare-contract-json.py` | deterministic two-document JSON comparator with `--normalize-enums`; exit 1 on any difference |
+| `tools/verify-migration-fixtures.py` | manifest-driven byte/hash/container verification |
+| `tools/generate-wav-fixtures/` | writes the WAV input fixtures with `decimal.Decimal` sine recurrence for bit-exact determinism |
+| `tools/generate-settings-fixtures/` | the .NET generator that wrote the settings fixtures with the real `SettingsService.JsonOptions` |
+| `tools/build-parakeet-native.ps1` | rebuilds `parakeet.dll` from the pinned upstream, applies the local `cstdint` patch, writes `BUILD.txt` |
+| `tools/generate-icons.ps1` | builds `voiceTyper.png` and a multi-frame `voiceTyper.ico` from the master `icon.png` |
+
+- **VT-BLD-701.** `tools/compare-contract-json.py` MUST stay in step with the settings schema: it
+  currently knows only `whisper|parakeet` for `transcriptionEngine` and would flag a GigaAM
+  document as out of range (⚠ gap G-3).
+- **VT-BLD-702.** The icon generator MUST use the single master `icon.png` as the source of every
+  icon size (no light/dark variants).
+- **VT-BLD-703.** The WAV fixture generator MUST NOT reimplement the .NET conversion; it writes
+  inputs only.
+
+---
+
+## 8. Known gaps
+
+- **G-1.** No CI job runs the real-model smoke; no checked-in speech corpus exists, so ASR quality
+  and latency are unmeasured.
+- **G-2.** `fixture-check` and `differential-compare-smoke` are absent from a machine without
+  Python 3 (the configure message says so, but a green suite without them is weaker).
+- **G-3.** The JSON comparator does not know `gigaam`.
+- **G-4.** `docs/migration/cpp/windows-smoke.md` is stale on VAD ("energy heuristic, not Silero")
+  and `parity-ledger.md` says "22 properties" while the schema has 23.
+- **G-5.** `packaging/` is an empty placeholder and `dist/` holds stale untracked output; neither
+  is part of the C++ delivery.
+- **G-6.** The `windows-mingw-release` preset depends on environment variables
+  (`VOICETYPER_QT_ROOT`, `VOICETYPER_MINGW_ROOT`) that a fresh checkout does not have; a
+  hand-written `cmake` invocation without the toolchain fails with an explicit message, which is
+  correct but not friendly.
+- **G-7.** The Arch jobs are manual-only, so a portable regression can land without CI noticing.

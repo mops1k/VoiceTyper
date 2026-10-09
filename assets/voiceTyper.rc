@@ -2,6 +2,11 @@
 //
 // The tray icon came from the Qt resource bundle, but the FILE had no icon at all, so the
 // desktop shortcut and Explorer showed a generic one (reported by Alexander, 06.10.2026:
-// "на рабочем столе в ярлыке иконки нет"). This is the icon the .NET build shipped,
-// restored from the repository history.
+// "на рабочем столе в ярлыке иконки нет").
+//
+// voiceTyper.ico was built from assets/voiceTyper.png by the pure-Python converter recorded
+// in the project notes (zlib + unfilter + BMP-in-ICO, commit 3f22de9). It is deliberately
+// NOT the historical .NET icon: Alexander forbade taking the icon from the repository
+// history. tools/generate-icons.ps1 regenerates this file and assets/icon-256.png from the
+// same master; run it deliberately, because it rewrites tracked binaries.
 IDI_ICON1 ICON DISCARDABLE "voiceTyper.ico"

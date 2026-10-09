@@ -270,13 +270,19 @@ verification, portable header audit), `installer/`, `.github/workflows/`, `tests
 | `tools/generate-wav-fixtures/` | writes the WAV input fixtures with `decimal.Decimal` sine recurrence for bit-exact determinism |
 | `tools/generate-settings-fixtures/` | the .NET generator that wrote the settings fixtures with the real `SettingsService.JsonOptions` |
 | `tools/build-parakeet-native.ps1` | rebuilds `parakeet.dll` from the pinned upstream, applies the local `cstdint` patch, writes `BUILD.txt` |
-| `tools/generate-icons.ps1` | builds `voiceTyper.png` and a multi-frame `voiceTyper.ico` from the master `icon.png` |
+| `tools/generate-icons.ps1` | rebuilds `assets/icon-256.png` (README header) and the multi-frame `assets/voiceTyper.ico` from the master `assets/voiceTyper.png` |
 
 - **VT-BLD-701.** `tools/compare-contract-json.py` MUST stay in step with the settings schema: it
   currently knows only `whisper|parakeet` for `transcriptionEngine` and would flag a GigaAM
   document as out of range (⚠ gap G-3).
-- **VT-BLD-702.** The icon generator MUST use the single master `icon.png` as the source of every
-  icon size (no light/dark variants).
+- **VT-BLD-702.** The icon generator MUST take the current product artwork
+  (`assets/voiceTyper.png`, 1536×1536) as its master, MUST write exactly two outputs —
+  `assets/icon-256.png` (256×256, the README header) and `assets/voiceTyper.ico`
+  (multi-frame: 256/64/48/32/16) — and MUST NOT overwrite the master, which is the Qt
+  resource of the window and the tray. It MUST NOT reference the removed
+  `VoiceTyper.App/` tree nor the obsolete root `icon.png` (the .NET-era blue tile of
+  commit `385a0f2`). There are no light/dark icon variants: one artwork serves every size.
+  The tool is Windows-only (`System.Drawing`).
 - **VT-BLD-703.** The WAV fixture generator MUST NOT reimplement the .NET conversion; it writes
   inputs only.
 
@@ -298,3 +304,13 @@ verification, portable header audit), `installer/`, `.github/workflows/`, `tests
   hand-written `cmake` invocation without the toolchain fails with an explicit message, which is
   correct but not friendly.
 - **G-7.** The Arch jobs are manual-only, so a portable regression can land without CI noticing.
+- **G-8.** Icon assets are not verified by anything. Specifically: the shipped
+  `assets/voiceTyper.ico` is a **single** 256×256 uncompressed (BMP) frame, while
+  `tools/generate-icons.ps1` emits **five** PNG-compressed frames (256/64/48/32/16), so running
+  the tool rewrites a tracked binary rather than reproducing it, and no test or CI step notices
+  the difference; the root `icon.png` (213×212, the .NET-era blue tile) is now referenced by no
+  pipeline at all; and the comment in `assets/voiceTyper.rc` claims the icon is "the icon the
+  .NET build shipped, restored from the repository history", which contradicts the actual
+  provenance (it was built from `assets/voiceTyper.png`) and the recorded owner's rule that the
+  icon MUST NOT be taken from the repository history. Re-generating the shipped icon is therefore
+  a separate, deliberate decision, not a side effect of running the tool.

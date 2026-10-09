@@ -1,6 +1,20 @@
+# Regenerates the raster product icons from the current artwork:
+#
+#   assets\icon-256.png   256x256 PNG, the header image of README.md / README.ru.md
+#   assets\voiceTyper.ico multi-frame icon for the executable (assets\voiceTyper.rc)
+#
+# The master is assets\voiceTyper.png (1536x1536, the Qt resource used by the window
+# and the tray). It is a product asset in its own right and is NEVER overwritten by
+# this script.
+#
+# History: the old defaults pointed at VoiceTyper.App\Assets (the .NET tree, removed in
+# commit 76df03e) and at the root icon.png, which carries the obsolete .NET-era blue
+# tile of commit 385a0f2 - neither matches the microphone artwork the product ships.
+#
+# Windows-only: System.Drawing is not available in PowerShell on Linux.
 param(
-    [string]$OutDir = (Join-Path (Split-Path $PSScriptRoot -Parent) 'VoiceTyper.App\Assets'),
-    [string]$Master = (Join-Path (Split-Path $PSScriptRoot -Parent) 'icon.png')
+    [string]$OutDir = (Join-Path (Split-Path $PSScriptRoot -Parent) 'assets'),
+    [string]$Master = (Join-Path (Split-Path $PSScriptRoot -Parent) 'assets\voiceTyper.png')
 )
 
 $ErrorActionPreference = 'Stop'
@@ -29,7 +43,7 @@ function Save-Png([string]$Path, [int]$Px) {
     $out.Dispose()
 }
 
-# Собирает многокадровый .ico (PNG-кадры) из исходного icon.png.
+# Собирает многокадровый .ico (PNG-кадры) из мастер-файла $Master.
 function New-Icon([string]$Path) {
     $sizes = @(256, 64, 48, 32, 16)
     $frames = @()
@@ -70,7 +84,10 @@ function New-Icon([string]$Path) {
 
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 
-Save-Png (Join-Path $OutDir 'voiceTyper.png') 256
+# The 256 px PNG is the README header; the .ico is the file icon of the executable.
+# The master itself ($Master) is not an output: writing it here would replace the
+# 1536x1536 product artwork with a 256x256 resize of itself.
+Save-Png (Join-Path $OutDir 'icon-256.png') 256
 New-Icon (Join-Path $OutDir 'voiceTyper.ico')
 
 $Script:MasterImage.Dispose()

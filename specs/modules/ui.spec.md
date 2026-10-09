@@ -381,7 +381,12 @@ consequences are:
   the Qt resource before any widget is created, and its resource paths MUST stay in step with
   `application_font.cpp`.
 - **VT-UI-1006.** The executable icon (`assets/voiceTyper.ico` via `assets/voiceTyper.rc`) and the
-  resource icon `:/assets/voiceTyper.png` MUST be the same product artwork.
+  resource icon `:/assets/voiceTyper.png` MUST be the same product artwork, both derived from the
+  single master `assets/voiceTyper.png`. The README header image `assets/icon-256.png` MUST be a
+  256×256 rendering of that same master. `tools/generate-icons.ps1` is the tool that reproduces
+  both derived files (see [build-release.spec.md](build-release.spec.md) §VT-BLD-702); it MUST NOT
+  overwrite the master, and its output MUST NOT be sourced from the removed `VoiceTyper.App/` tree
+  or from the obsolete root `icon.png`.
 
 ---
 

@@ -901,12 +901,11 @@ if(VOICETYPER_BUILD_TESTS)
                 PASS_REGULAR_EXPRESSION "appimage-update-contract: OK"
                 TIMEOUT 60
             )
-            if(TARGET voicetyper-tests)
-                add_dependencies(voicetyper-tests voicetyper-appimage-update-contract)
-            endif()
+            # The dependency on voicetyper-tests is declared further down, where that
+            # target exists: it is an add_custom_target created later in this file, so
+            # a check here would always be false and the test would be "Not Run".
         endif()
     endif()
-
     # Re-runs the contract-header include audit as a test, so a header that
     # starts including windows.h/X11/ALSA/Qt fails the suite even on a
     # configuration that was configured before the change.
@@ -1503,6 +1502,11 @@ if(TARGET voicetyper-tests)
             add_dependencies(voicetyper-tests ${voicetyper_windows_only_target})
         endif()
     endforeach()
+    # The AppImage contract is created in the Linux-only block above, which runs
+    # before this target exists, so its dependency is declared here instead.
+    if(TARGET voicetyper-appimage-update-contract)
+        add_dependencies(voicetyper-tests voicetyper-appimage-update-contract)
+    endif()
 endif()
 
 # ---------------------------------------------------------------------------

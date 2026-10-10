@@ -10,14 +10,15 @@ namespace voicetyper::app {
 
 void install_application_font()
 {
-    // Regular, Medium, SemiBold and Bold are enough for every weight the window asks
-    // for (400 body, 600 headings, 700 emphasis); Qt maps the stylesheet weights onto
-    // them because they all register under the one "Inter" family.
+    // Regular, Semibold and Bold cover every weight the window asks for (400 body,
+    // 600 headings, 700 emphasis). Selawik is Microsoft's open (SIL OFL 1.1),
+    // metrically Segoe UI-compatible typeface, so one bundled file set serves both
+    // platforms and the layout keeps the metrics it was measured against; Segoe UI
+    // itself cannot be shipped (proprietary licence) and does not exist on Linux.
     static const QStringList kResources{
-        QStringLiteral(":/fonts/Inter-Regular.ttf"),
-        QStringLiteral(":/fonts/Inter-Medium.ttf"),
-        QStringLiteral(":/fonts/Inter-SemiBold.ttf"),
-        QStringLiteral(":/fonts/Inter-Bold.ttf"),
+        QStringLiteral(":/fonts/Selawik-Regular.ttf"),
+        QStringLiteral(":/fonts/Selawik-Semibold.ttf"),
+        QStringLiteral(":/fonts/Selawik-Bold.ttf"),
     };
     bool registered = false;
     for (const QString& resource : kResources) {
@@ -30,7 +31,7 @@ void install_application_font()
     }
     // The point size here is only a fallback for widgets the stylesheet does not
     // cover (menus, dialogs, tooltips); the window sets its own sizes in the sheet.
-    QFont font(QStringLiteral("Inter"));
+    QFont font(QStringLiteral("Selawik"));
     font.setPointSize(10);
     QApplication::setFont(font);
 }

@@ -444,10 +444,18 @@ if(VOICETYPER_BUILD_GUI)
             assets/voiceTyper.png
             assets/spin-up.png
             assets/spin-down.png
-            assets/fonts/Inter-Regular.ttf
-            assets/fonts/Inter-Medium.ttf
-            assets/fonts/Inter-SemiBold.ttf
-            assets/fonts/Inter-Bold.ttf
+    )
+    # The bundled typeface is addressed as :/fonts/<file> (application_font.cpp), and
+    # BASE drops the assets/fonts directory so the resource name and the code agree.
+    # They did not agree before: addApplicationFont returned -1 silently and the whole
+    # application - Windows and Linux - ran on whatever font the system shipped.
+    qt_add_resources(voicetyper-qt-shell "voicetyper_fonts"
+        PREFIX "/fonts"
+        BASE "assets/fonts"
+        FILES
+            assets/fonts/Selawik-Regular.ttf
+            assets/fonts/Selawik-Semibold.ttf
+            assets/fonts/Selawik-Bold.ttf
     )
 if(WIN32)
     # The executable's own icon: the tray icon comes from the Qt resources, but the file
@@ -683,15 +691,15 @@ if(VOICETYPER_BUILD_TESTS)
                 tests/ui/ui_settings_test.cpp
             )
         # The tests build the window with the shipped typeface (see
-        # application_font.cpp): an overflow caused by Inter's metrics has to fail
-        # here rather than on Alexander's screen.
+        # application_font.cpp): an overflow caused by the typeface's metrics has to
+        # fail here rather than on Alexander's screen.
         qt_add_resources(voicetyper-ui-settings-test "voicetyper_test_assets"
-            PREFIX "/"
+            PREFIX "/fonts"
+            BASE "assets/fonts"
             FILES
-                assets/fonts/Inter-Regular.ttf
-                assets/fonts/Inter-Medium.ttf
-                assets/fonts/Inter-SemiBold.ttf
-                assets/fonts/Inter-Bold.ttf
+                assets/fonts/Selawik-Regular.ttf
+                assets/fonts/Selawik-Semibold.ttf
+                assets/fonts/Selawik-Bold.ttf
         )
 
             target_link_libraries(voicetyper-ui-settings-test
@@ -734,10 +742,14 @@ if(VOICETYPER_BUILD_TESTS)
                 FILES
                 assets/spin-up.png
                 assets/spin-down.png
-                    assets/fonts/Inter-Regular.ttf
-                    assets/fonts/Inter-Medium.ttf
-                    assets/fonts/Inter-SemiBold.ttf
-                    assets/fonts/Inter-Bold.ttf
+            )
+            qt_add_resources(voicetyper-ui-snapshot "voicetyper_snapshot_fonts"
+                PREFIX "/fonts"
+                BASE "assets/fonts"
+                FILES
+                    assets/fonts/Selawik-Regular.ttf
+                    assets/fonts/Selawik-Semibold.ttf
+                    assets/fonts/Selawik-Bold.ttf
             )
             voicetyper_set_warnings(voicetyper-ui-snapshot)
 

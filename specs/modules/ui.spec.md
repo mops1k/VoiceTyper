@@ -387,9 +387,20 @@ consequences are:
   icons and drew a second icon over the delegate's glyph; gap G-7 is closed.
 - **VT-UI-1004a.** A theme change MUST repaint the navigation list (the delegate reads the
   current text colour) and MUST NOT write icons into the model.
-- **VT-UI-1005.** The bundled Inter family (Regular/Medium/SemiBold/Bold) MUST be registered from
-  the Qt resource before any widget is created, and its resource paths MUST stay in step with
-  `application_font.cpp`.
+- **VT-UI-1005.** The bundled Selawik family (Regular/Semibold/Bold, SIL OFL 1.1,
+  `assets/fonts/Selawik-*.ttf` with `assets/fonts/LICENSE-Selawik.txt`) MUST be registered from
+  the Qt resources before any widget is created, and its resource paths MUST stay in step with
+  `application_font.cpp`. Selawik is Microsoft's metrically Segoe UI-compatible open typeface;
+  it is the only typeface of the window, so the metrics the layout was measured against do not
+  depend on the host (reported 2026-10-11: the previous Inter resources were registered under
+  `:/assets/fonts/…` while the code asked for `:/fonts/…`, `addApplicationFont` failed silently
+  and the window silently used the system font — Segoe UI on Windows, Noto/DejaVu on Linux,
+  which overflowed the settings scroll viewports in CI). Segoe UI itself MUST NOT be bundled:
+  its licence does not allow redistribution and it does not exist on Linux.
+- **VT-UI-1005a.** The window MUST NOT select a typeface by host: neither the stylesheet nor a
+  `QFont` MAY name `Segoe UI`, `Segoe UI Variable` or `Inter`. The monospaced family of the log
+  and diagnostics panes (`"Cascadia Code", Consolas, monospace`) is the one documented exception,
+  and it falls back to the platform monospace.
 - **VT-UI-1006.** The executable icon (`assets/voiceTyper.ico` via `assets/voiceTyper.rc`) and the
   resource icon `:/assets/voiceTyper.png` MUST be the same product artwork, both derived from the
   single master `assets/voiceTyper.png`. The README header image `assets/icon-256.png` MUST be a

@@ -15,6 +15,8 @@
 #include "platform/portable/portable_runtime.hpp"
 
 #include <QApplication>
+#include <QFile>
+#include <QFontDatabase>
 #include "app/toggle_switch.hpp"
 #include <QComboBox>
 #include <QListWidget>
@@ -54,6 +56,22 @@ class SettingsWindowTest : public QObject {
     Q_OBJECT
 
 private slots:
+    void the_application_uses_the_bundled_selawik_typeface()
+    {
+        // One typeface on every platform. The window must not fall back to whatever
+        // the system ships (Segoe UI on Windows, Noto/DejaVu on Linux): the layout is
+        // measured against one set of metrics, and a different font overflows the
+        // scroll viewports - which is what the Windows CI run showed while the
+        // bundled font silently failed to load. The resource path is part of the
+        // contract, because a mismatch only makes addApplicationFont return -1 and
+        // the application keeps the system font without a word.
+        QVERIFY2(QFile(QStringLiteral(":/fonts/Selawik-Regular.ttf")).exists(),
+            "the bundled Selawik regular face is not in the Qt resources");
+        QVERIFY2(QFontDatabase::families().contains(QStringLiteral("Selawik")),
+            "Selawik was not registered as an application font");
+        QCOMPARE(QApplication::font().family(), QStringLiteral("Selawik"));
+    }
+
     void edit_is_written_and_reloaded()
     {
         const auto path = std::filesystem::temp_directory_path() / "voicetyper-ui-settings-test.json";

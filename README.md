@@ -39,7 +39,7 @@
 - Audio is captured directly through WASAPI, including Intel Smart Sound microphone arrays.
 
 **Interface**
-- Russian and English, light and dark themes (or follow the system), Inter typeface.
+- Russian and English, light and dark themes (or follow the system), bundled Selawik typeface.
 - A clear status: the overlay above your windows shows whether it is recording or recognising.
 - A work log, start with Windows, and hiding the window when it loses focus.
 - Settings save themselves — there is no Save button.

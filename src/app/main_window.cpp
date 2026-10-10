@@ -885,12 +885,12 @@ void render_log_lines(QTextEdit* view, const QString& text)
     }
 }
 
-/// One font for glyph and label: Qt walks the family list per code point, so the
-/// private-use glyph comes from the icon font while Cyrillic uses the UI font.
+/// One font for every label. Icons are drawn as geometry (NavigationIconDelegate),
+/// so no icon family is listed and the whole window has exactly one typeface.
 QFont navigation_font(int pixel_size)
 {
     QFont font;
-    font.setFamilies({QStringLiteral("Segoe UI"), QStringLiteral("Segoe MDL2 Assets"), QStringLiteral("Segoe UI Symbol")});
+    font.setFamilies({QStringLiteral("Selawik")});
     font.setPixelSize(pixel_size);
     return font;
 }
@@ -4261,12 +4261,13 @@ void MainWindow::apply_theme()
     QString qss = QStringLiteral(R"(
         QWidget {
             background: @{window}; color: @{text};
-            /* One family for both scripts. The list used to start with "Segoe UI Variable",
-               and Qt picks a font per character: Latin took the variable face while Cyrillic
-               fell through to Inter, so Russian and English looked like different typefaces
-               (Alexander, 08.10.2026). "Segoe UI" is the same design family, covers both
-               scripts itself, and "Inter" stays as the shipped fallback. */
-            font-family: "Segoe UI", "Inter", sans-serif; font-size: 12px;
+            /* One family for both scripts. Selawik is bundled (SIL OFL 1.1) and is
+               Microsoft's metrically Segoe UI-compatible face, so Latin and Cyrillic
+               come from one font on every platform. The list used to be system-dependent
+               ("Segoe UI Variable"/"Inter"), which made Russian and English look like
+               different typefaces and changed the metrics the layout was measured
+               against (Alexander, 08.10.2026). */
+            font-family: "Selawik", sans-serif; font-size: 12px;
         }
         /* Title bar: flat, like the system window chrome. */
         #titleBar { background: @{window}; border-bottom: 1px solid @{border}; }
@@ -4307,8 +4308,9 @@ void MainWindow::apply_theme()
         #cardHeader { background: transparent; border-bottom: 1px solid @{border}; }
         #cardHeaderCopy { background: transparent; }
         #cardTitle {
-            /* Weight 700 on purpose: Segoe UI exposes its semibold as a separate family, and
-               600 silently resolved to Regular on Windows (Alexander, 08.10.2026). */
+            /* Weight 700 on purpose: Selawik exposes its semibold as a separate family
+               ("Selawik Semibold"), and 600 resolved to Regular without it (Alexander,
+               08.10.2026). */
             font-weight: 700; color: @{text}; }
         #cardCaption { color: @{muted}; }
         /* The pages sit on --surface-raised while the cards stay --surface. */

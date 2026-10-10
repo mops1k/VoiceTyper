@@ -123,6 +123,16 @@ verification, portable header audit), `installer/`, `.github/workflows/`, `tests
   (`libqwayland.so`, `libqxcb.so`) plus LayerShellQt and libpulse. The diagnostics tool is a
   developer instrument and MUST live in its own `diagnostics` component, so the runtime install
   neither ships it nor fails when a release job did not build it.
+- **VT-BLD-211a.** The AppImage MUST be startable on its own, without variables inherited from
+  another AppImage run: the image MUST carry an `AppRun` that resolves its own directory and exports
+  `APPDIR`, `PATH`, `LD_LIBRARY_PATH`, `QT_PLUGIN_PATH` and `QT_QPA_PLATFORM_PLUGIN_PATH` before
+  starting the executable (linuxdeploy leaves `AppRun` as a symlink and its Qt plugin skips the hook
+  on Qt 6).
+- **VT-BLD-211b.** The Wayland platform plugin alone MUST NOT be considered sufficient: the image
+  MUST also carry the Qt Wayland shell, graphics and decoration integrations
+  (`wayland-shell-integration`, `wayland-graphics-integration-client`,
+  `wayland-decoration-client`), because Qt Wayland loads them separately and otherwise reports
+  "Loading shell integration failed" and aborts.
 - **VT-BLD-212.** The AppImage MUST NOT contain the Qt modules the application never loads (Qml,
   Quick, Pdf, PrintSupport), the Qt Virtual Keyboard plugin, the KDE image-format plugins or the
   network-information plugins; `packaging/appimage/prune-appdir.py` enforces that from the

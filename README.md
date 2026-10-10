@@ -66,8 +66,9 @@ The engine and the model are chosen in the application, next to their size and s
 
 To remove it, use the usual "Apps" page in Windows settings.
 
-On Linux there is no installer yet: build the application from source with
-[docs/build.md](docs/build.md) (`cmake --preset linux-arch-release`).
+On Linux every release also carries `VoiceTyper-<version>-x86_64.AppImage` (about 51 MB) with a
+`.sha256` file: make it executable and run it — no installation, and the models are downloaded on
+first use. To build it (or the application) from source, see [docs/build.md](docs/build.md).
 
 ## Requirements
 
@@ -88,8 +89,8 @@ Any combination can be reassigned: the "Record" field in the settings captures t
 
 ## Not done yet
 
-- Only the Windows version is published; the Linux build (Arch/KDE Plasma 6, Wayland and
-  X11) works from source, and packaging for it is not done yet.
+- The Linux build (Arch/KDE Plasma 6, Wayland and X11) ships as an AppImage; a distribution
+  package (pacman/AUR, Flatpak) is not done yet.
 
 ## Building from source
 

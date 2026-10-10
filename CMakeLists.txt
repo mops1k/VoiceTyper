@@ -19,7 +19,7 @@ option(VOICETYPER_BUILD_ASR "Build the pinned whisper.cpp dependency (requires n
 # The product version. It is what the About page shows and what the update check
 # compares against the release tag, so it must be a real version, not the spike
 # default. CI overrides it with the tag being released.
-set(VOICETYPER_VERSION "2.2.1" CACHE STRING "Product version, compared with the release tag")
+set(VOICETYPER_VERSION "3.0.0" CACHE STRING "Product version, compared with the release tag")
 
 # Native dependency contract (task t_c6a6b0ce9685). The manifest is read on
 # every configuration, the Parakeet pin/ABI are cross-checked against the
@@ -270,7 +270,16 @@ if(VOICETYPER_BUILD_ASR)
     # whisper.cpp and ggml are C/C++ projects, so the C language is enabled only
     # when they are actually part of the build.
     enable_language(C)
+    # The fetched subproject must not contribute install rules: whisper.cpp 1.9.4
+    # declares install(TARGETS parakeet ...) for a target this build never makes
+    # part of the graph, so `cmake --install` fails on a missing libparakeet.a.
+    # Nothing of it belongs in the installed tree anyway - the code is linked into
+    # the application statically. CMAKE_SKIP_INSTALL_RULES suppresses exactly
+    # those rules and is reset immediately after the fetch, so the project's own
+    # install rules below still apply.
+    set(CMAKE_SKIP_INSTALL_RULES TRUE)
     voicetyper_fetch_whisper_cpp()
+    set(CMAKE_SKIP_INSTALL_RULES FALSE)
 
     # The thin C++ wrapper: the only place that includes the real whisper.h.
     add_library(voicetyper_asr_whisper STATIC
@@ -982,9 +991,9 @@ if(VOICETYPER_BUILD_TESTS)
     endif()
 endif()
 
-install(TARGETS voicetyper-diagnostics RUNTIME DESTINATION bin)
+install(TARGETS voicetyper-diagnostics RUNTIME DESTINATION bin COMPONENT runtime)
 if(VOICETYPER_BUILD_GUI)
-    install(TARGETS voicetyper-qt-shell RUNTIME DESTINATION bin)
+    install(TARGETS voicetyper-qt-shell RUNTIME DESTINATION bin COMPONENT runtime)
 endif()
 
 # ---------------------------------------------------------------------------
@@ -1785,6 +1794,38 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
             DEPENDS voicetyper_parakeet_cpp voicetyper_transcribe_cpp
         )
     endif()
+
+    # What an installed Linux tree (and the AppImage built from it) needs beyond
+    # the binaries: the desktop entry, the icon and the engine shared objects next
+    # to the executable, because the dlopen loaders look there first.
+    #
+    # The engine directory only exists once the ExternalProjects have run, so the
+    # copy is an install(CODE) block: a build without ASR installs fine and simply
+    # has no engine libraries to copy.
+    #
+    # Everything the application needs at runtime is in the `runtime` component,
+    # and the AppImage script installs exactly that component: whisper.cpp's own
+    # rules live in the default (Unspecified) component and reference a parakeet
+    # target this build never creates, so a full install of an ASR build would
+    # fail on it.
+    install(FILES packaging/appimage/voicetyper.desktop
+        DESTINATION share/applications
+        COMPONENT runtime
+    )
+    install(FILES assets/icon-256.png
+        DESTINATION share/icons/hicolor/256x256/apps
+        RENAME voicetyper.png
+        COMPONENT runtime
+    )
+    install(CODE "
+        set(_voicetyper_engine_dir \"${VOICETYPER_ENGINE_LIBRARY_DIR}\")
+        if(EXISTS \"\${_voicetyper_engine_dir}\")
+            file(GLOB _voicetyper_engine_libs \"\${_voicetyper_engine_dir}/*.so*\")
+            file(INSTALL \${_voicetyper_engine_libs} DESTINATION \"\${CMAKE_INSTALL_PREFIX}/bin\")
+        else()
+            message(STATUS \"no engine libraries to install (\${_voicetyper_engine_dir} is absent)\")
+        endif()
+    " COMPONENT runtime)
 
     # The Linux composition root, appended like the Windows one so the targets
     # above are neither reordered nor rewritten. It needs the native engines, so

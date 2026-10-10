@@ -19,6 +19,14 @@ on:
       version:
         description: 'Version to build (without the leading v)'
         required: true
+      tag:
+        description: 'Release tag for a manual check, e.g. v2.2.2-pre1 (required for workflow_dispatch)'
+        required: false
+        default: ''
+      prerelease:
+        description: 'Mark the release as a pre-release (manual runs only)'
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -35,6 +43,11 @@ jobs:
         run: |
           $version = if ('${{ github.event_name }}' -eq 'workflow_dispatch') { '${{ github.event.inputs.version }}' } else { '${{ github.ref_name }}'.TrimStart('v') }
           if ([string]::IsNullOrWhiteSpace($version)) { throw 'no version to build' }
+          # A manual run must name its tag: without one the release action would
+          # use the branch name as the tag and publish "master" as a version.
+          if ('${{ github.event_name }}' -eq 'workflow_dispatch' -and '${{ github.event.inputs.tag }}' -eq '') {
+            throw 'a workflow_dispatch run needs the tag input, e.g. v2.2.2-pre1'
+          }
           "value=$version" >> $env:GITHUB_OUTPUT
 
       # 6.11.2 exists only as a local build on the developer machine, so CI installs
@@ -84,4 +97,87 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: build/windows-mingw-release/VoiceTyper-${{ steps.version.outputs.value }}-win64-Setup.exe
+          tag_name: ${{ github.event.inputs.tag != '' && github.event.inputs.tag || github.ref_name }}
+          prerelease: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.prerelease == 'true' }}
+          generate_release_notes: true
+
+  # The Linux build: a self-contained AppImage, built in an Arch container because
+  # the project needs Qt 6.9+ (Ubuntu 24.04 ships 6.4) and layer-shell-qt for the
+  # Wayland overlay. The same release carries the Windows installer and this file.
+  linux-appimage:
+    name: Linux AppImage (Arch container)
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:base-devel
+    timeout-minutes: 90
+    steps:
+      # The JS actions below (checkout, upload-artifact, gh-release) run inside this
+      # container, so node has to exist before the first of them starts.
+      - name: prepare the container
+        run: |
+          pacman -Syu --noconfirm --needed nodejs git
+
+      - uses: actions/checkout@v4
+
+      - name: install the toolchain
+        run: |
+          pacman -S --noconfirm --needed \
+            cmake make ninja python \
+            qt6-base qt6-wayland layer-shell-qt libpulse \
+            fuse2 squashfs-tools desktop-file-utils patchelf curl
+
+      - name: version
+        id: version
+        shell: bash
+        run: |
+          if [ '${{ github.event_name }}' = 'workflow_dispatch' ]; then
+            version='${{ github.event.inputs.version }}'
+            # A manual run must name its tag: without one the release action would
+            # use the branch name as the tag and publish "master" as a version.
+            if [ -z '${{ github.event.inputs.tag }}' ]; then
+              echo 'a workflow_dispatch run needs the tag input, e.g. v3.0.0-pre1' >&2
+              exit 1
+            fi
+          else
+            version="${GITHUB_REF_NAME#v}"
+          fi
+          if [ -z "$version" ]; then echo 'no version to build' >&2; exit 1; fi
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+
+      # The engine shared objects are ExternalProjects (whisper.cpp, parakeet.cpp,
+      # transcribe.cpp), so the build needs the network once and takes a while.
+      - name: build the application and the engines
+        run: |
+          cmake --preset linux-arch-release "-DVOICETYPER_VERSION=${{ steps.version.outputs.value }}"
+          cmake --build --preset linux-arch-release --target voicetyper-qt-shell voicetyper-linux-engine-libs
+
+      # Only the `runtime` component: whisper.cpp's own install rules reference a
+      # parakeet target this build never creates, so a full install would fail.
+      - name: install into an AppDir prefix
+        run: |
+          cmake --install build/linux-arch-release \
+            --prefix "$PWD/build/appimage-prefix" --component runtime
+
+      - name: build the AppImage
+        run: |
+          ./packaging/appimage/build-appimage.sh \
+            "${{ steps.version.outputs.value }}" \
+            "$PWD/build/appimage-prefix" \
+            "$PWD/build/appimage"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: voicetyper-linux-appimage
+          path: |
+            build/appimage/VoiceTyper-*.AppImage
+            build/appimage/VoiceTyper-*.AppImage.sha256
+
+      - name: publish the AppImage
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            build/appimage/VoiceTyper-*.AppImage
+            build/appimage/VoiceTyper-*.AppImage.sha256
+          tag_name: ${{ github.event.inputs.tag != '' && github.event.inputs.tag || github.ref_name }}
+          prerelease: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.prerelease == 'true' }}
           generate_release_notes: true

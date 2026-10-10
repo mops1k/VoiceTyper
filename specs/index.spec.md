@@ -8,7 +8,7 @@ the working tree: `src/platform/linux/`, `src/app/linux_application.cpp`, the Li
 branches of `parakeet_runtime.cpp` / `transcribe_runtime.cpp` and the Linux CMake
 targets. They are written against the code as it stands in that tree, not against the
 `3cc4c5a` baseline, and are marked as such wherever they change a Windows-only rule.
-**Product version constant:** `VOICETYPER_VERSION` (currently `2.2.1`, [CMakeLists.txt:22](../CMakeLists.txt#L22)).
+**Product version constant:** `VOICETYPER_VERSION` (currently `3.0.0`, [CMakeLists.txt:22](../CMakeLists.txt#L22)).
 **Requirement keywords:** RFC 2119 (`MUST`, `MUST NOT`, `SHALL`, `SHALL NOT`, `SHOULD`, `SHOULD NOT`, `MAY`).
 
 This file is the entry point. Module-level requirements live in

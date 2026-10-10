@@ -57,6 +57,30 @@ cmake --build --preset linux-arch-release --target voicetyper-qt-shell
 compile check). Paths follow XDG: settings in `$XDG_CONFIG_HOME/VoiceTyper`, models and logs
 in `$XDG_DATA_HOME/VoiceTyper`, the autostart entry in `$XDG_CONFIG_HOME/autostart`.
 
+#### AppImage
+
+A self-contained AppImage is built from an installed tree:
+
+```bash
+cmake --preset linux-arch-release "-DVOICETYPER_VERSION=2.2.2"
+cmake --build --preset linux-arch-release --target voicetyper-qt-shell voicetyper-linux-engine-libs
+cmake --install build/linux-arch-release --prefix "$PWD/build/appimage-prefix" --component runtime
+./packaging/appimage/build-appimage.sh 2.2.2 "$PWD/build/appimage-prefix" "$PWD/build/appimage"
+```
+
+The script fetches `linuxdeploy`, its Qt plugin and `appimagetool` into
+`build/appimage-tools` (override with `VOICETYPER_APPIMAGE_TOOLS`), deploys the Qt runtime
+(including the Wayland platform plugin, which the Qt plugin leaves out), removes the Qt
+modules the application never loads — Qml, Quick, Pdf, PrintSupport — together with the
+plugins that pull them in, prunes the libraries nothing links against any more, strips with
+the system binutils (the one bundled in linuxdeploy cannot read modern `.relr.dyn` sections)
+and writes `VoiceTyper-<version>-x86_64.AppImage` with its `.sha256`. It needs `patchelf`,
+`squashfs-tools`, `desktop-file-utils` and `python3`; `QMAKE` may be pointed at a filtered Qt
+plugin directory when the local Qt has a plugin with a missing dependency.
+
+Models and `ydotool` are not bundled: models are downloaded on first use, and ydotool stays a
+system daemon (without it the application degrades to clipboard-only, which the log states).
+
 The product version lives in one place — the `VOICETYPER_VERSION` CMake variable. It is what
 the About page shows and what the update check compares against the release tag, so a release
 build passes the tag: `cmake --preset windows-mingw-release "-DVOICETYPER_VERSION=2.0.1"`.

@@ -22,7 +22,7 @@ verification, portable header audit), `installer/`, `.github/workflows/`, `tests
 | `VOICETYPER_BUILD_ASR` | `${VOICETYPER_BUILD_GUI}` | build the pinned whisper.cpp dependency (needs the network once) |
 
 - **VT-BLD-103.** The product version MUST live in exactly one place, the cache variable
-  `VOICETYPER_VERSION` (currently `2.2.1`), injected as a compile definition into
+  `VOICETYPER_VERSION` (currently `3.0.0`), injected as a compile definition into
   `voicetyper_domain` only, with the source fallback `"0.0.0-dev"`. It is what the About page
   shows and what the update check compares against the release tag, so a release build MUST pass
   the tag (`-DVOICETYPER_VERSION=<tag>`).
@@ -103,6 +103,21 @@ verification, portable header audit), `installer/`, `.github/workflows/`, `tests
   (`QDesktopServices::openUrl`) instead of downloading an installer (VT-SYS-014).
 - **VT-BLD-210.** A Linux build with `VOICETYPER_BUILD_ASR=ON` MUST link the real engines and MUST
   NOT require the shipped Windows DLLs; the native pin audit of VT-BLD-301 stays Windows-only.
+- **VT-BLD-211.** A Linux release MUST publish `VoiceTyper-<version>-x86_64.AppImage` next to the
+  Windows installer, with a `.sha256` file beside it, built by
+  `packaging/appimage/build-appimage.sh` from the `runtime` install component. The AppImage MUST
+  contain the application, the engine shared objects (`libparakeet.so`, `libtranscribe.so`,
+  `libggml*.so`) beside the executable, and the Qt platform plugins for Wayland **and** X11
+  (`libqwayland.so`, `libqxcb.so`) plus LayerShellQt and libpulse.
+- **VT-BLD-212.** The AppImage MUST NOT contain the Qt modules the application never loads (Qml,
+  Quick, Pdf, PrintSupport), the Qt Virtual Keyboard plugin, the KDE image-format plugins or the
+  network-information plugins; `packaging/appimage/prune-appdir.py` enforces that from the
+  dependency graph. Models and `ydotool` MUST NOT be bundled: the application downloads models
+  into `$XDG_DATA_HOME/VoiceTyper/models`, and ydotool is a system daemon (without it the
+  application degrades to clipboard-only, which the log states).
+- **VT-BLD-213.** The AppImage job MUST run in an Arch container on a hosted runner (the project
+  needs Qt 6.9+, which Ubuntu 24.04 does not ship) and MUST publish the file to the same GitHub
+  release as the Windows installer.
 
 ---
 

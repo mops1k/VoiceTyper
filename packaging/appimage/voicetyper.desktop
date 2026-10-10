@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=VoiceTyper
+GenericName=Voice dictation
+Comment=Local voice dictation with Whisper, Parakeet and GigaAM
+Exec=voicetyper-qt-shell
+Icon=voicetyper
+Terminal=false
+Categories=Utility;AudioVideo;
+Keywords=dictation;speech;voice;transcription;
+StartupWMClass=voicetyper-qt-shell

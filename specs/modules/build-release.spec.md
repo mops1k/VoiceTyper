@@ -119,6 +119,14 @@ verification, portable header audit), `installer/`, `.github/workflows/`, `tests
 - **VT-BLD-213.** The AppImage job MUST run in an Arch container on a hosted runner (the project
   needs Qt 6.9+, which Ubuntu 24.04 does not ship) and MUST publish the file to the same GitHub
   release as the Windows installer.
+- **VT-BLD-214.** A full `cmake --install` of an ASR build (the CI install-smoke step, and the
+  AppImage job's install step) MUST succeed without selecting a component. The vendored
+  whisper.cpp contributes install rules for a `parakeet` target the build never creates, so its
+  subdirectory MUST be declared with `EXCLUDE_FROM_ALL` in `FetchContent_Declare(whisper_cpp ...)`
+  (`cmake/NativeAsr.cmake`): that removes both the subdirectory's install rules and the parent's
+  `include` of its install script. `CMAKE_SKIP_INSTALL_RULES` MUST NOT be used for this — it stops
+  the script from being generated while the parent keeps including it, and every install then
+  fails with `include could not find requested file` (broken release run 2026-10-11).
 
 ---
 

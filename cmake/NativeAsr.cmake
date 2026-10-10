@@ -325,12 +325,23 @@ function(voicetyper_fetch_whisper_cpp)
         message(STATUS
             "whisper.cpp: using the pre-fetched tree ${VOICETYPER_WHISPER_PREFETCHED_DIR} "
             "(no download); the manifest content pins are still verified")
-        FetchContent_Declare(whisper_cpp SOURCE_DIR "${VOICETYPER_WHISPER_PREFETCHED_DIR}")
+        # EXCLUDE_FROM_ALL (CMake 3.28+, which this project requires) does two things
+        # that matter here: the subdirectory's install rules are ignored when the
+        # parent is installed, and the parent's install script does not include the
+        # subdirectory's one. whisper.cpp 1.9.4 declares install(TARGETS parakeet ...)
+        # for a target that is not part of our build graph, so a full
+        # `cmake --install` otherwise fails on the missing libparakeet.a. The targets
+        # we do use (whisper, ggml) are still built: inter-target dependencies
+        # supersede the exclusion.
+        FetchContent_Declare(whisper_cpp SOURCE_DIR "${VOICETYPER_WHISPER_PREFETCHED_DIR}"
+            EXCLUDE_FROM_ALL)
     else()
         FetchContent_Declare(whisper_cpp
             URL ${archive_url}
             URL_HASH SHA256=${archive_sha256}
             DOWNLOAD_EXTRACT_TIMESTAMP ON
+            # See the pre-fetched branch above.
+            EXCLUDE_FROM_ALL
         )
     endif()
     FetchContent_MakeAvailable(whisper_cpp)

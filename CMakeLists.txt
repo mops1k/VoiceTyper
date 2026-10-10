@@ -274,12 +274,13 @@ if(VOICETYPER_BUILD_ASR)
     # declares install(TARGETS parakeet ...) for a target this build never makes
     # part of the graph, so `cmake --install` fails on a missing libparakeet.a.
     # Nothing of it belongs in the installed tree anyway - the code is linked into
-    # the application statically. CMAKE_SKIP_INSTALL_RULES suppresses exactly
-    # those rules and is reset immediately after the fetch, so the project's own
-    # install rules below still apply.
-    set(CMAKE_SKIP_INSTALL_RULES TRUE)
+    # the application statically. The exclusion lives in the FetchContent_Declare
+    # of voicetyper_fetch_whisper_cpp() (EXCLUDE_FROM_ALL, CMake 3.28): it drops the
+    # include of the subdirectory's install script as well. Suppressing the rules
+    # with CMAKE_SKIP_INSTALL_RULES around the fetch does NOT work - it stops the
+    # script from being generated while the parent keeps including it, and the whole
+    # install then fails with "include could not find requested file".
     voicetyper_fetch_whisper_cpp()
-    set(CMAKE_SKIP_INSTALL_RULES FALSE)
 
     # The thin C++ wrapper: the only place that includes the real whisper.h.
     add_library(voicetyper_asr_whisper STATIC

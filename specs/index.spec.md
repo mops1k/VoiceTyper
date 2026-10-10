@@ -70,11 +70,16 @@ Business intent, as stated by the project owner across the history that produced
   MUST NOT show partial transcripts while the user is speaking.
 - **VT-SYS-013 — Continuous dictation mode is not implemented.** It is described
   only in [`continuous-mode-plan.md`](../continuous-mode-plan.md) and is a future feature.
-- **VT-SYS-014 — Linux self-update is out of scope.** A Linux package is updated by
-  the system package manager, not by this updater. The update check MUST still work
-  (VT-SYS-080…083), and the install action MUST open the release page instead of
-  downloading an installer the platform cannot run
-  ([src/app/linux_application.cpp](../src/app/linux_application.cpp), `update_install`).
+- **VT-SYS-014 — Linux self-update replaces the running AppImage.** The AppImage
+  runtime exports `APPIMAGE`; the install action MUST download the release's
+  `VoiceTyper-<version>-x86_64.AppImage`, verify its `sha256` (the asset `digest`),
+  make it executable and rename it over the running image, then start the replaced
+  file and exit — the running process keeps the old image mapped, so the swap is
+  atomic and cannot leave a truncated image behind. When `APPIMAGE` is empty or does
+  not name a regular file (a source build, a distribution package), the action MUST
+  fall back to opening the release page, which is what it always did
+  ([src/core/support/appimage_update.hpp](../src/core/support/appimage_update.hpp),
+  [src/app/linux_application.cpp](../src/app/linux_application.cpp), `update_install`).
 
 ### 1.4 Actors
 
@@ -248,7 +253,7 @@ attribute behavior to these two directories.
 | Settings | `$XDG_CONFIG_HOME/VoiceTyper/settings.json` (fallback `$HOME/.config/VoiceTyper/settings.json`) | VT-SYS-068 |
 | Models | `$XDG_DATA_HOME/VoiceTyper/models` (fallback `$HOME/.local/share/VoiceTyper/models`) | VT-SYS-068 |
 | Log | `$XDG_DATA_HOME/VoiceTyper/logs/voiceTyper.log` | VT-SYS-068 |
-| Update download | `$XDG_DATA_HOME/VoiceTyper/updates` (the Linux build does not download installers, VT-SYS-014) | VT-SYS-068 |
+| Update download | beside the running AppImage (`<image>.download`, renamed over it); `$XDG_DATA_HOME/VoiceTyper/updates` for the Windows installer | VT-SYS-068, VT-SYS-014 |
 | Engine libraries | beside the executable, then `<exe_dir>/engine-libs` | VT-PLT-1602 |
 | Autostart | `$XDG_CONFIG_HOME/autostart/voicetyper.desktop` (freedesktop desktop entry) | VT-SYS-065a |
 
@@ -288,9 +293,10 @@ attribute behavior to these two directories.
 - **VT-SYS-085.** A downloaded asset whose name lacks the `win64` marker MUST NOT be run
   (`src/app/windows_application.cpp` check documented in `.github/workflows/release.yml`).
 - **VT-SYS-086.** On Linux the check of VT-SYS-080…083 MUST still run and report a newer
-  version, but the install action MUST open the release page in the browser instead of
-  downloading and launching an installer (VT-SYS-014,
-  [src/app/linux_application.cpp](../src/app/linux_application.cpp) `update_install`).
+  version, and the install action MUST download and replace the running AppImage (VT-SYS-014)
+  instead of downloading and launching an installer; only a process that was not started from an
+  AppImage opens the release page in the browser
+  ([src/app/linux_application.cpp](../src/app/linux_application.cpp) `update_install`).
 
 ### 2.9 Privacy
 

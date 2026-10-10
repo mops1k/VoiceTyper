@@ -382,6 +382,7 @@ if(VOICETYPER_BUILD_GUI)
     src/core/support/sha256.cpp
         src/core/support/update_manifest.cpp
         src/core/support/update_launcher.cpp
+        src/core/support/appimage_update.cpp
     )
     target_link_libraries(voicetyper_update
         PUBLIC
@@ -882,6 +883,19 @@ if(VOICETYPER_BUILD_TESTS)
         add_test(NAME update-contract COMMAND voicetyper-update-contract)
         set_tests_properties(update-contract PROPERTIES
             PASS_REGULAR_EXPRESSION "update-contract: OK"
+            TIMEOUT 60
+        )
+
+        # The AppImage file mechanics: which file to replace and how. File-system
+        # only, so it runs on both platforms even though the flow is Linux-only.
+        add_executable(voicetyper-appimage-update-contract EXCLUDE_FROM_ALL
+            tests/contract/appimage_update_contract.cpp
+        )
+        target_link_libraries(voicetyper-appimage-update-contract PRIVATE voicetyper_update)
+        voicetyper_set_warnings(voicetyper-appimage-update-contract)
+        add_test(NAME appimage-update-contract COMMAND voicetyper-appimage-update-contract)
+        set_tests_properties(appimage-update-contract PROPERTIES
+            PASS_REGULAR_EXPRESSION "appimage-update-contract: OK"
             TIMEOUT 60
         )
     endif()
@@ -1460,15 +1474,30 @@ add_custom_target(voicetyper-tests
         voicetyper-platform-contract-smoke
         voicetyper-executor-contract
         voicetyper-update-contract
+        voicetyper-appimage-update-contract
         voicetyper-native-dependency-contract
         voicetyper-whisper-native-contract
-        voicetyper-windows-audio-capture-contract
-        voicetyper-win32-platform-contract
-        voicetyper-win32-input-contract
-        voicetyper-win32-startup-contract
 
     DEPENDS voicetyper-noise-suppression-contract
     DEPENDS voicetyper-model-download-contract)
+
+# The Windows-only suites cannot be listed in the target above: this project builds
+# on Linux too, where those targets do not exist and a plain `make voicetyper-tests`
+# then dies with "No rule to make target 'voicetyper-windows-audio-capture-contract'"
+# (which is exactly what the first hosted Linux CI run hit). They are attached here
+# only when they exist, so the aggregate target is the same on both platforms.
+if(TARGET voicetyper-tests)
+    foreach(voicetyper_windows_only_target
+            voicetyper-mc-wasapi-contract
+            voicetyper-windows-audio-capture-contract
+            voicetyper-win32-platform-contract
+            voicetyper-win32-input-contract
+            voicetyper-win32-startup-contract)
+        if(TARGET ${voicetyper_windows_only_target})
+            add_dependencies(voicetyper-tests ${voicetyper_windows_only_target})
+        endif()
+    endforeach()
+endif()
 
 # ---------------------------------------------------------------------------
 # Linux-only contract test for the Linux platform backends, appended so a

@@ -100,8 +100,18 @@ verification, portable header audit), `installer/`, `.github/workflows/`, `tests
   `VOICETYPER_HAS_LINUX_COMPOSITION` in `src/app/main.cpp`; it MUST build the same window, tray,
   hotkey service, capture, engines, clipboard and paste as the Windows composition, and MUST
   create the XDG directories (`settings`, `models`, `logs`, `updates`) before the first write.
-- **VT-BLD-209.** The Linux self-update action MUST open the release page
-  (`QDesktopServices::openUrl`) instead of downloading an installer (VT-SYS-014).
+- **VT-BLD-209.** The Linux self-update action MUST download the release's AppImage and replace the
+  running image (VT-SYS-014) instead of downloading an installer, and MUST fall back to opening the
+  release page (`QDesktopServices::openUrl`) when the process was not started from an AppImage.
+- **VT-BLD-209a.** The update query MUST select the asset the running platform can use: the Inno
+  Setup installer on Windows (`^VoiceTyper-\d[^/]*?-Setup\.exe$`) and the AppImage on Linux
+  (`^VoiceTyper-\d[^/]*?-x86_64\.AppImage$`). The expected `sha256` MUST come from the release
+  asset `digest` (`sha256:<64 hex>`) when GitHub publishes it, and from the `SHA256:` marker in the
+  release body otherwise (the .NET-compatible fallback).
+- **VT-BLD-209b.** Replacing the AppImage MUST be atomic: the download goes to `<image>.download`
+  next to the running image, the file is made executable (`0755`) and renamed over the image; a
+  failed download or a failed rename MUST remove the partial file and MUST leave the running image
+  untouched (`src/core/support/appimage_update.hpp`, contract `appimage-update-contract`).
 - **VT-BLD-210.** A Linux build with `VOICETYPER_BUILD_ASR=ON` MUST link the real engines and MUST
   NOT require the shipped Windows DLLs; the native pin audit of VT-BLD-301 stays Windows-only.
 - **VT-BLD-211.** A Linux release MUST publish `VoiceTyper-<version>-x86_64.AppImage` next to the

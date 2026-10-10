@@ -10,10 +10,12 @@
 
 namespace voicetyper::core::support {
 
-UpdateService::UpdateService(platform::HttpClient& http, std::string current_version, std::string release_url)
+UpdateService::UpdateService(platform::HttpClient& http, std::string current_version,
+    std::string release_url, UpdateAssetKind asset_kind)
     : http_(http)
     , current_version_(std::move(current_version))
     , release_url_(std::move(release_url))
+    , asset_kind_(asset_kind)
 {
 }
 
@@ -34,7 +36,7 @@ platform::UpdateCheckResult UpdateService::check(const platform::CancellationTok
     if (const auto failure = failed_for_http_status(response.value().status_code); failure.has_value()) {
         return *failure;
     }
-    return parse_latest_release(response.value().body, current_version_);
+    return parse_latest_release(response.value().body, current_version_, asset_kind_);
 }
 
 platform::Status UpdateService::download(const platform::UpdateInfo& info,

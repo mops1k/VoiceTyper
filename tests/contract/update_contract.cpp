@@ -533,6 +533,72 @@ static void sha256_vectors()
         std::string("a chunked hash equals the one-shot hash"));
 }
 
+// --- Platform-specific asset selection (Linux self-update) ------------------
+
+void check_appimage_asset_is_selected_for_linux()
+{
+    const std::string json = R"json({
+      "tag_name": "v3.0.1",
+      "assets": [
+        { "name": "VoiceTyper-3.0.1-win64-Setup.exe",
+          "browser_download_url": "https://example.invalid/setup.exe", "size": 100 },
+        { "name": "VoiceTyper-3.0.1-x86_64.AppImage",
+          "browser_download_url": "https://example.invalid/voice.AppImage", "size": 200,
+          "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+        { "name": "VoiceTyper-3.0.1-x86_64.AppImage.sha256",
+          "browser_download_url": "https://example.invalid/voice.AppImage.sha256", "size": 80 }
+      ]
+    })json";
+    const platform::UpdateCheckResult result
+        = parse_latest_release(json, "3.0.0", UpdateAssetKind::appimage);
+    check(result.is_available(), "the AppImage asset is selected for a Linux check");
+    if (!result.update.has_value()) {
+        ++failures;
+        std::cerr << "FAIL the AppImage result carries an UpdateInfo\n";
+        return;
+    }
+    check(result.update->installer_url.has_value()
+            && *result.update->installer_url == "https://example.invalid/voice.AppImage",
+        "the download URL is the AppImage, not the installer");
+    check(result.update->sha256.has_value()
+            && *result.update->sha256
+                == "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "the sha256 comes from the asset digest");
+    check(result.update->size_bytes.has_value() && *result.update->size_bytes == 200ULL,
+        "the AppImage asset size is carried through");
+}
+
+void check_appimage_release_without_appimage_fails()
+{
+    const platform::UpdateCheckResult result
+        = parse_latest_release(kNewerRelease, "1.1.3", UpdateAssetKind::appimage);
+    check(result.is_failed(), "a release with only a Setup asset fails a Linux check");
+}
+
+void check_digest_wins_over_the_body_marker()
+{
+    const std::string json = R"json({
+      "tag_name": "v1.3.0",
+      "body": "SHA256: 0123456789ABCDEF0123456789abcdef0123456789ABCDEF0123456789abcdef\n",
+      "assets": [
+        { "name": "VoiceTyper-1.3.0-Setup.exe",
+          "browser_download_url": "https://example.invalid/setup.exe", "size": 100,
+          "digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" }
+      ]
+    })json";
+    const platform::UpdateCheckResult result = parse_latest_release(json, "1.2.0");
+    check(result.is_available() && result.update.has_value(), "the digest release is available");
+    if (!result.update.has_value()) {
+        ++failures;
+        std::cerr << "FAIL the digest release carries an UpdateInfo\n";
+        return;
+    }
+    check(result.update->sha256.has_value()
+            && *result.update->sha256
+                == "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "the asset digest is preferred over the body marker");
+}
+
 int main()
 {
     sha256_vectors();
@@ -547,6 +613,9 @@ int main()
     check_malformed_and_blank_input_fail();
     check_non_string_tag_is_not_an_exception();
     check_missing_optional_fields();
+    check_appimage_asset_is_selected_for_linux();
+    check_appimage_release_without_appimage_fails();
+    check_digest_wins_over_the_body_marker();
     check_http_status_mapping();
     check_setup_asset_names();
     check_version_comparison();

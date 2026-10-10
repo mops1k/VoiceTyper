@@ -58,6 +58,39 @@ constexpr double kLargestSizeExclusive = 18446744073709551616.0; // 2^64
     return pattern;
 }
 
+[[nodiscard]] const QRegularExpression& appimage_asset_pattern()
+{
+    static const QRegularExpression pattern(QString::fromUtf8(
+        kAppImageAssetRegex.data(), static_cast<qsizetype>(kAppImageAssetRegex.size())));
+    return pattern;
+}
+
+/// The `digest` field of a release asset: "sha256:<64 hex characters>". GitHub
+/// publishes it for every uploaded asset, which is what makes a download verifiable
+/// without a second request for the .sha256 companion file. Absent (older API
+/// responses, empty field) or malformed digests are simply not used, and the body
+/// marker remains the fallback.
+[[nodiscard]] std::optional<std::string> parse_asset_digest(const QJsonValue& value)
+{
+    if (!value.isString()) {
+        return std::nullopt;
+    }
+    const std::string digest = value.toString().toStdString();
+    constexpr std::string_view prefix = "sha256:";
+    if (digest.size() != prefix.size() + 64 || digest.compare(0, prefix.size(), prefix) != 0) {
+        return std::nullopt;
+    }
+    for (std::size_t index = prefix.size(); index < digest.size(); ++index) {
+        const char character = digest[index];
+        const bool hex = (character >= '0' && character <= '9') || (character >= 'a' && character <= 'f')
+            || (character >= 'A' && character <= 'F');
+        if (!hex) {
+            return std::nullopt;
+        }
+    }
+    return digest.substr(prefix.size());
+}
+
 [[nodiscard]] QString to_qstring(std::string_view text)
 {
     return QString::fromUtf8(text.data(), static_cast<qsizetype>(text.size()));
@@ -73,8 +106,22 @@ bool is_setup_asset_name(std::string_view asset_name)
     return setup_asset_pattern().match(to_qstring(asset_name)).hasMatch();
 }
 
-platform::UpdateCheckResult parse_latest_release(std::string_view json, std::string_view current_version)
+bool is_appimage_asset_name(std::string_view asset_name)
 {
+    if (asset_name.empty()) {
+        return false;
+    }
+    return appimage_asset_pattern().match(to_qstring(asset_name)).hasMatch();
+}
+
+platform::UpdateCheckResult parse_latest_release(
+    std::string_view json, std::string_view current_version, UpdateAssetKind asset_kind)
+{
+    const bool linux_asset = asset_kind == UpdateAssetKind::appimage;
+    const std::string_view missing_message
+        = linux_asset ? kUpdateMessageAppImageMissing : kUpdateMessageInstallerMissing;
+    const std::string_view url_missing_message
+        = linux_asset ? kUpdateMessageAppImageUrlMissing : kUpdateMessageInstallerUrlMissing;
     // Blank input is not "a repository with no release": it is a body that never
     // arrived. QJsonDocument would also reject it, but saying so explicitly keeps
     // the reason independent of the JSON library's whitespace rules.
@@ -109,11 +156,12 @@ platform::UpdateCheckResult parse_latest_release(std::string_view json, std::str
 
     const QJsonValue assets_value = root.value(QStringLiteral("assets"));
     if (!assets_value.isArray()) {
-        return failed(kUpdateMessageInstallerMissing);
+        return failed(missing_message);
     }
 
     std::optional<std::string> installer_url;
     std::optional<std::uint64_t> size_bytes;
+    std::optional<std::string> asset_digest;
     bool asset_found = false;
     for (const QJsonValue& item : assets_value.toArray()) {
         const QJsonObject asset = item.toObject();
@@ -122,7 +170,8 @@ platform::UpdateCheckResult parse_latest_release(std::string_view json, std::str
             continue;
         }
         const std::string name = name_value.toString().toStdString();
-        if (is_blank(name) || !is_setup_asset_name(name)) {
+        const bool matches = linux_asset ? is_appimage_asset_name(name) : is_setup_asset_name(name);
+        if (is_blank(name) || !matches) {
             continue;
         }
 
@@ -144,15 +193,17 @@ platform::UpdateCheckResult parse_latest_release(std::string_view json, std::str
             }
         }
 
+        asset_digest = parse_asset_digest(asset.value(QStringLiteral("digest")));
+
         asset_found = true;
         break;
     }
 
     if (!asset_found) {
-        return failed(kUpdateMessageInstallerMissing);
+        return failed(missing_message);
     }
     if (!installer_url.has_value()) {
-        return failed(kUpdateMessageInstallerUrlMissing);
+        return failed(url_missing_message);
     }
 
     // Asset and URL first, then the comparison: a release with no installer is a
@@ -164,7 +215,10 @@ platform::UpdateCheckResult parse_latest_release(std::string_view json, std::str
     UpdateInfo info;
     info.version = version;
     info.installer_url = installer_url;
-    info.sha256 = platform::extract_release_sha256(release_notes);
+    // The asset digest is the authority when GitHub publishes it; the body marker
+    // (the .NET build's only source) stays as the fallback.
+    info.sha256 = asset_digest.has_value() ? asset_digest
+                                           : platform::extract_release_sha256(release_notes);
     info.size_bytes = size_bytes;
     if (has_notes) {
         info.release_notes = release_notes;

@@ -77,7 +77,9 @@ The branch has no `origin/feature/multiplatform-core-split` ref. It is a behavio
 
 - `continuous-mode-plan.md` describes a fourth Continuous mode, but it is not implemented on current `main`; keep it as a future feature.
 - Pixel-perfect Avalonia styling, toast animation and icon theme are non-blocking if workflows, accessibility and layout remain equivalent.
-- Linux native self-update is intentionally not part of the old feature branch; C++ Linux must document package-manager update semantics rather than promise Windows-style self-update.
+- Linux self-update is implemented differently from Windows, not skipped: the AppImage the process
+  was started from is replaced in place (download → sha256 → rename → restart, VT-SYS-014), and a
+  build that is not an AppImage (source tree, distribution package) opens the release page instead.
 
 ## Parity gate
 

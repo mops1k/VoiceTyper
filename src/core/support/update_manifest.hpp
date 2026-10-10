@@ -30,6 +30,7 @@
 
 #include "platform/api/updater.hpp"
 
+#include <cstdint>
 #include <optional>
 #include <string_view>
 
@@ -39,6 +40,18 @@ namespace voicetyper::core::support {
 /// compatibility-contracts.md §8 "Release query". Kept as text so the contract
 /// test can pin the regex itself, not only its behaviour.
 inline constexpr std::string_view kSetupAssetRegex = R"(^VoiceTyper-\d[^/]*?-Setup\.exe$)";
+
+/// The Linux asset pattern: the AppImage a Linux build replaces itself with. The
+/// two patterns are mutually exclusive, so a release is queried for the asset the
+/// running platform can actually use.
+inline constexpr std::string_view kAppImageAssetRegex = R"(^VoiceTyper-\d[^/]*?-x86_64\.AppImage$)";
+
+/// Which release asset the caller needs. Windows updates through the Inno Setup
+/// installer, Linux through the AppImage; the parsing rules are otherwise the same.
+enum class UpdateAssetKind : std::uint8_t {
+    setup_installer = 0,
+    appimage = 1,
+};
 
 // Failure texts of the release query. The .NET service produced user-facing
 // Russian strings; the C++ core layer keeps diagnostics in English, the way
@@ -57,12 +70,19 @@ inline constexpr std::string_view kUpdateMessageMalformedResponse = "Invalid ser
 inline constexpr std::string_view kUpdateMessageInstallerMissing = "Installer not found in the release.";
 /// The matching asset exists but names no download URL.
 inline constexpr std::string_view kUpdateMessageInstallerUrlMissing = "The installer has no download URL.";
+/// No asset matches kAppImageAssetRegex.
+inline constexpr std::string_view kUpdateMessageAppImageMissing = "AppImage not found in the release.";
+/// The matching AppImage asset exists but names no download URL.
+inline constexpr std::string_view kUpdateMessageAppImageUrlMissing = "The AppImage has no download URL.";
 
 /// True when `asset_name` identifies the Inno Setup installer.
 ///
 /// Matches `Regex.IsMatch(name, @"^VoiceTyper-\d[^/]*?-Setup\.exe$")` exactly
 /// (a digit right after the prefix, no '/' in between, anchored at both ends).
 [[nodiscard]] bool is_setup_asset_name(std::string_view asset_name);
+
+/// True when `asset_name` identifies the Linux AppImage asset.
+[[nodiscard]] bool is_appimage_asset_name(std::string_view asset_name);
 
 /// Parses one GitHub "releases/latest" body and decides whether it offers a
 /// version newer than `current_version`.
@@ -74,7 +94,8 @@ inline constexpr std::string_view kUpdateMessageInstallerUrlMissing = "The insta
 /// asset and URL first, SHA marker, then the version comparison - so a release
 /// with no installer is a failure even when its tag is not newer.
 [[nodiscard]] platform::UpdateCheckResult parse_latest_release(
-    std::string_view json, std::string_view current_version);
+    std::string_view json, std::string_view current_version,
+    UpdateAssetKind asset_kind = UpdateAssetKind::setup_installer);
 
 /// The failure a non-success release-query status maps to, or nullopt for 2xx,
 /// where the caller parses the body.

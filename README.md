@@ -68,7 +68,10 @@ To remove it, use the usual "Apps" page in Windows settings.
 
 On Linux every release also carries `VoiceTyper-<version>-x86_64.AppImage` (about 51 MB) with a
 `.sha256` file: make it executable and run it — no installation, and the models are downloaded on
-first use. To build it (or the application) from source, see [docs/build.md](docs/build.md).
+first use. The AppImage updates itself: the About page downloads the new image, verifies its
+sha256, replaces the running file and restarts the application (a build that was not started from
+an AppImage opens the release page instead). To build it (or the application) from source, see
+[docs/build.md](docs/build.md).
 
 ## Requirements
 

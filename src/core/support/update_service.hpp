@@ -16,6 +16,8 @@
 #include "platform/api/http.hpp"
 #include "platform/api/updater.hpp"
 
+#include "core/support/update_manifest.hpp"
+
 #include <cstdint>
 #include <filesystem>
 #include <functional>
@@ -35,8 +37,12 @@ using UpdateProgress = std::function<void(std::uint64_t received, std::uint64_t 
 
 class UpdateService {
 public:
+    /// `asset_kind` selects the release asset the caller can use: the Windows build
+    /// updates through the Inno Setup installer, the Linux build through the
+    /// AppImage (VT-SYS-014). Everything else about the query is identical.
     UpdateService(platform::HttpClient& http, std::string current_version,
-        std::string release_url = std::string(kUpdateLatestReleaseUrl));
+        std::string release_url = std::string(kUpdateLatestReleaseUrl),
+        UpdateAssetKind asset_kind = UpdateAssetKind::setup_installer);
 
     UpdateService(const UpdateService&) = delete;
     UpdateService& operator=(const UpdateService&) = delete;
@@ -59,11 +65,13 @@ public:
 
     [[nodiscard]] const std::string& current_version() const noexcept { return current_version_; }
     [[nodiscard]] const std::string& release_url() const noexcept { return release_url_; }
+    [[nodiscard]] UpdateAssetKind asset_kind() const noexcept { return asset_kind_; }
 
 private:
     platform::HttpClient& http_;
     std::string current_version_;
     std::string release_url_;
+    UpdateAssetKind asset_kind_;
 };
 
 } // namespace voicetyper::core::support

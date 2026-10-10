@@ -38,7 +38,7 @@
 | `StatusOverlay` | [api/status_overlay.hpp](../../src/platform/api/status_overlay.hpp) | `app/status_overlay.*` (Qt) | `app/status_overlay.*` (Qt, host-window on Wayland) | ✓ (offscreen in tests) |
 | `Transcriber` | [api/transcriber.hpp](../../src/platform/api/transcriber.hpp) | `asr::*` | `asr::*` (Whisper, Parakeet, GigaAM) | ✓ (policy) |
 | `Tray` | [api/tray.hpp](../../src/platform/api/tray.hpp) | **none** (⚠ G-3: `app/tray_controller.*` is a Qt class that does not inherit the port) | **none** (same) | — |
-| `UpdateService` | [api/updater.hpp](../../src/platform/api/updater.hpp) | **none** (⚠ G-3: `core::support::UpdateService` is its own class, not a `platform::UpdateService` subclass) | **none** (same; the install action opens the release page, VT-SYS-014) | ✓ (policy) |
+| `UpdateService` | [api/updater.hpp](../../src/platform/api/updater.hpp) | **none** (⚠ G-3: `core::support::UpdateService` is its own class, not a `platform::UpdateService` subclass) | **none** (same; the install action replaces the running AppImage, VT-SYS-014) | ✓ (policy) |
 
 ---
 

@@ -18,6 +18,7 @@
 #include "app/application_font.hpp"
 #include "app/qt_http_client.hpp"
 #include "app/ui_text.hpp"
+#include "core/support/appimage_update.hpp"
 #include "core/support/model_download_service.hpp"
 #include "core/support/update_service.hpp"
 #include "platform/api/capture_guard.hpp"
@@ -56,6 +57,7 @@
 
 #include <QApplication>
 #include <QDesktopServices>
+#include <QProcess>
 #include <QUrl>
 #include <QString>
 #include <QIcon>
@@ -1077,34 +1079,92 @@ int run(int argc, char** argv)
             }));
         }));
     };
-    services.update_install = [&logger, &update_executor, &ui_executor, &application, &presenter](
+    services.update_install = [&logger, &update_executor, &ui_executor, &application](
                                  std::function<void(int, QString, QString)> progress) {
         static_cast<void>(update_executor.post([&logger, &ui_executor, &application,
                                                    progress = std::move(progress)] {
             app::QtHttpClient http;
             const auto version = domain::version();
-            core::support::UpdateService service(http, std::string(version));
+
+            // Linux updates by replacing the AppImage this process was started from:
+            // the runtime exports APPIMAGE, and renaming a fresh file over the running
+            // one is atomic - the process keeps the old image mapped, so nothing it
+            // still needs disappears. A build that was not started from an AppImage
+            // (source tree, distribution package) has no target, and keeps the old
+            // behaviour: open the release page and say why (VT-SYS-014).
+            const auto target = core::support::resolve_appimage_update_target(
+                qEnvironmentVariable("APPIMAGE").toStdString());
+
+            if (!target.has_value()) {
+                core::support::UpdateService service(http, std::string(version));
+                const auto result = service.check(domain::CancellationToken{});
+                const QString release_url = result.update.has_value()
+                        && result.update->installer_url.has_value()
+                    ? QString::fromStdString(*result.update->installer_url)
+                    : QStringLiteral("https://github.com/mops1k/VoiceTyper/releases/latest");
+                static_cast<void>(logger.write(platform::LogLevel::info, "update install",
+                    "not an AppImage run (APPIMAGE is empty); opening "
+                        + release_url.toStdString()));
+                static_cast<void>(ui_executor.post([progress, release_url] {
+                    static_cast<void>(QDesktopServices::openUrl(QUrl(release_url)));
+                    progress(100, QStringLiteral("done"), QString());
+                }));
+                return;
+            }
+
+            core::support::UpdateService service(http, std::string(version),
+                std::string(core::support::kUpdateLatestReleaseUrl),
+                core::support::UpdateAssetKind::appimage);
             const auto result = service.check(domain::CancellationToken{});
             if (!result.is_available() || !result.update.has_value()) {
                 const QString error = QString::fromStdString(
                     result.is_failed() ? result.error : std::string("no update available"));
-                static_cast<void>(ui_executor.post([progress, error] { progress(-1, QStringLiteral("download"), error); }));
+                static_cast<void>(logger.write(platform::LogLevel::warn, "update install",
+                    error.toStdString()));
+                static_cast<void>(ui_executor.post(
+                    [progress, error] { progress(-1, QStringLiteral("download"), error); }));
                 return;
             }
-            // Linux has no Windows-style self-update: the product is installed by
-            // the package manager or from the release page, and replacing a
-            // running binary is the package manager's job (feature-parity.md,
-            // "Current gaps that are not parity blockers yet"). The install action
-            // therefore opens the release page and says so, instead of downloading
-            // an installer this platform cannot run.
-            const QString release_url = result.update->installer_url.has_value()
-                ? QString::fromStdString(*result.update->installer_url)
-                : QStringLiteral("https://github.com/mops1k/VoiceTyper/releases/latest");
+
+            const platform::UpdateInfo info = *result.update;
+            const auto downloaded = service.download(info, target->download,
+                [&ui_executor, progress](std::uint64_t received, std::uint64_t total) {
+                    const int percent
+                        = total > 0 ? static_cast<int>((received * 100) / total) : 0;
+                    static_cast<void>(ui_executor.post([progress, percent] {
+                        progress(percent, QStringLiteral("download"), QString());
+                    }));
+                },
+                domain::CancellationToken{});
+            if (downloaded.is_error()) {
+                const QString error = QString::fromStdString(downloaded.error().to_string());
+                static_cast<void>(logger.write(platform::LogLevel::error,
+                    "update download failed", error.toStdString()));
+                static_cast<void>(ui_executor.post(
+                    [progress, error] { progress(-1, QStringLiteral("download"), error); }));
+                return;
+            }
+
+            const auto replaced
+                = core::support::replace_appimage(target->download, target->image);
+            if (replaced.is_error()) {
+                const QString error = QString::fromStdString(replaced.error().to_string());
+                static_cast<void>(logger.write(platform::LogLevel::error,
+                    "update install failed", error.toStdString()));
+                static_cast<void>(ui_executor.post(
+                    [progress, error] { progress(-1, QStringLiteral("install"), error); }));
+                return;
+            }
+
+            const QString image_path = QString::fromStdString(target->image.string());
             static_cast<void>(logger.write(platform::LogLevel::info, "update install",
-                "this platform updates through the package manager; opening " + release_url.toStdString()));
-            static_cast<void>(ui_executor.post([progress, release_url] {
-                static_cast<void>(QDesktopServices::openUrl(QUrl(release_url)));
+                "replaced " + target->image.string() + " with " + info.version + ", restarting"));
+            static_cast<void>(ui_executor.post([progress, image_path, &application] {
                 progress(100, QStringLiteral("done"), QString());
+                // The user has to end up in the new version: start the replaced image
+                // and leave, since this process still runs the old one.
+                static_cast<void>(QProcess::startDetached(image_path, QStringList{}));
+                application.quit();
             }));
         }));
     };

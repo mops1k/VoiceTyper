@@ -58,6 +58,7 @@
 #include <QApplication>
 #include <QDesktopServices>
 #include <QProcess>
+#include <QProcessEnvironment>
 #include <QUrl>
 #include <QString>
 #include <QIcon>
@@ -480,6 +481,15 @@ int run(int argc, char** argv)
     platform::linuxos::LinuxClipboard clipboard;
     platform::linuxos::LinuxPasteSimulator paste;
     platform::LinuxExecutor ui_executor;
+    // Work that touches widgets must run on the Qt thread: a widget read or written
+    // from a worker is a data race and, in Qt's own words, a hard error. This
+    // executor is a separate thread, so UI results are handed over through
+    // QMetaObject::invokeMethod with a queued connection - the project's established
+    // way (see StatusChannel::post) - and QApplication lives on that thread.
+    const auto post_to_ui = [&application](std::function<void()> task) {
+        QMetaObject::invokeMethod(
+            &application, [task = std::move(task)] { task(); }, Qt::QueuedConnection);
+    };
     domain::RetryingClipboard retrying(clipboard, clock);
     domain::TextOutputService output(retrying, paste, clock, ui_executor);
     // Why the text did or did not reach the document. "Pasted" and "only on the
@@ -1042,9 +1052,9 @@ int run(int argc, char** argv)
         const auto text = domain::version();
         return QString::fromUtf8(text.data(), static_cast<int>(text.size()));
     };
-    services.update_check = [&logger, &update_executor, &ui_executor](
+    services.update_check = [&logger, &update_executor, &post_to_ui](
                                 std::function<void(bool, QString, QString, QString)> report) {
-        static_cast<void>(update_executor.post([&logger, &ui_executor, report = std::move(report)] {
+        static_cast<void>(update_executor.post([&logger, &post_to_ui, report = std::move(report)] {
             // The client is created here, on this worker: QNetworkAccessManager has
             // thread affinity and the UI thread must never block on a request.
             app::QtHttpClient http;
@@ -1073,15 +1083,15 @@ int run(int argc, char** argv)
                 ? QString::fromStdString(*result.update->release_notes).left(600)
                 : QString();
             const QString error = result.is_failed() ? QString::fromStdString(result.error) : QString();
-            static_cast<void>(ui_executor.post([report, available = result.is_available(), version_text,
-                                                   notes, error] {
+            static_cast<void>(post_to_ui([report, available = result.is_available(), version_text,
+                                             notes, error] {
                 report(available, version_text, notes, error);
             }));
         }));
     };
-    services.update_install = [&logger, &update_executor, &ui_executor, &application](
+    services.update_install = [&logger, &update_executor, &post_to_ui, &application](
                                  std::function<void(int, QString, QString)> progress) {
-        static_cast<void>(update_executor.post([&logger, &ui_executor, &application,
+        static_cast<void>(update_executor.post([&logger, &post_to_ui, &application,
                                                    progress = std::move(progress)] {
             app::QtHttpClient http;
             const auto version = domain::version();
@@ -1105,7 +1115,7 @@ int run(int argc, char** argv)
                 static_cast<void>(logger.write(platform::LogLevel::info, "update install",
                     "not an AppImage run (APPIMAGE is empty); opening "
                         + release_url.toStdString()));
-                static_cast<void>(ui_executor.post([progress, release_url] {
+                static_cast<void>(post_to_ui([progress, release_url] {
                     static_cast<void>(QDesktopServices::openUrl(QUrl(release_url)));
                     progress(100, QStringLiteral("done"), QString());
                 }));
@@ -1121,26 +1131,34 @@ int run(int argc, char** argv)
                     result.is_failed() ? result.error : std::string("no update available"));
                 static_cast<void>(logger.write(platform::LogLevel::warn, "update install",
                     error.toStdString()));
-                static_cast<void>(ui_executor.post(
+                static_cast<void>(post_to_ui(
                     [progress, error] { progress(-1, QStringLiteral("download"), error); }));
                 return;
             }
 
             const platform::UpdateInfo info = *result.update;
+            // The download reports every chunk; the UI needs whole percents only, and
+            // a few thousand queued events would flood the Qt thread for nothing.
+            auto last_percent = std::make_shared<int>(-1);
             const auto downloaded = service.download(info, target->download,
-                [&ui_executor, progress](std::uint64_t received, std::uint64_t total) {
+                [&post_to_ui, progress, last_percent](
+                    std::uint64_t received, std::uint64_t total) {
                     const int percent
                         = total > 0 ? static_cast<int>((received * 100) / total) : 0;
-                    static_cast<void>(ui_executor.post([progress, percent] {
+                    if (percent == *last_percent) {
+                        return;
+                    }
+                    *last_percent = percent;
+                    post_to_ui([progress, percent] {
                         progress(percent, QStringLiteral("download"), QString());
-                    }));
+                    });
                 },
                 domain::CancellationToken{});
             if (downloaded.is_error()) {
                 const QString error = QString::fromStdString(downloaded.error().to_string());
                 static_cast<void>(logger.write(platform::LogLevel::error,
                     "update download failed", error.toStdString()));
-                static_cast<void>(ui_executor.post(
+                static_cast<void>(post_to_ui(
                     [progress, error] { progress(-1, QStringLiteral("download"), error); }));
                 return;
             }
@@ -1151,7 +1169,7 @@ int run(int argc, char** argv)
                 const QString error = QString::fromStdString(replaced.error().to_string());
                 static_cast<void>(logger.write(platform::LogLevel::error,
                     "update install failed", error.toStdString()));
-                static_cast<void>(ui_executor.post(
+                static_cast<void>(post_to_ui(
                     [progress, error] { progress(-1, QStringLiteral("install"), error); }));
                 return;
             }
@@ -1159,11 +1177,27 @@ int run(int argc, char** argv)
             const QString image_path = QString::fromStdString(target->image.string());
             static_cast<void>(logger.write(platform::LogLevel::info, "update install",
                 "replaced " + target->image.string() + " with " + info.version + ", restarting"));
-            static_cast<void>(ui_executor.post([progress, image_path, &application] {
+            static_cast<void>(post_to_ui([progress, image_path, &application] {
                 progress(100, QStringLiteral("done"), QString());
                 // The user has to end up in the new version: start the replaced image
                 // and leave, since this process still runs the old one.
-                static_cast<void>(QProcess::startDetached(image_path, QStringList{}));
+                //
+                // The environment is cleaned first. This process was started by the
+                // AppImage runtime, which exported APPDIR and the paths of the mount
+                // that is going away; a restarted image inherits them, AppRun keeps a
+                // stale APPDIR (it only sets one that is unset) and the new process
+                // then cannot find its own Qt plugins - observed live as
+                // "Could not find the Qt platform plugin \"wayland\"" followed by a
+                // qFatal abort, which looked like a failed self-update.
+                QProcess restart;
+                QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
+                for (const char* name : {"APPDIR", "APPIMAGE", "OWD", "ARGV0", "LD_LIBRARY_PATH",
+                         "QT_PLUGIN_PATH", "QT_QPA_PLATFORM_PLUGIN_PATH"}) {
+                    environment.remove(QLatin1String(name));
+                }
+                restart.setProcessEnvironment(environment);
+                restart.setProgram(image_path);
+                static_cast<void>(restart.startDetached());
                 application.quit();
             }));
         }));

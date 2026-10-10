@@ -886,18 +886,25 @@ if(VOICETYPER_BUILD_TESTS)
             TIMEOUT 60
         )
 
-        # The AppImage file mechanics: which file to replace and how. File-system
-        # only, so it runs on both platforms even though the flow is Linux-only.
-        add_executable(voicetyper-appimage-update-contract EXCLUDE_FROM_ALL
-            tests/contract/appimage_update_contract.cpp
-        )
-        target_link_libraries(voicetyper-appimage-update-contract PRIVATE voicetyper_update)
-        voicetyper_set_warnings(voicetyper-appimage-update-contract)
-        add_test(NAME appimage-update-contract COMMAND voicetyper-appimage-update-contract)
-        set_tests_properties(appimage-update-contract PROPERTIES
-            PASS_REGULAR_EXPRESSION "appimage-update-contract: OK"
-            TIMEOUT 60
-        )
+        # The AppImage file mechanics: which file to replace and how. Linux only, for
+        # two reasons: the flow exists only there, and the contract asserts POSIX
+        # details Windows does not have - the executable bits of the replaced image
+        # and rename replacing an existing file (Windows rename refuses that).
+        if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+            add_executable(voicetyper-appimage-update-contract EXCLUDE_FROM_ALL
+                tests/contract/appimage_update_contract.cpp
+            )
+            target_link_libraries(voicetyper-appimage-update-contract PRIVATE voicetyper_update)
+            voicetyper_set_warnings(voicetyper-appimage-update-contract)
+            add_test(NAME appimage-update-contract COMMAND voicetyper-appimage-update-contract)
+            set_tests_properties(appimage-update-contract PROPERTIES
+                PASS_REGULAR_EXPRESSION "appimage-update-contract: OK"
+                TIMEOUT 60
+            )
+            if(TARGET voicetyper-tests)
+                add_dependencies(voicetyper-tests voicetyper-appimage-update-contract)
+            endif()
+        endif()
     endif()
 
     # Re-runs the contract-header include audit as a test, so a header that
@@ -1474,7 +1481,6 @@ add_custom_target(voicetyper-tests
         voicetyper-platform-contract-smoke
         voicetyper-executor-contract
         voicetyper-update-contract
-        voicetyper-appimage-update-contract
         voicetyper-native-dependency-contract
         voicetyper-whisper-native-contract
 

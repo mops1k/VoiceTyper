@@ -92,6 +92,27 @@ fi
     --icon-file "$icon_file" \
     --plugin qt
 
+# linuxdeploy leaves AppRun as a symlink to the executable because its Qt plugin
+# skips the AppRun hook on Qt 6 ("skipping AppRun hook creation on Qt 6"), so
+# nothing sets the bundled library and plugin paths. Such an image starts only when
+# the caller happens to have those variables in the environment already - a plain
+# double-click fails with "Could not find the Qt platform plugin", and so did the
+# image restarted by the self-update. The hook is therefore written here.
+rm -f "$appdir/AppRun"
+cat > "$appdir/AppRun" <<'APPRUN'
+#!/bin/sh
+# The AppDir this file lives in. It is resolved from the file itself, so an
+# inherited APPDIR from a previous mount cannot survive into the new process.
+HERE="$(dirname "$(readlink -f "${0}")")"
+export APPDIR="${HERE}"
+export PATH="${APPDIR}/usr/bin:${PATH}"
+export LD_LIBRARY_PATH="${APPDIR}/usr/lib:${APPDIR}/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+export QT_PLUGIN_PATH="${APPDIR}/usr/plugins"
+export QT_QPA_PLATFORM_PLUGIN_PATH="${APPDIR}/usr/plugins/platforms"
+exec "${APPDIR}/usr/bin/voicetyper-qt-shell" "$@"
+APPRUN
+chmod 0755 "$appdir/AppRun"
+
 # linuxdeploy's Qt plugin deploys the platform plugins it derives from the linked
 # modules, and it left the Wayland one out - without it the AppImage cannot start
 # in a Wayland session. EXTRA_QT_PLUGINS did not change that, so copy it here.

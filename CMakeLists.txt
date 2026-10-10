@@ -1004,7 +1004,11 @@ if(VOICETYPER_BUILD_TESTS)
     endif()
 endif()
 
-install(TARGETS voicetyper-diagnostics RUNTIME DESTINATION bin COMPONENT runtime)
+# The diagnostics tool is a developer/CI instrument, not part of what an end user
+# runs: it lives in its own component so `cmake --install --component runtime` (the
+# AppImage build) neither installs it nor fails when the release job - which builds
+# only voicetyper-qt-shell and the engines - never produced the binary.
+install(TARGETS voicetyper-diagnostics RUNTIME DESTINATION bin COMPONENT diagnostics)
 if(VOICETYPER_BUILD_GUI)
     install(TARGETS voicetyper-qt-shell RUNTIME DESTINATION bin COMPONENT runtime)
 endif()

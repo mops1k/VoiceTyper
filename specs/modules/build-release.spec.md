@@ -106,10 +106,13 @@ verification, portable header audit), `installer/`, `.github/workflows/`, `tests
   NOT require the shipped Windows DLLs; the native pin audit of VT-BLD-301 stays Windows-only.
 - **VT-BLD-211.** A Linux release MUST publish `VoiceTyper-<version>-x86_64.AppImage` next to the
   Windows installer, with a `.sha256` file beside it, built by
-  `packaging/appimage/build-appimage.sh` from the `runtime` install component. The AppImage MUST
-  contain the application, the engine shared objects (`libparakeet.so`, `libtranscribe.so`,
-  `libggml*.so`) beside the executable, and the Qt platform plugins for Wayland **and** X11
-  (`libqwayland.so`, `libqxcb.so`) plus LayerShellQt and libpulse.
+  `packaging/appimage/build-appimage.sh` from the `runtime` install component. That component MUST
+  contain the application, the desktop entry, the icon and the engine shared objects
+  (`libparakeet.so`, `libtranscribe.so`, `libggml*.so`) beside the executable, and the AppImage
+  MUST additionally carry the Qt platform plugins for Wayland **and** X11
+  (`libqwayland.so`, `libqxcb.so`) plus LayerShellQt and libpulse. The diagnostics tool is a
+  developer instrument and MUST live in its own `diagnostics` component, so the runtime install
+  neither ships it nor fails when a release job did not build it.
 - **VT-BLD-212.** The AppImage MUST NOT contain the Qt modules the application never loads (Qml,
   Quick, Pdf, PrintSupport), the Qt Virtual Keyboard plugin, the KDE image-format plugins or the
   network-information plugins; `packaging/appimage/prune-appdir.py` enforces that from the

@@ -92,12 +92,43 @@ fi
     --icon-file "$icon_file" \
     --plugin qt
 
+# linuxdeploy's Qt plugin deploys the platform plugins it derives from the linked
+# modules, and it left the Wayland one out - without it the AppImage cannot start
+# in a Wayland session. EXTRA_QT_PLUGINS did not change that, so copy it here.
+#
+# The platform plugin alone is not enough: Qt Wayland loads its shell, graphics and
+# decoration integrations from separate plugin directories, and without them the
+# platform reports "Loading shell integration failed" (shells tried: xdg-shell,
+# wl-shell, ivi-shell, qt-shell) and the process either falls back to xcb or aborts
+# when the platform was requested explicitly. linuxdeploy does not deploy them,
+# so they are copied here as well.
+if [[ -n "${QMAKE:-}" ]]; then
+    qt_plugins_dir="$("$QMAKE" -query QT_INSTALL_PLUGINS)"
+    if [[ -f "$qt_plugins_dir/platforms/libqwayland.so" ]]; then
+        mkdir -p "$appdir/usr/plugins/platforms"
+        cp -a "$qt_plugins_dir/platforms/libqwayland.so" "$appdir/usr/plugins/platforms/"
+    fi
+    for wayland_subdir in wayland-shell-integration wayland-graphics-integration-client \
+            wayland-decoration-client; do
+        if [[ -d "$qt_plugins_dir/$wayland_subdir" ]]; then
+            mkdir -p "$appdir/usr/plugins/$wayland_subdir"
+            cp -a "$qt_plugins_dir/$wayland_subdir/." "$appdir/usr/plugins/$wayland_subdir/"
+        fi
+    done
+
+    # A second pass deploys the dependencies the copied plugins brought with them
+    # (libwayland-egl, libwayland-cursor, ...). It runs before the AppRun hook below,
+    # because linuxdeploy would replace that hook with its own symlink.
+    "$tools_dir/linuxdeploy" --appdir "$appdir"
+fi
+
 # linuxdeploy leaves AppRun as a symlink to the executable because its Qt plugin
 # skips the AppRun hook on Qt 6 ("skipping AppRun hook creation on Qt 6"), so
 # nothing sets the bundled library and plugin paths. Such an image starts only when
 # the caller happens to have those variables in the environment already - a plain
 # double-click fails with "Could not find the Qt platform plugin", and so did the
-# image restarted by the self-update. The hook is therefore written here.
+# image restarted by the self-update. The hook is therefore written here, after the
+# last linuxdeploy pass.
 rm -f "$appdir/AppRun"
 cat > "$appdir/AppRun" <<'APPRUN'
 #!/bin/sh
@@ -112,17 +143,6 @@ export QT_QPA_PLATFORM_PLUGIN_PATH="${APPDIR}/usr/plugins/platforms"
 exec "${APPDIR}/usr/bin/voicetyper-qt-shell" "$@"
 APPRUN
 chmod 0755 "$appdir/AppRun"
-
-# linuxdeploy's Qt plugin deploys the platform plugins it derives from the linked
-# modules, and it left the Wayland one out - without it the AppImage cannot start
-# in a Wayland session. EXTRA_QT_PLUGINS did not change that, so copy it here.
-if [[ -n "${QMAKE:-}" ]]; then
-    qt_plugins_dir="$("$QMAKE" -query QT_INSTALL_PLUGINS)"
-    if [[ -f "$qt_plugins_dir/platforms/libqwayland.so" ]]; then
-        mkdir -p "$appdir/usr/plugins/platforms"
-        cp -a "$qt_plugins_dir/platforms/libqwayland.so" "$appdir/usr/plugins/platforms/"
-    fi
-fi
 
 # Drop the plugins the application does not use. The Virtual Keyboard plugin drags
 # in Qt Qml and Quick (13 MB), the KDE image formats drag in Pdf, PrintSupport and

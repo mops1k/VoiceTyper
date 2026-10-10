@@ -292,6 +292,11 @@ verification, portable header audit), `installer/`, `.github/workflows/`, `tests
   `native_library_missing` diagnostic) — plus the shared UI suites.
 - **VT-BLD-606b.** The Linux contract tests MUST NOT require the `input` group or a running sound
   server: they skip explicitly (VT-BLD-602), so the suite stays green on a CI container.
+- **VT-BLD-606c.** The Linux job of the C++ Spike workflow MUST run on a hosted runner inside an
+  Arch container (`ubuntu-latest` + `archlinux:base-devel`) and MUST run on every push — not
+  `workflow_dispatch`-only, not `continue-on-error`, and not dependent on a self-hosted runner.
+  It MUST configure, build, build and run the tests with `QT_QPA_PLATFORM=offscreen` (a container
+  has no display) and run the install smoke without selecting a component (VT-BLD-214).
 
 ### Manual Windows smoke
 

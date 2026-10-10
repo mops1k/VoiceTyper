@@ -90,26 +90,30 @@ jobs:
           path: ${{ runner.temp }}\voicetyper-install
 
   arch:
-    name: Arch Linux / Qt 6.11.x (self-hosted, manual)
-    # This job needs a self-hosted runner, and the repository currently has none
-    # (actions/runners -> total_count 0), so on a push it would queue for ever and
-    # hold the whole run's status. It is manual-only and non-blocking until such a
-    # runner is registered; then the if/continue-on-error can be dropped.
-    if: github.event_name == 'workflow_dispatch'
-    continue-on-error: true
-    runs-on: [self-hosted, linux, arch]
-    timeout-minutes: 30
+    name: Arch Linux / Qt 6.11.x (hosted container)
+    # Runs on a hosted runner inside an Arch container: the project needs Qt 6.9+,
+    # which Ubuntu 24.04 does not ship, and the repository has no self-hosted Arch
+    # runner (actions/runners -> total_count 0). Before this, the job was
+    # workflow_dispatch-only with continue-on-error, so the Linux build, its tests
+    # and the install smoke never actually ran on a push.
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:base-devel
+    timeout-minutes: 90
     steps:
+      # The JS actions below (checkout, upload-artifact) run inside this container,
+      # so node has to exist before the first of them starts.
+      - name: prepare the container
+        run: |
+          pacman -Syu --noconfirm --needed nodejs git
+
       - uses: actions/checkout@v4
 
       - name: Install Arch toolchain
-        shell: bash
         run: |
-          if command -v sudo >/dev/null 2>&1; then
-            sudo pacman -Syu --noconfirm git cmake make qt6-base
-          else
-            pacman -Syu --noconfirm git cmake make qt6-base
-          fi
+          pacman -S --noconfirm --needed \
+            cmake make ninja \
+            qt6-base qt6-wayland layer-shell-qt libpulse curl
 
       - name: Configure
         run: cmake --preset linux-arch-release
@@ -121,7 +125,11 @@ jobs:
       - name: Build the tests
         run: cmake --build --preset linux-arch-release --target voicetyper-tests
 
+      # A container has no display, and the UI suites create real widgets, so they
+      # need Qt's offscreen platform; everything else is platform-independent.
       - name: Test
+        env:
+          QT_QPA_PLATFORM: offscreen
         run: ctest --preset linux-arch-release --output-on-failure
 
       - name: Install smoke

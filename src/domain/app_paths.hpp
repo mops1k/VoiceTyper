@@ -46,6 +46,21 @@ using EnvironmentLookup = std::function<std::optional<std::string>(std::string_v
 [[nodiscard]] AppPathRoots windows_app_path_roots(
     const EnvironmentLookup& environment, std::filesystem::path application_directory);
 
+/// The Linux per-user roots, following the XDG Base Directory specification:
+///
+///   settings              -> $XDG_CONFIG_HOME/VoiceTyper/settings.json
+///   models, logs, updates -> $XDG_DATA_HOME/VoiceTyper/...
+///   native libraries      -> `application_directory`
+///
+/// `XDG_CONFIG_HOME` unset or empty falls back to `$HOME/.config`, `XDG_DATA_HOME`
+/// to `$HOME/.local/share`; `HOME` unset falls back to the application directory.
+/// A missing root falls back to the other one and finally to
+/// `application_directory`, so a stripped environment (a systemd user service, a
+/// sandbox) can never produce an empty path. The Windows layout is *not*
+/// reproduced here: a Linux build must not pretend `%APPDATA%` exists.
+[[nodiscard]] AppPathRoots linux_app_path_roots(
+    const EnvironmentLookup& environment, std::filesystem::path application_directory);
+
 /// Concrete immutable Paths value for the roots above. Construction is pure and
 /// const methods are safe from any thread.
 class AppPaths final : public platform::Paths {

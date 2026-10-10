@@ -37,6 +37,16 @@ product-level consequences are:
 - **VT-COR-104.** The composition MUST make the log directory available to the crash guard and
   the wrong-thread diagnostics (`%VOICETYPER_LOG_DIR%` when set, otherwise the executable's
   directory).
+- **VT-COR-105.** On Linux `domain::AppPaths` MUST be constructed from
+  `domain::linux_app_path_roots(environment, executable_directory)` (added 2026-10-10):
+  settings under `$XDG_CONFIG_HOME/VoiceTyper` with the `$HOME/.config` fallback,
+  models/logs/updates under `$XDG_DATA_HOME/VoiceTyper` with the `$HOME/.local/share` fallback,
+  native libraries in the executable's directory. An unset or empty variable MUST be treated as
+  unset, and a fully stripped environment MUST fall back to the executable's directory — never
+  to an empty path ([src/domain/app_paths.cpp](../../src/domain/app_paths.cpp), VT-PLT-1101).
+- **VT-COR-106.** The Linux composition MUST create the settings, models, logs and updates
+  directories before the first write, and `%VOICETYPER_LOG_DIR%` MUST keep overriding the log
+  directory on Linux as well.
 
 ---
 

@@ -227,8 +227,8 @@ the settings presenter, the toggle switch, the fonts and the Qt HTTP client.
   `idle`).
 - **VT-UI-321.** A recording failure MUST be logged; `io_failure` MUST be shown as
   «микрофон недоступен: устройство отключено или занято» (the raw WASAPI detail stays in the
-  log) and any other code as «ошибка: <code_name>»; the overlay MUST show the error state with
-  the detail.
+  log) and any other code as «ошибка: <code_name>» in the window's status line. The overlay MUST
+  NOT show the error: it hides instead (VT-PLT-608).
 - **VT-UI-322.** On success the composition MUST log the trimming numbers and
   `"text delivered"` with the **length only** — never the transcript (VT-SYS-073).
 - **VT-UI-323.** The record button and the footer MUST refresh on a 400 ms timer so a session
@@ -237,7 +237,8 @@ the settings presenter, the toggle switch, the fonts and the Qt HTTP client.
 - **VT-UI-325.** A non-empty status message from a service MUST take priority over the summary
   line and MUST stay until it is explicitly cleared.
 - **VT-UI-326.** The overlay's terminal engine states (`failed`, `unavailable`, `model_missing`)
-  MUST be posted as the overlay error state.
+  MUST NOT be posted as an overlay error state: they go to the status line and the log, and the
+  overlay is hidden (VT-PLT-608).
 
 ---
 
@@ -330,6 +331,9 @@ consequences are:
   pill itself, because the global application stylesheet would otherwise override its colors.
 - **VT-UI-804.** The overlay MUST NOT show recognized text or a level meter, and a `post_state()`
   call after `destroy()` MUST be ignored.
+- **VT-UI-805.** On Wayland the pill MUST be a child of the full-screen click-through host window
+  described in [platform.spec.md](platform.spec.md) §VT-PLT-15xx; the tests address the pill as
+  `statusOverlay` and the host as `statusOverlayHost`.
 
 ---
 
@@ -373,10 +377,16 @@ consequences are:
   `#C5C5C5`, border `#3D3D3D`, accent `#4CC2FF`; light window/control `#FFFFFF`, hover/selection
   `#E8EFF6`, text `#333333`, muted `#6A6A6A`, border `#EFEFEF`, accent `#0067C0`, header
   `#EFF4F9`.
-- **VT-UI-1004.** Icons MUST be drawn geometrically rather than taken from a font: the
-  Segoe MDL2 glyph variant does not render on the reference machine, and the font path clears the
-  icons when the font is absent (⚠ gap G-7: `refresh_nav_icons()` currently overwrites the drawn
-  icons in `apply_theme()`).
+- **VT-UI-1004.** Icons MUST be drawn geometrically rather than taken from a font, and the
+  navigation icons MUST have exactly one painting path: `NavigationIconDelegate`
+  (`src/app/main_window.cpp`) draws the glyph with `paint_drawn_icon` from the page key in
+  `Qt::UserRole + 2`; the item MUST NOT carry a `QPixmap` icon, and no font-glyph path MAY run
+  on a theme change. The row reserves the glyph with `padding-left: 42px` and the glyph is
+  19 px wide, 15 px from the left edge. The former `refresh_nav_icons()` font path (Segoe MDL2
+  Assets, Windows-only) was removed on 2026-10-10 — it made Windows and Linux render different
+  icons and drew a second icon over the delegate's glyph; gap G-7 is closed.
+- **VT-UI-1004a.** A theme change MUST repaint the navigation list (the delegate reads the
+  current text colour) and MUST NOT write icons into the model.
 - **VT-UI-1005.** The bundled Inter family (Regular/Medium/SemiBold/Bold) MUST be registered from
   the Qt resource before any widget is created, and its resource paths MUST stay in step with
   `application_font.cpp`.
@@ -413,7 +423,7 @@ consequences are:
 | Suite | What it pins |
 |---|---|
 | `ui-settings-test` (31 slots) | edit → file → restart round-trips; theme tiles and reset; engine/threshold/best-of reaching the services; microphone persistence across device-less and different-device launches; per-page navigation binding in both languages; footer and control fit at 980×640 and 820×560; hotkey capture; model list exclusivity and per-engine keys; noise reduction placement; downloaded models offer delete; log scroll retention; in-place language switch; every key non-empty; About update controls; hide-on-focus-loss; status pill theme; tray show restores the window; tray menu padding; overlay and tray language; model page language; exact tail of the string table; percentage + cancel; navigation icons; every navigation entry opens its own page; record button disabled without a backend |
-| `ui-status-overlay-test` (8 slots) | idempotent create; frameless/topmost/no-input pill; frozen 350 ms pulse; processing accent and stopped pulse; error persistence; hide/idle; geometry (centred, 26 px above the bottom); worker-thread `post_state()` and terminal `destroy()` |
+| `ui-status-overlay-test` (8 slots) | idempotent create; frameless/topmost/no-input pill; frozen 350 ms pulse; processing accent and stopped pulse; an error hides the overlay; hide/idle; geometry (centred, 26 px above the bottom); worker-thread `post_state()` and terminal `destroy()` |
 | `ui-snapshot` (tool) | renders all 8 pages to PNG offscreen for visual review (not an assertion) |
 
 ---
@@ -429,9 +439,10 @@ consequences are:
 - **G-4.** No `closeEvent` is defined; Alt+F4 behavior relies on Qt defaults and is untested.
 - **G-5.** The result of `presenter.flush()` is discarded, so a failed settings write is invisible.
 - **G-6.** `AppSettings::validate()` is never called from the UI path.
-- **G-7.** Two competing icon implementations exist for the navigation (`refresh_navigation_icons`
-  drawn geometry vs `refresh_nav_icons` font glyphs/clear); the final source depends on the
-  presence of "Segoe MDL2 Assets", and the test does not distinguish a null icon from a valid one.
+- **G-7 (closed 2026-10-10).** Two competing icon implementations existed for the navigation
+  (`refresh_navigation_icons` drawn geometry vs `refresh_nav_icons` font glyphs/clear). The font
+  path was removed; `the_navigation_entries_carry_icons` now asserts the delegate and a non-empty
+  page key instead of a model icon (VT-UI-1004).
 - **G-8.** The "no silent cross-host redirect" rule for the release API is not implemented.
 - **G-9.** `section_title_for()` and `UiKey::k34`, `k41`, `k104` are dead: their UI is not rendered.
 - **G-10.** Comments in `main_window.hpp:301-302` and inside `needs_service_apply()` still claim a

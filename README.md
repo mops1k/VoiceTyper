@@ -66,9 +66,14 @@ The engine and the model are chosen in the application, next to their size and s
 
 To remove it, use the usual "Apps" page in Windows settings.
 
+On Linux there is no installer yet: build the application from source with
+[docs/build.md](docs/build.md) (`cmake --preset linux-arch-release`).
+
 ## Requirements
 
-- Windows 10 or 11, 64-bit.
+- Windows 10 or 11, 64-bit, or Linux: Arch Linux with KDE Plasma 6 (X11 or Wayland), Qt 6.9+.
+  The Linux build needs `libpulse`, the Qt 6 DBus module, readable `/dev/input/event*` for the
+  global hotkeys and `ydotool` for automatic pasting — see [docs/build.md](docs/build.md).
 - An x64 processor. No graphics card needed.
 - Disk space for a model: from 42 MB (Tiny) to about 1 GB (Parakeet q8).
 - A microphone.
@@ -83,7 +88,8 @@ Any combination can be reassigned: the "Record" field in the settings captures t
 
 ## Not done yet
 
-- Only the Windows version is published.
+- Only the Windows version is published; the Linux build (Arch/KDE Plasma 6, Wayland and
+  X11) works from source, and packaging for it is not done yet.
 
 ## Building from source
 

@@ -11,6 +11,7 @@
 #include <mutex>
 #include <string>
 #include <utility>
+#include <vector>
 
 #if defined(_WIN32)
 #    ifndef WIN32_LEAN_AND_MEAN
@@ -22,15 +23,38 @@
 #    include <windows.h>
 #endif
 
+#if defined(__linux__)
+#    include <dlfcn.h>
+#    include <unistd.h>
+#endif
+
 namespace voicetyper::asr {
 namespace {
 
+#if defined(_WIN32) || defined(__linux__)
+
 #if defined(_WIN32)
+using ModuleHandle = HMODULE;
+using LibraryKey = std::wstring;
+#else
+/// The dynamic loader's handle type and the cache key: the same runtime code
+/// serves both platforms, only the loader calls differ.
+using ModuleHandle = void*;
+using LibraryKey = std::string;
+
+/// The shared object the Linux build loads: the same pinned transcribe.cpp
+/// (v0.3.1) as the Windows DLL, built for this platform.
+inline constexpr std::string_view kTranscribeSharedLibraryName = "libtranscribe.so";
+#endif
 
 std::string narrow(const std::filesystem::path& path)
 {
+#if defined(_WIN32)
     const std::u8string utf8 = path.u8string();
     return std::string(reinterpret_cast<const char*>(utf8.data()), utf8.size());
+#else
+    return path.string();
+#endif
 }
 
 std::string trimmed(std::string text)
@@ -130,12 +154,16 @@ struct Symbols {
     decltype(&transcribe_full_text) full_text = nullptr;
 };
 
-void* resolve(HMODULE module, std::string_view name)
+void* resolve(ModuleHandle module, std::string_view name)
 {
+#if defined(_WIN32)
     return reinterpret_cast<void*>(::GetProcAddress(module, std::string(name).c_str()));
+#else
+    return ::dlsym(module, std::string(name).c_str());
+#endif
 }
 
-bool resolve_symbols(HMODULE module, Symbols& symbols, TranscribeProbe& probe)
+bool resolve_symbols(ModuleHandle module, Symbols& symbols, TranscribeProbe& probe)
 {
     const auto bind = [&](std::string_view name, auto& target) {
         target = reinterpret_cast<std::decay_t<decltype(target)>>(resolve(module, name));
@@ -200,7 +228,7 @@ std::string struct_size_problem(const Symbols& symbols)
 /// (and one resolved symbol table) alive until process exit is both the safe and
 /// the cheaper option: one load, one resolution.
 struct LoadedLibrary {
-    HMODULE module = nullptr;
+    ModuleHandle module = nullptr;
     Symbols symbols;
     TranscribeProbe probe;
 };
@@ -208,9 +236,14 @@ struct LoadedLibrary {
 const LoadedLibrary& load_library_once(const std::filesystem::path& dll_path)
 {
     static std::mutex mutex;
-    static std::map<std::wstring, LoadedLibrary> cache;
+    static std::map<LibraryKey, LoadedLibrary> cache;
 
-    const std::wstring key = dll_path.wstring();
+    const LibraryKey key =
+#if defined(_WIN32)
+        dll_path.wstring();
+#else
+        dll_path.string();
+#endif
     std::lock_guard<std::mutex> lock(mutex);
     const auto existing = cache.find(key);
     if (existing != cache.end()) {
@@ -233,6 +266,7 @@ const LoadedLibrary& load_library_once(const std::filesystem::path& dll_path)
     // LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR keeps the runtime's own directory as the
     // dependency search path, so its ggml/standard-library siblings are resolved
     // there and never from an unrelated directory that happens to be on PATH.
+#if defined(_WIN32)
     entry.module = ::LoadLibraryExW(
         dll_path.wstring().c_str(), nullptr,
         LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32);
@@ -241,6 +275,20 @@ const LoadedLibrary& load_library_once(const std::filesystem::path& dll_path)
             + std::to_string(::GetLastError()) + ")";
         return cache.emplace(key, std::move(entry)).first->second;
     }
+#else
+    // RTLD_NOW resolves the whole symbol set at load time, RTLD_GLOBAL makes the
+    // library's own ggml symbols visible to its siblings, and RTLD_NODELETE keeps
+    // it mapped for the process lifetime - the same reason the Windows build
+    // never frees it (ggml installs a terminate handler at load time).
+    entry.module = ::dlopen(dll_path.c_str(), RTLD_NOW | RTLD_GLOBAL | RTLD_NODELETE);
+    if (entry.module == nullptr) {
+        const char* reason = ::dlerror();
+        probe.detail = "dlopen failed for " + dll_path.string() + " ("
+            + (reason != nullptr ? std::string(reason) : std::string("unknown dynamic loader error"))
+            + ")";
+        return cache.emplace(key, std::move(entry)).first->second;
+    }
+#endif
     if (!resolve_symbols(entry.module, entry.symbols, probe)) {
         probe.detail = "the library is not the pinned transcribe.cpp build: missing symbols";
         return cache.emplace(key, std::move(entry)).first->second;
@@ -266,7 +314,7 @@ const LoadedLibrary& load_library_once(const std::filesystem::path& dll_path)
 
 class DllTranscribeEngine final : public TranscribeEngine {
 public:
-    DllTranscribeEngine(HMODULE module, Symbols symbols, int threads)
+    DllTranscribeEngine(ModuleHandle module, Symbols symbols, int threads)
         : module_(module)
         , symbols_(symbols)
         , threads_(threads)
@@ -384,7 +432,7 @@ public:
     }
 
 private:
-    HMODULE module_ = nullptr;
+    ModuleHandle module_ = nullptr;
     Symbols symbols_;
     int threads_ = 0;
     transcribe_session* session_ = nullptr;
@@ -398,7 +446,7 @@ private:
 
 TranscribeProbe probe_transcribe_runtime(const std::filesystem::path& dll_path)
 {
-#if defined(_WIN32)
+#if defined(_WIN32) || defined(__linux__)
     return load_library_once(dll_path).probe;
 #else
     TranscribeProbe probe;
@@ -429,6 +477,36 @@ std::filesystem::path transcribe_library_beside_executable()
     const std::filesystem::path exe_path(buffer);
     return exe_path.parent_path() / std::filesystem::path(kTranscribeLibraryDirectory)
         / std::filesystem::path(kTranscribeLibraryName);
+#elif defined(__linux__)
+    std::vector<char> buffer(1024);
+    while (buffer.size() <= 64 * 1024) {
+        const ssize_t length = ::readlink("/proc/self/exe", buffer.data(), buffer.size() - 1);
+        if (length < 0) {
+            return {};
+        }
+        if (static_cast<std::size_t>(length) < buffer.size() - 1) {
+            buffer[static_cast<std::size_t>(length)] = '\0';
+            const std::filesystem::path exe_path(buffer.data());
+            const std::filesystem::path beside =
+                exe_path.parent_path() / std::filesystem::path(std::string(kTranscribeSharedLibraryName));
+            std::error_code beside_error;
+            if (std::filesystem::exists(beside, beside_error) && !beside_error) {
+                return beside;
+            }
+            // A development build keeps the engine libraries in its own
+            // subdirectory (engine-libs), so the loader looks there before giving
+            // up: the deployed layout and the build layout both work.
+            const std::filesystem::path build_layout = exe_path.parent_path()
+                / "engine-libs" / std::filesystem::path(std::string(kTranscribeSharedLibraryName));
+            std::error_code build_error;
+            if (std::filesystem::exists(build_layout, build_error) && !build_error) {
+                return build_layout;
+            }
+            return beside;
+        }
+        buffer.resize(buffer.size() * 2);
+    }
+    return {};
 #else
     return {};
 #endif
@@ -444,7 +522,7 @@ Result<std::unique_ptr<TranscribeEngine>> open_transcribe_engine(
             cancelled.error().code(), cancelled.error().message());
     }
 
-#if defined(_WIN32)
+#if defined(_WIN32) || defined(__linux__)
     const LoadedLibrary& library = load_library_once(dll_path);
     if (!library.probe.usable) {
         const auto code = library.probe.library_loaded ? ErrorCode::unsupported : ErrorCode::unavailable;

@@ -1,4 +1,4 @@
-// Windows composition root: the single place where the real backends meet the
+// Linux composition root: the single place where the real backends meet the
 // UI. Everything is constructed here and nowhere else, so the order of shutdown
 // is explicit and no service outlives another that it depends on.
 //
@@ -21,7 +21,19 @@
 #include "core/support/model_download_service.hpp"
 #include "core/support/update_service.hpp"
 #include "platform/api/capture_guard.hpp"
-#include "platform/windows/win32_update_launcher.hpp"
+#include "platform/linux/linux_audio_capture.hpp"
+#include "platform/linux/linux_clipboard.hpp"
+#include "platform/linux/linux_executor.hpp"
+#include "platform/linux/linux_hotkeys.hpp"
+#if defined(VOICETYPER_HAS_KGLOBALACCEL)
+#include "platform/linux/linux_kglobalaccel.hpp"
+#endif
+#include "platform/linux/linux_gamepad.hpp"
+#include "platform/linux/linux_microphone.hpp"
+#include "platform/linux/linux_microphone_level.hpp"
+#include "platform/linux/linux_paste.hpp"
+#include "platform/linux/linux_paths.hpp"
+#include "platform/linux/linux_startup.hpp"
 #include "platform/api/microphone_level.hpp"
 #include "app/main_window.hpp"
 #include "app/status_overlay.hpp"
@@ -40,17 +52,11 @@
 #include "domain/terms_dictionary_port.hpp"
 #include "domain/version.hpp"
 #include "domain/text_output.hpp"
-#include "platform/windows/win32_clock.hpp"
-#include "platform/windows/win32_clipboard.hpp"
-#include "platform/windows/win32_executor.hpp"
-#include "platform/windows/win32_file_system.hpp"
-#include "platform/windows/win32_hotkeys.hpp"
-#include "platform/windows/win32_paste.hpp"
-#include "platform/windows/win32_startup.hpp"
-#include "platform/windows/windows_audio_capture.hpp"
-#include "platform/windows/windows_microphone.hpp"
+#include "platform/portable/portable_runtime.hpp"
 
 #include <QApplication>
+#include <QDesktopServices>
+#include <QUrl>
 #include <QString>
 #include <QIcon>
 #include <QLocalSocket>
@@ -90,7 +96,9 @@ QString localized(UiKey key)
 /// `^VoiceTyper-\d[^/]*?-Setup\.exe$` still matches it, and the older .NET asset
 /// `VoiceTyper-1.1.3-Setup.exe` does not), so the installer that replaced the .NET
 /// build can never be installed over the native one by mistake.
-constexpr std::string_view kNativeInstallerMarker = "win64";
+/// Kept for the log wording only: Linux never runs a downloaded installer, so
+/// the marker is not a gate here (the Windows build still enforces it).
+constexpr std::string_view kNativeInstallerMarker = "linux";
 
 /// Stable engine name for logs. A ternary chain here silently reported Parakeet
 /// for every non-Whisper engine, which is exactly the kind of log that makes a
@@ -150,9 +158,9 @@ std::optional<std::string> environment_variable(std::string_view name)
 /// libraries and the last fallback when the environment has no user profile.
 std::filesystem::path executable_directory()
 {
-    const auto module = platform::win32::module_file_path();
-    if (module.is_ok() && !module.value().empty()) {
-        return std::filesystem::path(module.value()).parent_path();
+    const auto module = platform::linuxos::executable_file_path();
+    if (!module.empty()) {
+        return module.parent_path();
     }
     return std::filesystem::current_path();
 }
@@ -299,7 +307,7 @@ int run(int argc, char** argv)
     // Read the launch switch before QApplication gets the chance to rewrite
     // argv. The autostart entry writes exactly this switch, so an autostarted
     // app and a manually started one have to agree on the spelling.
-    const bool start_minimized_switch = platform::win32::wants_start_minimized(argc, argv);
+    const bool start_minimized_switch = platform::linuxos::wants_start_minimized(argc, argv);
     QApplication application(argc, argv);
     // The bundled typeface, before any widget is built.
     voicetyper::app::install_application_font();
@@ -327,13 +335,27 @@ int run(int argc, char** argv)
     // Local one (compatibility-contracts.md §2), and only the shared resolver is
     // allowed to make that decision.
     const domain::AppPaths paths(
-        domain::windows_app_path_roots(environment_variable, executable_directory()));
+        domain::linux_app_path_roots(environment_variable, executable_directory()));
 
-    platform::Win32Clock clock;
-    platform::Win32FileSystem file_system;
+    platform::PortableClock clock;
+    platform::PortableFileSystem file_system;
     // A real log file from the first line of the run: a silent log is how a
     // failed dictation looks like a working app.
     domain::FileLogger logger(log_directory(paths));
+
+    // On a first run the XDG layout does not exist yet, and the probe below
+    // writes into the log directory: the four directories are created once here,
+    // so "settings cannot be saved" can never be caused by a missing directory.
+    for (const auto& directory : {settings_path(paths).parent_path(), models_directory(paths),
+             log_directory(paths), paths.updates_directory()}) {
+        std::error_code directory_error;
+        std::filesystem::create_directories(directory, directory_error);
+        if (directory_error) {
+            static_cast<void>(logger.write(platform::LogLevel::warn,
+                "cannot create application directory",
+                directory.string() + ": " + directory_error.message()));
+        }
+    }
 
     // Prove the filesystem backend can actually write before anything depends on
     // it. Settings saving goes through this port, so a backend that only returns
@@ -386,20 +408,19 @@ int run(int argc, char** argv)
     // nothing. So the entry is *reconciled* against the setting, never merely
     // displayed from it, and a refused write is logged instead of swallowed -
     // the .NET catch-all made a failed write look exactly like a successful one.
-    platform::win32::Win32Startup startup;
+    platform::linuxos::LinuxStartup startup;
 
     const auto autostart_state_text = [&startup] {
         const auto current = startup.read();
         if (current.is_error()) {
-            return "registry=unreadable (" + current.error().to_string() + ")";
+            return "entry=unreadable (" + current.error().to_string() + ")";
         }
         if (!current.value().present) {
             // std::string, not const char*: the other two branches return
             // std::string, and a lambda has one deduced return type.
-            return std::string("registry=absent");
+            return std::string("entry=absent");
         }
-        return "registry=registered command=\"" + platform::win32::to_log_text(current.value().command_line)
-            + "\"";
+        return "entry=registered command=\"" + current.value().command_line + "\"";
     };
 
     // `reconcile_on_launch` separates "the user asked for this" from "the app is
@@ -417,20 +438,21 @@ int run(int argc, char** argv)
 
         if (reconcile_on_launch && applied.start_with_windows) {
             const auto current = startup.read();
-            const auto own_path = platform::win32::module_file_path();
-            if (current.is_ok() && current.value().present && own_path.is_ok()) {
-                const std::wstring target = platform::win32::command_line_executable(current.value().command_line);
+            const auto own_path = platform::linuxos::executable_file_path();
+            if (current.is_ok() && current.value().present && !own_path.empty()) {
+                const std::string target =
+                    platform::linuxos::command_line_executable(current.value().command_line);
                 std::error_code exists_error;
                 const bool target_exists = !target.empty()
                     && std::filesystem::exists(std::filesystem::path(target), exists_error)
                     && !exists_error;
-                if (!platform::win32::launch_may_rewrite(
-                        current.value().command_line, own_path.value(), target_exists)) {
+                if (!platform::linuxos::launch_may_rewrite(
+                        current.value().command_line, own_path.string(), target_exists)) {
                     static_cast<void>(logger.write(
                         platform::LogLevel::warn,
                         "autostart entry belongs to another installation and was left alone",
-                        "registry=\"" + platform::win32::to_log_text(current.value().command_line)
-                            + "\" this=\"" + platform::win32::to_log_text(own_path.value())
+                        "entry=\"" + current.value().command_line
+                            + "\" this=\"" + own_path.string()
                             + "\" (" + localized(UiKey::k14).toStdString()
                             + " to re-register it for this build)"));
                     return;
@@ -453,9 +475,9 @@ int run(int argc, char** argv)
     };
 
     // --- text output ---------------------------------------------------------
-    platform::Win32Clipboard clipboard;
-    platform::Win32PasteSimulator paste;
-    platform::Win32Executor ui_executor;
+    platform::linuxos::LinuxClipboard clipboard;
+    platform::linuxos::LinuxPasteSimulator paste;
+    platform::LinuxExecutor ui_executor;
     domain::RetryingClipboard retrying(clipboard, clock);
     domain::TextOutputService output(retrying, paste, clock, ui_executor);
     // Why the text did or did not reach the document. "Pasted" and "only on the
@@ -478,7 +500,7 @@ int run(int argc, char** argv)
     });
 
     // --- capture -------------------------------------------------------------
-    platform::WindowsMicrophone microphone;
+    platform::linuxos::LinuxMicrophoneService microphone;
     auto devices = microphone.list_devices();
     if (devices.empty()) {
         // "devices=0" alone is not diagnosable: the backend knows whether COM was
@@ -508,11 +530,11 @@ int run(int argc, char** argv)
     platform::CaptureGuard capture_guard;
     platform::install_crash_release_hook(capture_guard);
 
-    platform::WindowsAudioCapture::Options capture_options;
+    platform::linuxos::LinuxAudioCapture::Options capture_options;
     if (selected.has_value()) {
         capture_options.device_id = *selected;
     }
-    platform::WindowsAudioCapture capture(capture_options);
+    platform::linuxos::LinuxAudioCapture capture(capture_options);
 
     // Warm the capture endpoint once, before any dictation. The first WASAPI
     // start on this machine costs about a second - the microphone array wakes out
@@ -802,16 +824,14 @@ int run(int argc, char** argv)
         options.auto_paste = current.auto_paste_enabled;
         return options;
     });
-    machine.set_live_settings_provider([&presenter] {
-        const auto& current = presenter.settings();
-        return domain::RecordingStateMachine::LiveSettings{
-            current.recording_mode,
-            static_cast<double>(current.silence_threshold_ms) / 1000.0,
-        };
-    });
-
-    platform::win32::Win32HotkeyService hotkeys;
-    static_cast<void>(hotkeys.set_event_sink([&machine, &logger](platform::HotkeyAction action) {
+    // --- global hotkeys ------------------------------------------------------
+    // evdev is the primary backend: it is the only one that always delivers the
+    // release edge push-to-talk needs. A session without /dev/input access falls
+    // back to org.kde.kglobalaccel, which delivers the release edge only when the
+    // bus exposes globalShortcutReleased; an older kglobalaccel is press-only and
+    // the mode degrades to toggle instead of pretending push-to-talk works
+    // (VT-PLT-1307/1308).
+    const auto hotkey_sink = [&machine, &logger](platform::HotkeyAction action) {
         // Every edge is logged: push-to-talk is a press *and* a release, and a
         // missing release is indistinguishable from "the hotkey does nothing"
         // unless the log shows which edge arrived.
@@ -833,14 +853,52 @@ int run(int argc, char** argv)
             static_cast<void>(logger.write(platform::LogLevel::info, "hotkey cancel pressed"));
             break;
         }
-    }));
+    };
+
+    platform::linuxos::LinuxHotkeyService evdev_hotkeys;
+    static_cast<void>(evdev_hotkeys.set_event_sink(hotkey_sink));
+    auto registration = evdev_hotkeys.apply_settings(presenter.settings());
+    platform::HotkeyService* hotkeys = &evdev_hotkeys;
+    auto hotkey_capability = evdev_hotkeys.capability();
+
+#if defined(VOICETYPER_HAS_KGLOBALACCEL)
+    std::unique_ptr<platform::linuxos::LinuxKGlobalAccelHotkeys> kglobal_hotkeys;
+    if (hotkey_capability == platform::linuxos::HotkeyCapability::none) {
+        kglobal_hotkeys = std::make_unique<platform::linuxos::LinuxKGlobalAccelHotkeys>();
+        static_cast<void>(kglobal_hotkeys->set_event_sink(hotkey_sink));
+        registration = kglobal_hotkeys->apply_settings(presenter.settings());
+        hotkey_capability = kglobal_hotkeys->capability();
+        if (hotkey_capability != platform::linuxos::HotkeyCapability::none) {
+            hotkeys = kglobal_hotkeys.get();
+        }
+    }
+#endif
+
+    // A press-only fallback cannot serve push-to-talk: the machine would start a
+    // session and never see the release. The live settings provider below hands
+    // it toggle mode instead, and the window says so (VT-PLT-1308).
+    const bool hotkey_press_only =
+        hotkey_capability == platform::linuxos::HotkeyCapability::kglobal_accel_press_only;
+    static_cast<void>(logger.write(platform::LogLevel::info, "hotkey capability",
+        std::string(platform::linuxos::hotkey_capability_name(hotkey_capability))));
+    if (hotkey_press_only) {
+        static_cast<void>(logger.write(platform::LogLevel::warn, "hotkeys",
+            "push-to-talk is not available through kglobalaccel; using toggle"));
+    }
+
+    machine.set_live_settings_provider([&presenter, hotkey_press_only] {
+        const auto& current = presenter.settings();
+        return domain::RecordingStateMachine::LiveSettings{
+            hotkey_press_only ? domain::RecordingMode::toggle : current.recording_mode,
+            static_cast<double>(current.silence_threshold_ms) / 1000.0,
+        };
+    });
     static_cast<void>(logger.write(
         platform::LogLevel::info,
         "composition ready",
         "engine=" + std::string(asr::engine_readiness_name(engine_host.state().readiness))
             + " devices=" + std::to_string(devices.size())));
 
-    const auto registration = hotkeys.apply_settings(presenter.settings());
     if (registration.is_error()) {
         static_cast<void>(logger.write(
             platform::LogLevel::error, "hotkey registration failed", registration.error().message()));
@@ -853,6 +911,44 @@ int run(int argc, char** argv)
                 logger.write(platform::LogLevel::warn, "hotkey was not registered", error));
             std::cerr << "hotkey: " << error << '\n';
         }
+    }
+
+    // --- gamepad -------------------------------------------------------------
+    // The same bindings the Windows build stores ("XInput|A"); on Linux the
+    // XInput names are mapped onto evdev button codes (VT-PLT-1310). No
+    // controller attached is not an error: the port stays idle and the settings
+    // page shows empty readouts.
+    platform::linuxos::LinuxGamepadService gamepad;
+    static_cast<void>(gamepad.set_event_sink([&machine, &logger](const platform::GamepadEdge& edge) {
+        switch (edge.action) {
+        case platform::GamepadAction::record_pressed: {
+            const auto status = machine.press_record();
+            static_cast<void>(logger.write(status.is_ok() ? platform::LogLevel::info : platform::LogLevel::warn,
+                "gamepad record pressed", status.is_ok() ? std::string() : status.error().to_string()));
+            break;
+        }
+        case platform::GamepadAction::record_released: {
+            const auto status = machine.release_record();
+            static_cast<void>(logger.write(status.is_ok() ? platform::LogLevel::info : platform::LogLevel::warn,
+                "gamepad record released", status.is_ok() ? std::string() : status.error().to_string()));
+            break;
+        }
+        case platform::GamepadAction::cancel_pressed:
+            machine.cancel();
+            static_cast<void>(logger.write(platform::LogLevel::info, "gamepad cancel pressed"));
+            break;
+        }
+    }));
+    const auto gamepad_status = gamepad.apply_settings(presenter.settings());
+    if (gamepad_status.is_error()) {
+        // A present but malformed binding is the only failure here; the user sees
+        // it in the settings field and the log keeps the reason.
+        static_cast<void>(logger.write(platform::LogLevel::warn, "gamepad settings refused",
+            gamepad_status.error().to_string()));
+        std::cerr << "gamepad: " << gamepad_status.error().to_string() << '\n';
+    } else {
+        static_cast<void>(logger.write(platform::LogLevel::info, "gamepad",
+            gamepad.diagnostics().empty() ? std::string("no gamepad bindings") : gamepad.diagnostics()));
     }
 
     WindowServices services;
@@ -883,12 +979,18 @@ int run(int argc, char** argv)
             return localized(UiKey::k93);
         }
     };
-    services.record_hotkey_state = [&hotkeys, &presenter] {
+    services.record_hotkey_state = [&hotkeys, &presenter, hotkey_press_only] {
         const auto& current = presenter.settings();
-        return hotkeys.record_key_code() != 0
+        QString state = hotkeys->record_key_code() != 0
             ? localized(UiKey::k94) + QStringLiteral(": ")
                 + QString::fromStdString(current.record_hotkey)
             : localized(UiKey::k95);
+        if (hotkey_press_only) {
+            // The fallback has no release edge, so the mode was forced to toggle;
+            // say it instead of letting the hotkey look broken.
+            state += QStringLiteral(" · ") + localized(UiKey::k182);
+        }
+        return state;
     };
     services.microphones = [&microphone] {
         std::vector<std::pair<std::string, std::string>> result;
@@ -900,9 +1002,12 @@ int run(int argc, char** argv)
     // One extra worker for hotkey capture: capture_next() blocks until the user
     // presses a combination, and neither the UI thread nor the recording worker may
     // ever be parked like that.
-    platform::Win32Executor capture_executor;
+    platform::LinuxExecutor capture_executor;
+    // A gamepad capture waits for a button press too, and it must not queue
+    // behind a hotkey capture that the user left waiting.
+    platform::LinuxExecutor gamepad_capture_executor;
     /// Updates run off the UI thread: the release query and a 60 MB download both block.
-    platform::Win32Executor update_executor;
+    platform::LinuxExecutor update_executor;
 
     // Everything the Qt layer reports (qInfo/qWarning, Qt's own messages) goes into the same
     // log as the rest of the application. Without this the interface is a black box: a status
@@ -986,47 +1091,21 @@ int run(int argc, char** argv)
                 static_cast<void>(ui_executor.post([progress, error] { progress(-1, QStringLiteral("download"), error); }));
                 return;
             }
-            const QString name = QString::fromStdString(
-                result.update->installer_url.has_value() ? *result.update->installer_url : std::string());
-            if (kNativeInstallerMarker.empty() || !name.contains(QString::fromLatin1(kNativeInstallerMarker))) {
-                static_cast<void>(logger.write(platform::LogLevel::warn, "update install refused",
-                    "the release carries no installer built for this application"));
-                static_cast<void>(ui_executor.post([progress] {
-                    progress(-1, QStringLiteral("download"),
-                        localized(UiKey::k103));
-                }));
-                return;
-            }
-            const QString updates_dir = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation)
-                + QStringLiteral("/updates");
-            const std::filesystem::path installer = std::filesystem::path(updates_dir.toStdString())
-                / ("VoiceTyper-" + result.update->version + "-Setup.exe");
-            const auto status = service.download(*result.update, installer,
-                [&ui_executor, progress](std::uint64_t received, std::uint64_t total) {
-                    const int percent = total > 0 ? static_cast<int>(received * 100U / total) : -1;
-                    static_cast<void>(ui_executor.post([progress, percent] {
-                        progress(percent, QStringLiteral("download"), QString());
-                    }));
-                },
-                domain::CancellationToken{});
-            if (status.is_error()) {
-                const QString error = QString::fromStdString(status.error().to_string());
-                static_cast<void>(ui_executor.post([progress, error] { progress(-1, QStringLiteral("download"), error); }));
-                return;
-            }
-            const std::filesystem::path runner = std::filesystem::path(updates_dir.toStdString())
-                / "run-update.cmd";
-            const auto launched = platform::win32::launch_update(runner, installer,
-                std::filesystem::path(QCoreApplication::applicationFilePath().toStdString()));
-            if (launched.is_error()) {
-                const QString error = QString::fromStdString(launched.error().to_string());
-                static_cast<void>(ui_executor.post([progress, error] { progress(-1, QStringLiteral("download"), error); }));
-                return;
-            }
-            static_cast<void>(ui_executor.post([progress] { progress(100, QStringLiteral("done"), QString()); }));
-            // The launcher script waits for the installer and starts the app again; this
-            // process must be gone by then.
-            static_cast<void>(ui_executor.post([&application] { QCoreApplication::quit(); }));
+            // Linux has no Windows-style self-update: the product is installed by
+            // the package manager or from the release page, and replacing a
+            // running binary is the package manager's job (feature-parity.md,
+            // "Current gaps that are not parity blockers yet"). The install action
+            // therefore opens the release page and says so, instead of downloading
+            // an installer this platform cannot run.
+            const QString release_url = result.update->installer_url.has_value()
+                ? QString::fromStdString(*result.update->installer_url)
+                : QStringLiteral("https://github.com/mops1k/VoiceTyper/releases/latest");
+            static_cast<void>(logger.write(platform::LogLevel::info, "update install",
+                "this platform updates through the package manager; opening " + release_url.toStdString()));
+            static_cast<void>(ui_executor.post([progress, release_url] {
+                static_cast<void>(QDesktopServices::openUrl(QUrl(release_url)));
+                progress(100, QStringLiteral("done"), QString());
+            }));
         }));
     };
 
@@ -1061,7 +1140,7 @@ int run(int argc, char** argv)
         static_cast<void>(capture_executor.post([&capture_options, &logger, &ui_executor,
                                                     probe_level, probe_cancel,
                                                     report = std::move(report)] {
-            platform::WindowsAudioCapture probe(capture_options);
+            platform::linuxos::LinuxAudioCapture probe(capture_options);
             const auto started = probe.start(domain::CancellationToken{});
             if (started.is_error()) {
                 const std::string detail = started.error().to_string();
@@ -1110,7 +1189,7 @@ int run(int argc, char** argv)
         }));
     };
     services.capture_hotkey = [&](std::function<void(std::optional<std::string>, QString)> report) {
-        auto hook = std::make_shared<platform::win32::HotkeyCaptureHook>();
+        auto hook = std::make_shared<platform::linuxos::HotkeyCaptureHook>();
         // A synthetic Ctrl+V during the capture would be eaten by the hook (the
         // .NET settings dialog suspends injection for exactly this reason).
         paste.set_suspended(true);
@@ -1141,6 +1220,28 @@ int run(int argc, char** argv)
             const std::string text = captured.value().to_string();
             static_cast<void>(logger.write(platform::LogLevel::info, "hotkey captured", text));
             run(text, QString());
+        }));
+    };
+
+    services.capture_gamepad = [&](std::function<void(std::optional<std::string>, QString)> report) {
+        static_cast<void>(gamepad_capture_executor.post([&, report = std::move(report)] {
+            domain::CancellationSource source;
+            const auto captured = gamepad.capture_next(source.token());
+            std::optional<std::string> binding;
+            QString error;
+            if (captured.is_error()) {
+                // A cancel is not a failure: the dialog must stay silent.
+                if (captured.error().code() != domain::ErrorCode::cancelled) {
+                    error = QString::fromStdString(captured.error().to_string());
+                }
+            } else {
+                binding = captured.value().to_string();
+                static_cast<void>(logger.write(platform::LogLevel::info, "gamepad captured", *binding));
+            }
+            static_cast<void>(ui_executor.post(
+                [report = std::move(report), binding = std::move(binding), error = std::move(error)] {
+                    report(binding, error);
+                }));
         }));
     };
 
@@ -1256,7 +1357,7 @@ int run(int argc, char** argv)
     // lacked while telling the user to "check the microphone level". The level is the
     // Windows endpoint value, so the slider and the Sound panel never disagree.
     auto microphone_level = std::make_shared<platform::MicrophoneLevelController>(
-        platform::create_microphone_level());
+        platform::linuxos::create_linux_microphone_level());
     const platform::MicrophoneLevelState microphone_level_state = microphone_level->refresh();
     if (microphone_level_state.available) {
         services.microphone_level_get = [microphone_level] {
@@ -1338,7 +1439,7 @@ int run(int argc, char** argv)
 
         // Hotkeys are re-registered from the stored settings; a refused binding
         // reports its reason and the previous one is released, never kept twice.
-        const auto report = hotkeys.apply_settings(updated);
+        const auto report = hotkeys->apply_settings(updated);
         if (report.is_error()) {
             static_cast<void>(logger.write(
                 platform::LogLevel::error, "hotkey re-registration failed", report.error().message()));
@@ -1346,6 +1447,14 @@ int run(int argc, char** argv)
             for (const auto& error : report.value().errors()) {
                 static_cast<void>(logger.write(platform::LogLevel::warn, "hotkey", error));
             }
+        }
+
+        // The gamepad bindings live in the same settings change: an empty binding
+        // stops the action, a malformed one is refused with a reason.
+        const auto gamepad_report = gamepad.apply_settings(updated);
+        if (gamepad_report.is_error()) {
+            static_cast<void>(logger.write(platform::LogLevel::warn, "gamepad settings refused",
+                gamepad_report.error().to_string()));
         }
 
         // Autostart is re-applied through the same hook the rest of the running
@@ -1393,7 +1502,7 @@ int run(int argc, char** argv)
                   << "\"\n";
         std::cout << "}\n";
         std::cout << "voicetyper-selftest: OK\n";
-        static_cast<void>(hotkeys.unregister_all());
+        static_cast<void>(hotkeys->unregister_all());
         static_cast<void>(engine_host.shutdown(std::chrono::milliseconds(2000)));
         return 0;
     }
@@ -1472,7 +1581,8 @@ int run(int argc, char** argv)
     // can start, then the machine (which cancels and stops capture), then the
     // engine, which is only released once nothing is in flight.
     static_cast<void>(logger.write(platform::LogLevel::info, "shutting down"));
-    static_cast<void>(hotkeys.unregister_all());
+    static_cast<void>(hotkeys->unregister_all());
+    static_cast<void>(gamepad.stop());
     machine.cancel();
     static_cast<void>(engine_host.shutdown(std::chrono::milliseconds(5000)));
     // Last: the overlay is the only thing still on screen, and destroying it

@@ -511,6 +511,9 @@ Contracts: [src/domain/hotkey_gesture.hpp](../../src/domain/hotkey_gesture.hpp),
 
 - **VT-DOM-801.** Modifier tokens MUST be case-insensitive: `Ctrl`, `Control`, `Alt`, `Shift`,
   `Win`, `Windows`, `Meta`, `Super`, `Cmd`.
+- **VT-DOM-801a.** The grammar is platform-neutral; the mapping to a native key is not. On Linux
+  `Win`/`Windows`/`Meta`/`Super`/`Cmd` MUST map to the left Meta key code and the rest of the
+  tokens to the Linux input codes (VT-PLT-1301); on Windows to the Win32 virtual keys.
 - **VT-DOM-802.** Formatting MUST emit the canonical modifier order `Ctrl, Alt, Shift, Win`
   (`Ctrl+Alt+Space`).
 - **VT-DOM-803.** The key component MUST be normalized by upper-casing only its first character
@@ -544,6 +547,11 @@ Contracts: [src/domain/hotkey_gesture.hpp](../../src/domain/hotkey_gesture.hpp),
   for both (VT-SYS-066/067).
 - **VT-DOM-902.** `AppPaths` MUST implement every `platform::Paths` accessor and MUST be the only
   place that assembles a product path.
+- **VT-DOM-906.** `linux_app_path_roots(environment, application_directory)` (added 2026-10-10)
+  MUST read `XDG_CONFIG_HOME` for the settings root (fallback `$HOME/.config`) and
+  `XDG_DATA_HOME` for the local root (fallback `$HOME/.local/share`); an empty variable MUST
+  count as unset, a missing root MUST fall back to the other one, and with everything unset both
+  roots MUST fall back to the executable directory (VT-COR-105, VT-PLT-1101).
 - **VT-DOM-903.** `FileLogger` MUST write `YYYY-MM-DD HH:MM:SS.mmm [LEVEL] message` in local time
   with the detail on the following line, MUST rotate **before** an append once the current file
   reaches `kLogRotateThresholdBytes = 1'000'000`, MUST keep `kLogArchiveCount = 5` archives

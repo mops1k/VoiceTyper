@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <string>
 #include <utility>
+#include <vector>
 
 #if defined(_WIN32)
 #  ifndef WIN32_LEAN_AND_MEAN
@@ -22,8 +23,20 @@
 #  include <windows.h>
 #endif
 
+#if defined(__linux__)
+#  include <dlfcn.h>
+#  include <unistd.h>
+#endif
+
 namespace voicetyper::platform {
 namespace {
+
+#if defined(__linux__)
+/// The shared object the Linux build loads. It is the same C ABI as the shipped
+/// Windows DLL (mudler/parakeet.cpp, pinned commit), just built for this
+/// platform, so the binding and the ABI assertion are unchanged.
+inline constexpr std::string_view kParakeetSharedLibraryName = "libparakeet.so";
+#endif
 
 /// Opaque native context. Declared as void* on purpose: no parakeet typedef
 /// (parakeet_ctx) is reproduced here, so nothing from the C header can leak
@@ -107,6 +120,36 @@ std::string trimmed(std::string text)
             }
         }
     }
+#elif defined(__linux__)
+    if (module == nullptr) {
+        missing.emplace_back("library handle");
+        return missing;
+    }
+    const auto resolve = [&module](std::string_view name) -> void* {
+        return ::dlsym(module, std::string(name).c_str());
+    };
+    out.abi_version = reinterpret_cast<AbiVersionFn>(resolve(kParakeetRequiredSymbols[0]));
+    out.load = reinterpret_cast<LoadFn>(resolve(kParakeetRequiredSymbols[1]));
+    out.free_context = reinterpret_cast<FreeFn>(resolve(kParakeetRequiredSymbols[2]));
+    out.transcribe_pcm_lang = reinterpret_cast<TranscribePcmLangFn>(resolve(kParakeetRequiredSymbols[3]));
+    out.free_string = reinterpret_cast<FreeStringFn>(resolve(kParakeetRequiredSymbols[4]));
+    out.last_error = reinterpret_cast<LastErrorFn>(resolve(kParakeetRequiredSymbols[5]));
+
+    if (!out.complete()) {
+        const std::array<void*, 6> resolved = {
+            reinterpret_cast<void*>(out.abi_version),
+            reinterpret_cast<void*>(out.load),
+            reinterpret_cast<void*>(out.free_context),
+            reinterpret_cast<void*>(out.transcribe_pcm_lang),
+            reinterpret_cast<void*>(out.free_string),
+            reinterpret_cast<void*>(out.last_error),
+        };
+        for (std::size_t index = 0; index < kParakeetRequiredSymbols.size(); ++index) {
+            if (resolved[index] == nullptr) {
+                missing.emplace_back(kParakeetRequiredSymbols[index]);
+            }
+        }
+    }
 #else
     (void)module;
     (void)out;
@@ -167,6 +210,8 @@ ParakeetProbe describe_probe(
 struct ParakeetRuntime::Impl {
 #if defined(_WIN32)
     HMODULE module = nullptr;
+#elif defined(__linux__)
+    void* module = nullptr;
 #endif
     ParakeetSymbols symbols;
     parakeet_context* model = nullptr;
@@ -209,6 +254,28 @@ ParakeetProbe probe_parakeet_runtime(const std::filesystem::path& dll_path)
     ParakeetProbe probe = describe_probe(dll_path, {}, true, abi, {});
     ::FreeLibrary(module);
     return probe;
+#elif defined(__linux__)
+    void* module = ::dlopen(dll_path.c_str(), RTLD_NOW | RTLD_LOCAL);
+    if (module == nullptr) {
+        const char* reason = ::dlerror();
+        return describe_probe(
+            dll_path, {}, false, 0,
+            "dlopen failed for " + dll_path.string() + " ("
+                + (reason != nullptr ? std::string(reason) : std::string("unknown dynamic loader error"))
+                + ")");
+    }
+
+    ParakeetSymbols symbols;
+    const std::vector<std::string> missing = resolve_required_symbols(module, symbols);
+    if (!missing.empty()) {
+        ::dlclose(module);
+        return describe_probe(dll_path, missing, true, 0, {});
+    }
+
+    const int abi = symbols.abi_version != nullptr ? symbols.abi_version() : 0;
+    ParakeetProbe probe = describe_probe(dll_path, {}, true, abi, {});
+    ::dlclose(module);
+    return probe;
 #else
     return describe_probe(
         dll_path, {}, false, 0,
@@ -238,6 +305,38 @@ std::filesystem::path parakeet_library_beside_executable()
     }
     const std::filesystem::path exe_path(buffer);
     return exe_path.parent_path() / std::filesystem::path(kParakeetLibraryName);
+#elif defined(__linux__)
+    // /proc/self/exe names the running image, so the library is looked for next
+    // to the real binary even when the process was started through PATH.
+    std::vector<char> buffer(1024);
+    while (buffer.size() <= 64 * 1024) {
+        const ssize_t length = ::readlink("/proc/self/exe", buffer.data(), buffer.size() - 1);
+        if (length < 0) {
+            return {};
+        }
+        if (static_cast<std::size_t>(length) < buffer.size() - 1) {
+            buffer[static_cast<std::size_t>(length)] = '\0';
+            const std::filesystem::path exe_path(buffer.data());
+            const std::filesystem::path beside =
+                exe_path.parent_path() / std::filesystem::path(std::string(kParakeetSharedLibraryName));
+            std::error_code beside_error;
+            if (std::filesystem::exists(beside, beside_error) && !beside_error) {
+                return beside;
+            }
+            // A development build keeps the engine libraries in its own
+            // subdirectory (engine-libs), so the loader looks there before giving
+            // up: the deployed layout and the build layout both work.
+            const std::filesystem::path build_layout = exe_path.parent_path()
+                / "engine-libs" / std::filesystem::path(std::string(kParakeetSharedLibraryName));
+            std::error_code build_error;
+            if (std::filesystem::exists(build_layout, build_error) && !build_error) {
+                return build_layout;
+            }
+            return beside;
+        }
+        buffer.resize(buffer.size() * 2);
+    }
+    return {};
 #else
     return {};
 #endif
@@ -256,6 +355,11 @@ ParakeetRuntime::~ParakeetRuntime()
 #if defined(_WIN32)
     if (impl_ != nullptr && impl_->module != nullptr) {
         ::FreeLibrary(impl_->module);
+        impl_->module = nullptr;
+    }
+#elif defined(__linux__)
+    if (impl_ != nullptr && impl_->module != nullptr) {
+        ::dlclose(impl_->module);
         impl_->module = nullptr;
     }
 #endif
@@ -322,6 +426,49 @@ Result<std::unique_ptr<ParakeetRuntime>> ParakeetRuntime::open(
     if (owned->impl_->abi != kParakeetAbiVersion) {
         const int observed = owned->impl_->abi;
         ::FreeLibrary(module);
+        owned->impl_->module = nullptr;
+        return Result<std::unique_ptr<ParakeetRuntime>>::failure(
+            ErrorCode::engine_unavailable,
+            "parakeet: " + dll_path.string() + " reports ABI version " + std::to_string(observed)
+                + ", this build requires " + std::to_string(kParakeetAbiVersion));
+    }
+    return owned;
+#elif defined(__linux__)
+    if (dll_path.empty()) {
+        return Result<std::unique_ptr<ParakeetRuntime>>::failure(
+            ErrorCode::invalid_argument, "parakeet: no library path was given");
+    }
+    void* module = ::dlopen(dll_path.c_str(), RTLD_NOW | RTLD_LOCAL);
+    if (module == nullptr) {
+        const char* reason = ::dlerror();
+        return Result<std::unique_ptr<ParakeetRuntime>>::failure(
+            ErrorCode::engine_unavailable,
+            "parakeet: dlopen failed for " + dll_path.string() + " ("
+                + (reason != nullptr ? std::string(reason) : std::string("unknown dynamic loader error"))
+                + ")");
+    }
+
+    std::unique_ptr<ParakeetRuntime> owned(new ParakeetRuntime());
+    owned->impl_->module = module;
+    const std::vector<std::string> missing = resolve_required_symbols(module, owned->impl_->symbols);
+    if (!missing.empty()) {
+        std::string detail = "parakeet: " + dll_path.string()
+            + " does not export the pinned ABI " + std::to_string(kParakeetAbiVersion)
+            + " entry points:";
+        for (const std::string& symbol : missing) {
+            detail += " " + symbol;
+        }
+        ::dlclose(module);
+        owned->impl_->module = nullptr;
+        return Result<std::unique_ptr<ParakeetRuntime>>::failure(
+            ErrorCode::engine_unavailable, std::move(detail));
+    }
+
+    owned->impl_->abi = owned->impl_->symbols.abi_version();
+    owned->impl_->probe = describe_probe(dll_path, {}, true, owned->impl_->abi, {});
+    if (owned->impl_->abi != kParakeetAbiVersion) {
+        const int observed = owned->impl_->abi;
+        ::dlclose(module);
         owned->impl_->module = nullptr;
         return Result<std::unique_ptr<ParakeetRuntime>>::failure(
             ErrorCode::engine_unavailable,

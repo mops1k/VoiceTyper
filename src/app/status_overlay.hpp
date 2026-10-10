@@ -18,10 +18,12 @@
 //   * The pulse is a QTimer with the frozen kOverlayPulsePeriod (350 ms) that
 //     toggles the indicator between opacity 1.0 and 0.35, reproducing the .NET
 //     DispatcherTimer pulse (one full on/off cycle therefore takes 700 ms).
-//   * The error state is shown with its detail text and STAYS visible until the
-//     next dictation replaces it. The .NET build hid the overlay on idle, so a
-//     missing model produced no visible reason at all; keeping it is the
-//     intent-parity fix, not an accidental deviation.
+//   * An error NEVER reaches the pill: a missing model, a lost device or a refused
+//     engine goes to the window's status line and the log, and the overlay hides.
+//     Keeping the reason on screen made the pill sit on top of the window the user
+//     was typing into and stay there (reported from the running build, 2026-10-11).
+//     OverlayState::error stays in the port contract for parity, but renders as
+//     "hidden" - the state becomes idle because nothing is shown.
 //   * Geometry is computed in Qt logical pixels from the screen's
 //     availableGeometry, so a 150% DPI monitor gets the same 26 px gap the .NET
 //     code produced by scaling physical pixels by hand.
@@ -75,6 +77,27 @@ inline constexpr std::string_view kOverlayErrorAccent = "#E5484D";
 inline constexpr std::string_view kOverlayTextColor = "#F4F4F5";
 inline constexpr std::string_view kOverlayBackgroundColor = "rgba(24, 24, 27, 235)";
 
+/// True when the overlay needs a layer-shell surface for its rules to hold.
+///
+/// On Wayland an ordinary xdg-toplevel lands in the window list and can be
+/// activated even with Qt::Tool / Qt::WindowDoesNotAcceptFocus - reported from
+/// the running build on 2026-10-11. A layer-shell surface in the overlay layer
+/// has no window-list entry and never takes keyboard focus, so Wayland needs it
+/// and every other platform keeps the plain window.
+[[nodiscard]] bool overlay_needs_layer_shell(std::string_view platform_name);
+
+/// True when this build links LayerShellQt, so the Wayland path can actually
+/// promote the host to a layer-shell surface. False means the overlay falls back
+/// to the ordinary window on every platform.
+[[nodiscard]] constexpr bool layer_shell_build_available() noexcept
+{
+#if defined(VOICETYPER_HAS_LAYER_SHELL)
+    return true;
+#else
+    return false;
+#endif
+}
+
 /// The pill window.
 ///
 /// Thread affinity: create/show/set_state/hide/destroy belong to the UI thread,
@@ -125,6 +148,11 @@ public:
     /// True once destroy() has run. For tests and shutdown logging.
     [[nodiscard]] bool is_destroyed() const noexcept { return shutdown_.load(); }
 
+    /// True when the host became a layer-shell surface (Wayland with LayerShellQt
+    /// present). False on every other platform, where the ordinary window flags
+    /// are the whole mechanism.
+    [[nodiscard]] bool layer_shell_active() const noexcept { return layer_shell_active_; }
+
 private:
     /// The colours of the current theme: dark pill with light text, or the reverse.
     void apply_colours();
@@ -144,6 +172,10 @@ private:
     void stop_pulse();
     void set_pulse_opacity(double value);
 
+    /// The full-screen, click-through host window the compositor places at the
+    /// screen origin; the pill lives inside it, because on Wayland a client
+    /// cannot position its own top-level windows.
+    QWidget* host_ = nullptr;
     QWidget* pill_ = nullptr;
     QWidget* dot_ = nullptr;
     QLabel* status_text_ = nullptr;
@@ -153,6 +185,8 @@ private:
     /// Written on the UI thread by destroy() and read by worker threads in
     /// post_state(), so it is atomic rather than a plain bool.
     std::atomic<bool> shutdown_{false};
+    /// True when the host is a layer-shell surface; see layer_shell_active().
+    bool layer_shell_active_ = false;
     platform::OverlayState state_ = platform::OverlayState::idle;
     /// The state shown now, with its detail, so a language change can repeat it.
     std::string detail_;

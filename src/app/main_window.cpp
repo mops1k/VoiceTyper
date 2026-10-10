@@ -25,6 +25,7 @@
 #include <QGuiApplication>
 #include <QKeyEvent>
 #include <QListWidget>
+#include <QStyledItemDelegate>
 #include <QPainterPath>
 #include <QPointer>
 #include <QPlainTextEdit>
@@ -502,6 +503,9 @@ void level_meter_push_level(QWidget* meter, int level)
 /// The navigation from `SettingsViewModel.cs:307-316`: key order and the Segoe
 /// Sidebar icon box, logical pixels: the .NET template drew a 16 px glyph inside it.
 inline constexpr int kNavigationIconSizePx = 19;
+/// Left inset of the navigation glyph inside a row, and the matching text padding
+/// that keeps the label clear of it.
+inline constexpr int kNavigationIconLeftPaddingPx = 15;
 inline constexpr int kNavigationGlyphSizePx = 16;
 
 /// MDL2 Assets glyphs of the .NET build.
@@ -1417,6 +1421,47 @@ void paint_drawn_icon(QPainter& painter, DrawnIcon icon, const QRectF& box, cons
 }
 
 /// The navigation key names the same icon the .NET template used per entry.
+/// Draws the navigation glyph after the item's own background and text.
+///
+/// Why a delegate and not item->setIcon() alone: on Wayland (KDE Plasma 6,
+/// measured 2026-10-08) the item view painted the row background and the label but
+/// never the icon, while the very same QIcon drew fine on a QPushButton - and the
+/// offscreen platform painted it too. Drawing the glyph in the delegate makes the
+/// navigation independent of that style/backend difference.
+DrawnIcon navigation_drawn_icon(std::string_view key);
+
+class NavigationIconDelegate final : public QStyledItemDelegate {
+public:
+    NavigationIconDelegate(QObject* parent, std::function<QColor()> colour)
+        : QStyledItemDelegate(parent)
+        , colour_(std::move(colour))
+    {
+    }
+
+    void paint(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const override
+    {
+        QStyledItemDelegate::paint(painter, option, index);
+        // The glyph is painted directly, not through QIcon: on Wayland the item
+        // view never painted an icon that came from a pixmap, whatever its device
+        // pixel ratio, while direct painting is what every other drawn glyph in
+        // this window already does.
+        const QString key = index.data(Qt::UserRole + 2).toString();
+        if (key.isEmpty()) {
+            return;
+        }
+        const DrawnIcon drawn = navigation_drawn_icon(key.toStdString());
+        const int size = kNavigationIconSizePx;
+        const qreal inset = size * 0.16;
+        const int x = option.rect.left() + kNavigationIconLeftPaddingPx;
+        const int y = option.rect.top() + (option.rect.height() - size) / 2;
+        paint_drawn_icon(*painter, drawn,
+            QRectF(x + inset, y + inset, size - 2 * inset, size - 2 * inset), colour_());
+    }
+
+private:
+    std::function<QColor()> colour_;
+};
+
 DrawnIcon navigation_drawn_icon(std::string_view key)
 {
     if (key == "Main") return DrawnIcon::general;
@@ -1438,11 +1483,18 @@ QIcon drawn_icon(DrawnIcon icon, int size, const QColor& colour)
     const qreal ratio = (qApp != nullptr && qApp->devicePixelRatio() > 1.0)
         ? qApp->devicePixelRatio()
         : 1.0;
-    QPixmap pixmap(qRound(size * ratio), qRound(size * ratio));
+    // The pixmap is drawn at the device resolution but is deliberately NOT given a
+    // device pixel ratio: a QIcon built from a DPR-carrying pixmap is reported as
+    // 38x38 on a 200 % display, and the item view of the navigation list then drew
+    // nothing at all (measured on KDE Plasma 6 / Wayland, 2026-10-08, dpr=2:
+    // icon().isNull() was false while the row showed no glyph). Scaling the painter
+    // instead keeps the glyph sharp and the icon visible in every view.
+    const int physical = qRound(size * ratio);
+    QPixmap pixmap(physical, physical);
     pixmap.fill(Qt::transparent);
-    pixmap.setDevicePixelRatio(ratio);
     QPainter painter(&pixmap);
     painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.scale(ratio, ratio);
     const qreal inset = size * 0.16;
     paint_drawn_icon(painter, icon, QRectF(inset, inset, size - 2 * inset, size - 2 * inset), colour);
     return QIcon(pixmap);
@@ -1927,6 +1979,9 @@ void MainWindow::build_tabs()
 
     nav_ = new QListWidget(sidebar);
     nav_->setObjectName(QStringLiteral("sideNav"));
+    nav_->setItemDelegate(new NavigationIconDelegate(nav_, [this] {
+        return QColor(muted_text_.isEmpty() ? QStringLiteral("#E6E6E6") : muted_text_);
+    }));
     nav_->setFrameShape(QFrame::NoFrame);
     nav_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     nav_->setFont(navigation_font(13));
@@ -2469,12 +2524,51 @@ void MainWindow::build_tabs()
             UiKey::k26, UiKey::k133, language_, hotkey_control(cancel_hotkey_, cancel_hotkey_capture_)));
         rows->addWidget(hotkeys_group.card);
 
+        // --- Геймпад -----------------------------------------------------------
+        // The same shape as the hotkeys above: a read-only readout plus a capture
+        // button. The stored spelling is the settings grammar ("XInput|A"), which
+        // the poll loop matches; on Linux the XInput names are mapped onto evdev
+        // button codes.
+        record_gamepad_ = new QLineEdit(content);
+        record_gamepad_->setObjectName(QStringLiteral("recordGamepadEdit"));
+        cancel_gamepad_ = new QLineEdit(content);
+        cancel_gamepad_->setObjectName(QStringLiteral("cancelGamepadEdit"));
+        for (QLineEdit* field : {record_gamepad_, cancel_gamepad_}) {
+            field->setReadOnly(true);
+            field->setFocusPolicy(Qt::NoFocus);
+            field->setCursor(Qt::ArrowCursor);
+        }
+        record_gamepad_capture_ = new QPushButton(ui_text(UiKey::k134, language_), content);
+        record_gamepad_capture_->setObjectName(QStringLiteral("recordGamepadCapture"));
+        record_gamepad_capture_->setProperty("uiKey", static_cast<int>(UiKey::k134));
+        record_gamepad_capture_->setFocusPolicy(Qt::NoFocus);
+        connect(record_gamepad_capture_, &QPushButton::clicked, this, [this] { capture_gamepad_into(true); });
+        cancel_gamepad_capture_ = new QPushButton(ui_text(UiKey::k134, language_), content);
+        cancel_gamepad_capture_->setObjectName(QStringLiteral("cancelGamepadCapture"));
+        cancel_gamepad_capture_->setProperty("uiKey", static_cast<int>(UiKey::k134));
+        cancel_gamepad_capture_->setFocusPolicy(Qt::NoFocus);
+        connect(cancel_gamepad_capture_, &QPushButton::clicked, this, [this] { capture_gamepad_into(false); });
+
+        const auto gamepad_group = settings_group(content, UiKey::k183, UiKey::k184, language_);
+        gamepad_group.rows->addWidget(setting_row(
+            UiKey::k185, language_, hotkey_control(record_gamepad_, record_gamepad_capture_)));
+        gamepad_group.rows->addWidget(setting_row(
+            UiKey::k186, language_, hotkey_control(cancel_gamepad_, cancel_gamepad_capture_)));
+        rows->addWidget(gamepad_group.card);
+
         const bool can_capture = static_cast<bool>(services_.capture_hotkey);
         for (auto* button : {record_hotkey_capture_, cancel_hotkey_capture_}) {
             button->setEnabled(can_capture);
             button->setToolTip(can_capture
                     ? ui_text(UiKey::k20, language_)
                     : ui_text(UiKey::k19, language_));
+        }
+        const bool can_capture_gamepad = static_cast<bool>(services_.capture_gamepad);
+        for (auto* button : {record_gamepad_capture_, cancel_gamepad_capture_}) {
+            button->setEnabled(can_capture_gamepad);
+            button->setToolTip(can_capture_gamepad
+                    ? ui_text(UiKey::k187, language_)
+                    : ui_text(UiKey::k188, language_));
         }
         // The hint of this page carries no hotkey: hint_bar must not .arg() it.
         rows->addWidget(hint_bar(UiKey::k136, UiKey::k137, language_, QString(), content));
@@ -2897,11 +2991,12 @@ void MainWindow::finalize_pages()
         // The .NET page key (Main, Appearance, Models, ...): it is what a screenshot
         // run and the reviewers name, independently of the Russian label.
         item->setData(Qt::UserRole + 2, QString::fromUtf8(entry.key));
-        // Drawn right here as well: the theme is applied before this loop runs, and the
-        // icon must exist even if nothing ever refreshes it again.
-        const QColor nav_icon_colour(muted_text_.isEmpty() ? QStringLiteral("#E6E6E6") : muted_text_);
-        item->setIcon(drawn_icon(navigation_drawn_icon(entry.key), kNavigationIconSizePx,
-            nav_icon_colour));
+        // The glyph is NOT stored on the item: NavigationIconDelegate paints it from
+        // the key above. A QPixmap icon on the item was drawn by the item view on
+        // top of the delegate's glyph on some backends (measured on KDE Plasma 6 /
+        // Wayland at dpr=2: a 38x38 pixmap painted unscaled over a 19 px glyph, which
+        // is exactly the "distorted icon" the user saw), so there is one painter and
+        // one source of truth now.
         // The mockup's navigation row is 43 px tall whatever the font metrics say
         // (index.css: nav button height 43px).
         item->setSizeHint(QSize(0, 43));
@@ -2929,7 +3024,6 @@ void MainWindow::finalize_pages()
         // here, and addItem(text) creates an item without an icon and without the entry
         // data. The entry is found by the same localised label and the item is created with
         // its icon and its data, exactly like the first pass.
-        const QColor colour(muted_text_.isEmpty() ? QStringLiteral("#E6E6E6") : muted_text_);
         DrawnIcon drawn = DrawnIcon::about;
         std::string_view entry_key = "About";
         QString entry_glyph;
@@ -2941,11 +3035,11 @@ void MainWindow::finalize_pages()
                 break;
             }
         }
-        auto* added = new QListWidgetItem(drawn_icon(drawn, kNavigationIconSizePx, colour),
-            pair.first, nav_);
+        auto* added = new QListWidgetItem(pair.first, nav_);
         added->setData(Qt::UserRole + 1, entry_glyph);
         added->setData(Qt::UserRole + 2, QString::fromUtf8(entry_key.data()));
         added->setSizeHint(QSize(0, 43));
+        static_cast<void>(drawn);
     }
     // Everything is in the menu now: dress the icons once, for every pass.
     refresh_navigation_icons();
@@ -3217,9 +3311,44 @@ void MainWindow::capture_hotkey_into(bool record)
     });
 }
 
-std::vector<ToggleSwitch*>& MainWindow::toggles_for(ModelList list) noexcept
+void MainWindow::capture_gamepad_into(bool record)
 {
-    switch (list) {
+    if (!services_.capture_gamepad) {
+        return;
+    }
+    QLineEdit* field = record ? record_gamepad_ : cancel_gamepad_;
+    QPushButton* button = record ? record_gamepad_capture_ : cancel_gamepad_capture_;
+    if (field == nullptr || button == nullptr) {
+        return;
+    }
+
+    button->setEnabled(false);
+    button->setText(ui_text(UiKey::k135, language_));
+    field->deselect();
+    const QString previous_placeholder = field->placeholderText();
+    field->setPlaceholderText(ui_text(UiKey::k187, language_));
+    set_status_message(ui_text(UiKey::k187, language_));
+
+    services_.capture_gamepad([this, field, button, previous_placeholder](
+                                  std::optional<std::string> binding, QString error) {
+        button->setEnabled(true);
+        button->setText(ui_text(UiKey::k134, language_));
+        // The readout stays read-only; assigning the text still fires
+        // textChanged, so the binding is saved and the poll loop re-bound.
+        field->setPlaceholderText(previous_placeholder);
+        if (!binding.has_value()) {
+            // Cancelled (Escape) is not an error and must not leave a message.
+            set_status_message(error.isEmpty() ? QString() : error);
+            return;
+        }
+        field->setText(QString::fromStdString(*binding));
+        field->deselect();
+        set_status_message(ui_text(UiKey::k189, language_).arg(QString::fromStdString(*binding)));
+    });
+}
+
+std::vector<ToggleSwitch*>& MainWindow::toggles_for(ModelList list) noexcept
+{    switch (list) {
     case ModelList::whisper: return whisper_model_toggles_;
     case ModelList::parakeet: return parakeet_model_toggles_;
     case ModelList::gigaam: return gigaam_model_toggles_;
@@ -3362,6 +3491,9 @@ void MainWindow::bind_settings_to_controls()
     terms_->setPlainText(to_q(settings.terms_dictionary));
     record_hotkey_->setText(to_q(settings.record_hotkey));
     cancel_hotkey_->setText(to_q(settings.cancel_hotkey));
+    // The gamepad bindings are optional: an absent one shows as an empty readout.
+    record_gamepad_->setText(to_q(settings.record_gamepad_button.value_or(std::string())));
+    cancel_gamepad_->setText(to_q(settings.cancel_gamepad_button.value_or(std::string())));
     auto_paste_->setChecked(settings.auto_paste_enabled);
     noise_reduction_->setChecked(settings.noise_reduction_enabled);
     condition_on_previous_text_->setChecked(settings.condition_on_previous_text);
@@ -3443,6 +3575,28 @@ void MainWindow::bind_settings_to_controls()
         presenter_.update(SettingsChange::hotkeys, [text](domain::AppSettings& settings) {
             settings.cancel_hotkey = text.toStdString();
         });
+    });
+    connect(record_gamepad_, &QLineEdit::textChanged, this, [this](const QString& text) {
+        presenter_.update(SettingsChange::hotkeys, [text](domain::AppSettings& settings) {
+            // An empty readout means "no gamepad action", which the settings layer
+            // stores as JSON null.
+            if (text.isEmpty()) {
+                settings.record_gamepad_button.reset();
+            } else {
+                settings.record_gamepad_button = text.toStdString();
+            }
+        });
+        pending_service_change_ = SettingsChange::hotkeys;
+    });
+    connect(cancel_gamepad_, &QLineEdit::textChanged, this, [this](const QString& text) {
+        presenter_.update(SettingsChange::hotkeys, [text](domain::AppSettings& settings) {
+            if (text.isEmpty()) {
+                settings.cancel_gamepad_button.reset();
+            } else {
+                settings.cancel_gamepad_button = text.toStdString();
+            }
+        });
+        pending_service_change_ = SettingsChange::hotkeys;
     });
     connect(microphone_, &QComboBox::currentIndexChanged, this, [this](int index) {
         if (index < 0) {
@@ -4036,7 +4190,6 @@ void MainWindow::refresh_navigation_icons()
     if (nav_ == nullptr || nav_->count() <= 0) {
         return;
     }
-    const QColor icon_colour(muted_text_.isEmpty() ? QStringLiteral("#E6E6E6") : muted_text_);
     nav_->setIconSize(QSize(kNavigationIconSizePx, kNavigationIconSizePx));
     for (int row = 0; row < nav_->count(); ++row) {
         QListWidgetItem* item = nav_->item(row);
@@ -4057,7 +4210,12 @@ void MainWindow::refresh_navigation_icons()
                 break;
             }
         }
-        item->setIcon(drawn_icon(icon, kNavigationIconSizePx, icon_colour));
+        static_cast<void>(icon);
+    }
+    // The glyphs are painted by the delegate from the keys above, so a theme change
+    // only has to repaint the list.
+    if (nav_->viewport() != nullptr) {
+        nav_->viewport()->update();
     }
 }
 
@@ -4082,36 +4240,6 @@ void MainWindow::refresh_title_button_icons()
         }
         painter.end();
         button->setIcon(QIcon(pixmap));
-    }
-}
-
-void MainWindow::refresh_nav_icons()
-{
-    // The .NET navigation uses the Segoe MDL2 Assets glyph font. Rendering the
-    // glyph into an icon keeps the label in the UI font; when the font is not
-    // installed (any non-Windows machine, stripped Windows images) the entries
-    // simply stay text-only instead of showing replacement boxes.
-    static const bool has_icon_font = QFontDatabase::families().contains(QStringLiteral("Segoe MDL2 Assets"));
-    if (nav_ == nullptr) {
-        return;
-    }
-    QFont glyph_font(QStringLiteral("Segoe MDL2 Assets"));
-    glyph_font.setPixelSize(16);
-    for (int row = 0; row < nav_->count(); ++row) {
-        QListWidgetItem* item = nav_->item(row);
-        const QString glyph = item->data(Qt::UserRole + 1).toString();
-        if (!has_icon_font || glyph.isEmpty()) {
-            item->setIcon(QIcon());
-            continue;
-        }
-        QPixmap pixmap(20, 20);
-        pixmap.fill(Qt::transparent);
-        QPainter painter(&pixmap);
-        painter.setFont(glyph_font);
-        painter.setPen(QColor(muted_text_));
-        painter.drawText(pixmap.rect(), Qt::AlignCenter, glyph);
-        painter.end();
-        item->setIcon(QIcon(pixmap));
     }
 }
 
@@ -4153,7 +4281,7 @@ void MainWindow::apply_theme()
         /* Rounded rows, no separators (index.css: nav button radius 6px, and the
            selected row is filled with --surface-active). */
         #sideNav::item {
-            color: @{text_secondary}; padding: 0px 15px; margin: 0px; border: none; border-radius: 6px;
+            color: @{text_secondary}; padding: 0px 15px 0px 42px; margin: 0px; border: none; border-radius: 6px;
             font-weight: normal;
         }
         #sideNav::item:hover { background: @{hover}; color: @{text}; }
@@ -4585,7 +4713,6 @@ void MainWindow::apply_theme()
             QColor(QString::fromLatin1(p.accent)), QColor(QString::fromLatin1(p.border)),
             QColor(QString::fromLatin1(p.accent)));
     }
-    refresh_nav_icons();
 }
 
 void MainWindow::refresh_status_summary()

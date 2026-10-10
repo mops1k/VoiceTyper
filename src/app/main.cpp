@@ -18,7 +18,20 @@ namespace voicetyper::app {
 int run(int argc, char** argv);
 } // namespace voicetyper::app
 
-#ifdef _WIN32
+#if defined(_WIN32)
+int main(int argc, char** argv)
+{
+    return voicetyper::app::run(argc, argv);
+}
+#elif defined(__linux__) && defined(VOICETYPER_HAS_LINUX_COMPOSITION)
+// Linux gets the full composition too: the real backends (sound server, evdev
+// hotkeys, clipboard/paste, autostart, engines) meet the UI exactly as they do
+// on Windows, so the product is the same application on both platforms. The
+// definition is set by CMake when the Linux backends and the native ASR engines
+// are part of this configuration; a GUI-off or ASR-off build keeps the portable
+// window below.
+#include "app/linux_application.hpp"
+
 int main(int argc, char** argv)
 {
     return voicetyper::app::run(argc, argv);

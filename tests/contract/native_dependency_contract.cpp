@@ -634,6 +634,16 @@ void check_parakeet_entry(const std::string& manifest, const fs::path& source_di
     check(probe.abi_version == 6, "shipped parakeet.dll reports ABI 6");
     check(probe.reason == EngineAvailabilityReason::available, "shipped parakeet.dll reason is available");
     check(probe.missing_symbols.empty(), "all six pinned Parakeet symbols resolve");
+#elif defined(__linux__)
+    // Linux is a supported platform now: the probe goes through the dynamic
+    // loader, and a Windows DLL simply fails to load. That is a missing native
+    // library, not "this platform cannot run the engine at all".
+    check(!probe.usable, "a Windows Parakeet DLL is not usable on Linux");
+    check(probe.reason == EngineAvailabilityReason::native_library_missing,
+        "a present but unloadable library maps to native_library_missing on Linux");
+    check(contains(probe.detail, "dlopen"), "the Linux probe explains the dynamic loader failure");
+    check(!contains(probe.detail, "fallback") || contains(probe.detail, "no other engine"),
+        "the Linux probe states that no other engine is substituted");
 #else
     check(!probe.usable, "a Windows Parakeet DLL is not usable on this platform");
     check(probe.reason == EngineAvailabilityReason::platform_unsupported,
@@ -656,11 +666,16 @@ void check_parakeet_entry(const std::string& manifest, const fs::path& source_di
         const auto not_ready = runtime.transcribe_pcm(nullptr, 0, 16000, 0, "", {});
         check(not_ready.is_error(), "transcribing without a model fails instead of guessing");
     }
+#elif defined(__linux__)
+    check(open_present.is_error(), "ParakeetRuntime::open fails for a Windows DLL on Linux, without a fallback");
 #else
     check(open_present.is_error(), "ParakeetRuntime::open fails off Windows, without a fallback");
 #endif
 
-#if !defined(_WIN32)
+#if defined(__linux__)
+    check(voicetyper::platform::parakeet_library_beside_executable().filename() == "libparakeet.so",
+        "the executable-relative lookup names the Linux shared object");
+#elif !defined(_WIN32)
     check(voicetyper::platform::parakeet_library_beside_executable().empty(),
         "the executable-relative DLL lookup is empty off Windows");
 #endif

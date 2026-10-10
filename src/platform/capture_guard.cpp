@@ -13,6 +13,12 @@
 // dbghelp has to come after windows.h. It gives the crash handler both the symbolised
 // stack (SymFromAddr/StackWalk64) and the minidump (MiniDumpWriteDump).
 #include <dbghelp.h>
+#else
+#include <cstdio>
+#if defined(__GLIBC__)
+#include <execinfo.h>
+#include <unistd.h>
+#endif
 #endif
 
 namespace voicetyper::platform {
@@ -361,6 +367,22 @@ void install_crash_release_hook(CaptureGuard& guard)
 }
 
 #else
+
+void log_stack_trace(const char* reason)
+{
+    // The Windows build writes a symbolised stack through dbghelp. On Linux the
+    // same diagnostic is produced with execinfo and goes to stderr, which the Qt
+    // message handler already routes into the application log; a platform without
+    // execinfo still gets the reason line.
+    std::fprintf(stderr, "stack trace (%s):\n", reason != nullptr ? reason : "unknown");
+#if defined(__GLIBC__)
+    void* frames[32];
+    const int count = ::backtrace(frames, 32);
+    if (count > 0) {
+        ::backtrace_symbols_fd(frames, count, STDERR_FILENO);
+    }
+#endif
+}
 
 void install_crash_release_hook(CaptureGuard& guard)
 {

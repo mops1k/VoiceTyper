@@ -407,6 +407,20 @@ if(VOICETYPER_BUILD_GUI)
     set_target_properties(voicetyper_ui PROPERTIES AUTOMOC ON)
     voicetyper_set_warnings(voicetyper_ui)
 
+    # The status overlay becomes a layer-shell surface on Wayland (LayerShellQt):
+    # that is what keeps it out of the window list and out of the focus chain,
+    # which the plain window flags do not guarantee there (reported from the
+    # running build, 2026-10-11). Optional on purpose: without the library the
+    # overlay keeps the ordinary host window and still configures.
+    find_package(LayerShellQt QUIET)
+    if(LayerShellQt_FOUND)
+        target_link_libraries(voicetyper_ui PUBLIC LayerShellQt::Interface)
+        target_compile_definitions(voicetyper_ui PUBLIC VOICETYPER_HAS_LAYER_SHELL=1)
+    else()
+        message(STATUS
+            "status overlay: layer-shell DISABLED (LayerShellQt not found)")
+    endif()
+
     qt_add_executable(voicetyper-qt-shell WIN32
         src/app/main.cpp
         $<$<BOOL:${WIN32}>:src/app/windows_application.cpp>
@@ -1429,3 +1443,375 @@ add_custom_target(voicetyper-tests
 
     DEPENDS voicetyper-noise-suppression-contract
     DEPENDS voicetyper-model-download-contract)
+
+# ---------------------------------------------------------------------------
+# Linux-only contract test for the Linux platform backends, appended so a
+# Windows configure never sees it (and the Windows targets above are not
+# reordered or rewritten). The test is a console program and stays one.
+# ---------------------------------------------------------------------------
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    # The Linux platform backends. Appended and Linux-only, so a Windows
+    # configure never sees these sources and the Windows targets above stay
+    # untouched. Only the .cpp files include Linux headers.
+    add_library(voicetyper_platform_linux STATIC
+        src/platform/linux/linux_executor.cpp
+        src/platform/linux/linux_gamepad.cpp
+        src/platform/linux/linux_hotkeys.cpp
+        src/platform/linux/linux_keymap.cpp
+        src/platform/linux/linux_paths.cpp
+        src/platform/linux/linux_startup.cpp
+    )
+    target_link_libraries(voicetyper_platform_linux
+        PUBLIC
+            voicetyper_domain
+            voicetyper_platform
+        PRIVATE
+            Threads::Threads
+    )
+    voicetyper_set_warnings(voicetyper_platform_linux)
+
+    # Audio backends: the sound server (PipeWire through pipewire-pulse, or a
+    # real PulseAudio) is queried directly through libpulse. Optional on purpose:
+    # a machine without the development package still configures, and the audio
+    # backends are then simply absent instead of breaking the whole build.
+    find_package(PkgConfig QUIET)
+    if(PkgConfig_FOUND)
+        pkg_check_modules(PULSE QUIET IMPORTED_TARGET libpulse)
+        # pa_simple_* lives in its own library, and the capture backend uses it
+        # precisely because it needs no main loop of its own.
+        pkg_check_modules(PULSE_SIMPLE QUIET IMPORTED_TARGET libpulse-simple)
+    endif()
+    if(PULSE_FOUND AND PULSE_SIMPLE_FOUND)
+        add_library(voicetyper_platform_linux_audio STATIC
+            src/platform/linux/linux_audio_capture.cpp
+            src/platform/linux/linux_microphone.cpp
+            src/platform/linux/linux_microphone_level.cpp
+            src/platform/linux/pulse_support.cpp
+        )
+        target_link_libraries(voicetyper_platform_linux_audio
+            PUBLIC
+                PkgConfig::PULSE
+                PkgConfig::PULSE_SIMPLE
+                voicetyper_audio
+                voicetyper_microphone_level
+                voicetyper_platform_linux
+            PRIVATE
+                Threads::Threads
+        )
+        voicetyper_set_warnings(voicetyper_platform_linux_audio)
+
+        if(VOICETYPER_BUILD_TESTS)
+            add_executable(voicetyper-linux-audio-contract EXCLUDE_FROM_ALL
+                tests/contract/linux_audio_contract.cpp
+            )
+            target_link_libraries(voicetyper-linux-audio-contract
+                PRIVATE
+                    voicetyper_platform_linux_audio
+            )
+            voicetyper_set_warnings(voicetyper-linux-audio-contract)
+            add_test(NAME linux-audio-contract
+                COMMAND voicetyper-linux-audio-contract
+            )
+            set_tests_properties(linux-audio-contract PROPERTIES
+                LABELS "linux;platform;audio"
+                PASS_REGULAR_EXPRESSION "linux-audio-contract: OK"
+                TIMEOUT 180
+            )
+            if(TARGET voicetyper-tests)
+                add_dependencies(voicetyper-tests voicetyper-linux-audio-contract)
+            endif()
+        endif()
+    else()
+        message(STATUS
+            "linux audio backends: DISABLED (libpulse development package not found)")
+    endif()
+
+    if(VOICETYPER_BUILD_GUI)
+        # Qt-dependent Linux backends (clipboard, paste). Kept in their own
+        # target so the Qt-free backend library above still serves a GUI-off
+        # build, exactly as voicetyper_update does on Windows.
+        add_library(voicetyper_platform_linux_gui STATIC
+            src/platform/linux/linux_clipboard.cpp
+            src/platform/linux/linux_paste.cpp
+        )
+        target_link_libraries(voicetyper_platform_linux_gui
+            PUBLIC
+                Qt6::Gui
+                voicetyper_platform_linux
+            PRIVATE
+                Qt6::Core
+        )
+        voicetyper_set_warnings(voicetyper_platform_linux_gui)
+        # The KGlobalAccel fallback receives D-Bus signals through a QObject
+        # receiver (QDBusConnection::connect has no lambda overload in Qt 6), so
+        # this target needs moc.
+        set_target_properties(voicetyper_platform_linux_gui PROPERTIES AUTOMOC ON)
+
+        # The KGlobalAccel fallback for sessions without /dev/input access. It
+        # needs Qt's D-Bus module: a machine without it still configures, and the
+        # composition then stays evdev-only instead of pretending the shortcut
+        # works (VT-PLT-1307).
+        find_package(Qt6 QUIET COMPONENTS DBus)
+        if(Qt6DBus_FOUND)
+            target_sources(voicetyper_platform_linux_gui
+                PRIVATE
+                    src/platform/linux/linux_kglobalaccel.cpp
+            )
+            target_link_libraries(voicetyper_platform_linux_gui
+                PUBLIC
+                    Qt6::DBus
+            )
+            # The composition compiles the fallback in only when it exists; a
+            # machine without Qt6DBus keeps the evdev-only build.
+            target_compile_definitions(voicetyper_platform_linux_gui
+                PUBLIC
+                    VOICETYPER_HAS_KGLOBALACCEL=1
+            )
+        else()
+            message(STATUS
+                "linux KGlobalAccel fallback: DISABLED (Qt6DBus not found)")
+        endif()
+
+        if(VOICETYPER_BUILD_TESTS)
+            if(Qt6DBus_FOUND)
+                add_executable(voicetyper-linux-kglobalaccel-contract EXCLUDE_FROM_ALL
+                    tests/contract/linux_kglobalaccel_contract.cpp
+                )
+                target_link_libraries(voicetyper-linux-kglobalaccel-contract
+                    PRIVATE
+                        Qt6::DBus
+                        voicetyper_platform_linux_gui
+                )
+                voicetyper_set_warnings(voicetyper-linux-kglobalaccel-contract)
+                add_test(NAME linux-kglobalaccel-contract
+                    COMMAND voicetyper-linux-kglobalaccel-contract
+                )
+                set_tests_properties(linux-kglobalaccel-contract PROPERTIES
+                    LABELS "linux;platform;input;qt"
+                    PASS_REGULAR_EXPRESSION "linux-kglobalaccel-contract: OK"
+                    TIMEOUT 120
+                )
+                if(TARGET voicetyper-tests)
+                    add_dependencies(voicetyper-tests voicetyper-linux-kglobalaccel-contract)
+                endif()
+            endif()
+
+            # A Qt console program: it forces the offscreen platform itself, so
+            # the contract does not depend on a desktop session.
+            add_executable(voicetyper-linux-clipboard-contract EXCLUDE_FROM_ALL
+                tests/contract/linux_clipboard_contract.cpp
+            )
+            target_link_libraries(voicetyper-linux-clipboard-contract
+                PRIVATE
+                    Qt6::Gui
+                    voicetyper_platform_linux_gui
+            )
+            voicetyper_set_warnings(voicetyper-linux-clipboard-contract)
+            add_test(NAME linux-clipboard-contract
+                COMMAND voicetyper-linux-clipboard-contract
+            )
+            set_tests_properties(linux-clipboard-contract PROPERTIES
+                LABELS "linux;platform;qt"
+                PASS_REGULAR_EXPRESSION "linux-clipboard-contract: OK"
+                TIMEOUT 120
+            )
+            if(TARGET voicetyper-tests)
+                add_dependencies(voicetyper-tests voicetyper-linux-clipboard-contract)
+            endif()
+        endif()
+    endif()
+
+    if(VOICETYPER_BUILD_TESTS)
+        add_executable(voicetyper-linux-platform-contract EXCLUDE_FROM_ALL
+            tests/contract/linux_platform_contract.cpp
+        )
+        target_link_libraries(voicetyper-linux-platform-contract
+            PRIVATE
+                voicetyper_core_support
+                voicetyper_platform_linux
+        )
+        voicetyper_set_warnings(voicetyper-linux-platform-contract)
+        add_test(NAME linux-platform-contract
+            COMMAND voicetyper-linux-platform-contract
+        )
+        set_tests_properties(linux-platform-contract PROPERTIES
+            LABELS "linux;platform"
+            PASS_REGULAR_EXPRESSION "linux-platform-contract: OK"
+            TIMEOUT 120
+        )
+        if(TARGET voicetyper-tests)
+            add_dependencies(voicetyper-tests voicetyper-linux-platform-contract)
+        endif()
+
+        add_executable(voicetyper-linux-hotkeys-contract EXCLUDE_FROM_ALL
+            tests/contract/linux_hotkeys_contract.cpp
+        )
+        target_link_libraries(voicetyper-linux-hotkeys-contract
+            PRIVATE
+                voicetyper_platform_linux
+        )
+        voicetyper_set_warnings(voicetyper-linux-hotkeys-contract)
+        add_test(NAME linux-hotkeys-contract
+            COMMAND voicetyper-linux-hotkeys-contract
+        )
+        set_tests_properties(linux-hotkeys-contract PROPERTIES
+            LABELS "linux;platform;input"
+            PASS_REGULAR_EXPRESSION "linux-hotkeys-contract: OK"
+            TIMEOUT 120
+        )
+        if(TARGET voicetyper-tests)
+            add_dependencies(voicetyper-tests voicetyper-linux-hotkeys-contract)
+        endif()
+
+        add_executable(voicetyper-linux-gamepad-contract EXCLUDE_FROM_ALL
+            tests/contract/linux_gamepad_contract.cpp
+        )
+        target_link_libraries(voicetyper-linux-gamepad-contract
+            PRIVATE
+                voicetyper_platform_linux
+        )
+        voicetyper_set_warnings(voicetyper-linux-gamepad-contract)
+        add_test(NAME linux-gamepad-contract
+            COMMAND voicetyper-linux-gamepad-contract
+        )
+        set_tests_properties(linux-gamepad-contract PROPERTIES
+            LABELS "linux;platform;input;gamepad"
+            PASS_REGULAR_EXPRESSION "linux-gamepad-contract: OK"
+            TIMEOUT 120
+        )
+        if(TARGET voicetyper-tests)
+            add_dependencies(voicetyper-tests voicetyper-linux-gamepad-contract)
+        endif()
+
+        # The native engine runtimes are built on every platform (their contract
+        # is "explicitly unavailable, with a reason, and no engine substituted");
+        # on Linux they load the shared objects instead of the Windows DLLs.
+        add_executable(voicetyper-linux-engines-contract EXCLUDE_FROM_ALL
+            tests/contract/linux_engines_contract.cpp
+        )
+        target_link_libraries(voicetyper-linux-engines-contract
+            PRIVATE
+                voicetyper_parakeet_runtime
+                voicetyper_transcribe_runtime
+        )
+        voicetyper_set_warnings(voicetyper-linux-engines-contract)
+        add_test(NAME linux-engines-contract
+            COMMAND voicetyper-linux-engines-contract
+        )
+        set_tests_properties(linux-engines-contract PROPERTIES
+            LABELS "linux;platform;asr"
+            PASS_REGULAR_EXPRESSION "linux-engines-contract: OK"
+            TIMEOUT 120
+        )
+        if(TARGET voicetyper-tests)
+            add_dependencies(voicetyper-tests voicetyper-linux-engines-contract)
+        endif()
+    endif()
+
+    # Native engine shared objects for Linux: the same pinned sources the
+    # Windows DLLs were built from, compiled for this platform. ExternalProject
+    # rather than FetchContent, because these are not consumed as CMake targets:
+    # the runtime loaders dlopen them at run time, exactly as the Windows build
+    # loads the DLLs, so the ABI assertion and the "no silent substitution" rule
+    # are the same code on both platforms.
+    if(VOICETYPER_BUILD_ASR)
+        include(ExternalProject)
+        voicetyper_native_manifest_get(parakeet.cpp parakeet_pin pinnedCommit)
+        voicetyper_native_manifest_get(transcribe.cpp transcribe_pin pinnedCommit)
+
+        set(VOICETYPER_ENGINE_LIBRARY_DIR "${CMAKE_BINARY_DIR}/engine-libs")
+
+        ExternalProject_Add(voicetyper_parakeet_cpp
+            # A source archive cannot be used here: parakeet.cpp compiles its own
+            # ggml submodule and applies in-tree patches to it, so the checkout has
+            # to be a real git tree with third_party/ggml populated.
+            GIT_REPOSITORY https://github.com/mudler/parakeet.cpp.git
+            GIT_TAG ${parakeet_pin}
+            GIT_SUBMODULES third_party/ggml
+            GIT_SUBMODULES_RECURSE TRUE
+            GIT_PROGRESS TRUE
+            PREFIX ${CMAKE_BINARY_DIR}/parakeet-cpp
+            CMAKE_ARGS
+                -DCMAKE_BUILD_TYPE=Release
+                -DCMAKE_INSTALL_PREFIX=${VOICETYPER_ENGINE_LIBRARY_DIR}
+                -DCMAKE_INSTALL_LIBDIR=.
+                -DPARAKEET_SHARED=ON
+                # ggml is linked statically INTO libparakeet.so on purpose: both
+                # engine libraries would otherwise depend on a "libggml*.so.0"
+                # with the same soname but a different version (parakeet.cpp pins
+                # ggml 0.13, transcribe.cpp pins 0.25), and the dynamic loader
+                # would resolve the second one to the first one's symbols.
+                -DBUILD_SHARED_LIBS=OFF
+                # The statically linked ggml has to be position independent to be
+                # linked into a shared object at all.
+                -DCMAKE_POSITION_INDEPENDENT_CODE=ON
+                -DPARAKEET_BUILD_CLI=OFF
+                -DPARAKEET_BUILD_SERVER=OFF
+                -DPARAKEET_BUILD_TESTS=OFF
+                -DGGML_NATIVE=OFF
+                -DGGML_OPENMP=OFF
+                -DGGML_BACKEND_DL=OFF
+            BUILD_BYPRODUCTS ${VOICETYPER_ENGINE_LIBRARY_DIR}/libparakeet.so
+            UPDATE_COMMAND ""
+            # parakeet.cpp has no install rules of its own (only its vendored
+            # ggml does), so the library is copied where the runtime loader looks
+            # for it: next to the application binary.
+            INSTALL_COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                <BINARY_DIR>/libparakeet.so ${VOICETYPER_ENGINE_LIBRARY_DIR}/libparakeet.so
+        )
+
+        ExternalProject_Add(voicetyper_transcribe_cpp
+            URL https://codeload.github.com/handy-computer/transcribe.cpp/tar.gz/${transcribe_pin}
+            URL_HASH SHA256=aab406e988dc2b3e58f6ba7cb4badfd735ff4cb15a966c4e157dcde7d7b302ee
+            PREFIX ${CMAKE_BINARY_DIR}/transcribe-cpp
+            CMAKE_ARGS
+                -DCMAKE_BUILD_TYPE=Release
+                -DCMAKE_INSTALL_PREFIX=${VOICETYPER_ENGINE_LIBRARY_DIR}
+                -DCMAKE_INSTALL_LIBDIR=.
+                -DTRANSCRIBE_BUILD_SHARED=ON
+                -DTRANSCRIBE_INSTALL=ON
+                -DTRANSCRIBE_BUILD_TESTS=OFF
+                -DTRANSCRIBE_BUILD_EXAMPLES=OFF
+                -DTRANSCRIBE_BUILD_TOOLS=OFF
+                -DTRANSCRIBE_USE_SYSTEM_BLAS=OFF
+                -DTRANSCRIBE_VULKAN=OFF
+                -DTRANSCRIBE_GGML_BACKEND_DL=OFF
+            BUILD_BYPRODUCTS ${VOICETYPER_ENGINE_LIBRARY_DIR}/libtranscribe.so
+            UPDATE_COMMAND ""
+            INSTALL_COMMAND ${CMAKE_COMMAND} --install <BINARY_DIR>
+        )
+
+        add_custom_target(voicetyper-linux-engine-libs
+            DEPENDS voicetyper_parakeet_cpp voicetyper_transcribe_cpp
+        )
+    endif()
+
+    # The Linux composition root, appended like the Windows one so the targets
+    # above are neither reordered nor rewritten. It needs the native engines, so
+    # it is only part of a build that has them; a GUI-off or ASR-off build keeps
+    # the portable window and never sees this file.
+    if(VOICETYPER_BUILD_GUI AND VOICETYPER_BUILD_ASR AND TARGET voicetyper-qt-shell)
+        target_sources(voicetyper-qt-shell PRIVATE
+            src/app/linux_application.cpp
+        )
+        target_compile_definitions(voicetyper-qt-shell PRIVATE
+            VOICETYPER_HAS_LINUX_COMPOSITION=1
+        )
+        target_link_libraries(voicetyper-qt-shell
+            PRIVATE
+                voicetyper_platform_linux
+                voicetyper_platform_linux_gui
+                voicetyper_platform_linux_audio
+                voicetyper_asr_native
+                voicetyper_microphone_level
+                voicetyper_capture_guard
+                voicetyper_update
+                voicetyper_model_download
+                voicetyper_state
+                voicetyper_output
+                voicetyper_terms
+                voicetyper_asr_silero
+                voicetyper_core_support
+        )
+    endif()
+endif()

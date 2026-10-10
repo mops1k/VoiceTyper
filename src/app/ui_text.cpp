@@ -12,7 +12,7 @@ struct Entry {
 };
 
 /// One row per UiKey, in the same order as the enum.
-constexpr std::array<Entry, 182> kTexts{{
+constexpr std::array<Entry, 190> kTexts{{
     Entry{" мс", " ms"},
     Entry{"%1 (недоступен)", "%1 (unavailable)"},
     Entry{"%1 · Скорость: %2 · Качество: %3", "%1 · Speed: %2 · Quality: %3"},
@@ -27,7 +27,7 @@ constexpr std::array<Entry, 182> kTexts{{
     Entry{"Записать комбинацию", "Capture combination"},
     Entry{"Запись", "Record"},
     Entry{"Запуск", "Startup"},
-    Entry{"Запускать вместе с Windows", "Start with Windows"},
+    Entry{"Запускать при входе в систему", "Start at login"},
     Entry{"Запускать свёрнутым", "Start minimized"},
     Entry{"Комбинация: %1", "Combination: %1"},
     Entry{"Микрофон", "Microphone"},
@@ -115,8 +115,8 @@ constexpr std::array<Entry, 182> kTexts{{
     Entry{"журнал недоступен", "the log is unavailable"},
     Entry{"микрофон недоступен: устройство отключено или занято",
         "microphone unavailable: the device is disconnected or busy"},
-    Entry{"не удалось зарегистрировать запуск вместе с Windows",
-        "could not register the run-at-Windows-startup entry"},
+    Entry{"не удалось зарегистрировать запуск при входе в систему",
+        "could not register the run-at-login entry"},
     Entry{"Удалить модель", "Delete model"},
     Entry{"Удалить файл модели «%1» с диска?", "Delete the model file \u201c%1\u201d from disk?"},
     Entry{"движок не инициализирован (нет активного бэкенда)",
@@ -169,8 +169,8 @@ constexpr std::array<Entry, 182> kTexts{{
     Entry{"Изменить", "Change"},
     Entry{"Нажмите клавиши…", "Press the keys…"},
     Entry{"Подсказка", "Tip"},
-    Entry{"Сочетания не должны конфликтовать с системными горячими клавишами Windows",
-        "Shortcuts must not conflict with Windows system hotkeys"},
+    Entry{"Сочетания не должны конфликтовать с системными горячими клавишами",
+        "Shortcuts must not conflict with system hotkeys"},
     // Страница «Журнал».
     Entry{"Системный журнал", "System log"},
     Entry{"События текущего сеанса VoiceTyper", "Events of the current VoiceTyper session"},
@@ -191,7 +191,7 @@ constexpr std::array<Entry, 182> kTexts{{
         "Improving the recording quality before recognition"},
     Entry{"Уменьшает постоянный фоновый шум", "Reduces constant background noise"},
     // Страница «О программе» (макет Figma Make: index.css .about-hero, .about-links).
-    Entry{"Локальная голосовая диктовка для Windows", "Local voice dictation for Windows"},
+    Entry{"Локальная голосовая диктовка", "Local voice dictation"},
     Entry{"О приложении", "About the application"},
     Entry{"Информация о сборке и обновлениях", "Build and update information"},
     Entry{"Ваши данные остаются на устройстве", "Your data stays on your device"},
@@ -224,6 +224,16 @@ constexpr std::array<Entry, 182> kTexts{{
     Entry{"ожидание", "idle"},
     Entry{"идёт запись", "recording"},
     Entry{"Хоткей", "Hotkey"},
+    Entry{"Хоткей работает только на нажатие: включён режим Toggle",
+        "The hotkey only reports a press: Toggle mode is on"},
+    Entry{"Геймпад", "Gamepad"},
+    Entry{"Кнопки контроллера для записи и отмены", "Controller buttons for record and cancel"},
+    Entry{"Кнопка записи", "Record button"},
+    Entry{"Кнопка отмены", "Cancel button"},
+    Entry{"Нажмите кнопку геймпада… (Escape — отмена)",
+        "Press a gamepad button… (Escape to cancel)"},
+    Entry{"Геймпад недоступен", "No gamepad is available"},
+    Entry{"Кнопка: %1", "Button: %1"},
 }};
 
 } // namespace

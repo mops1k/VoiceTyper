@@ -1164,14 +1164,18 @@ private slots:
     {
         voicetyper::app::QtStatusOverlay overlay;
         QVERIFY(overlay.create().is_ok());
-        // The pill is a frameless top-level window, so it is found by name among the
-        // application's top-level widgets rather than as a child of the overlay object.
-        QWidget* pill = nullptr;
+        // The overlay is a click-through host window (the only top-level part;
+        // on Wayland the pill itself is a child of it, because a client cannot
+        // position its own top-level windows), so the host is found by name among
+        // the application's top-level widgets and the pill inside it.
+        QWidget* host = nullptr;
         for (auto* widget : QApplication::topLevelWidgets()) {
-            if (widget->objectName() == QStringLiteral("statusOverlay")) {
-                pill = widget;
+            if (widget->objectName() == QStringLiteral("statusOverlayHost")) {
+                host = widget;
             }
         }
+        QVERIFY2(host != nullptr, "the overlay host was not created");
+        QWidget* pill = host->findChild<QWidget*>(QStringLiteral("statusOverlay"));
         QVERIFY2(pill != nullptr, "the overlay pill was not created");
         // The status label is a child of the pill.
         auto* text = pill->findChild<QLabel*>(QStringLiteral("statusOverlayText"));
@@ -1254,12 +1258,14 @@ private slots:
     {
         voicetyper::app::QtStatusOverlay overlay;
         QVERIFY(overlay.create().is_ok());
-        QWidget* pill = nullptr;
+        QWidget* host = nullptr;
         for (auto* widget : QApplication::topLevelWidgets()) {
-            if (widget->objectName() == QStringLiteral("statusOverlay")) {
-                pill = widget;
+            if (widget->objectName() == QStringLiteral("statusOverlayHost")) {
+                host = widget;
             }
         }
+        QVERIFY(host != nullptr);
+        QWidget* pill = host->findChild<QWidget*>(QStringLiteral("statusOverlay"));
         QVERIFY(pill != nullptr);
         auto* text = pill->findChild<QLabel*>(QStringLiteral("statusOverlayText"));
         QVERIFY(text != nullptr);
@@ -1528,17 +1534,18 @@ private slots:
             // stretching over the whole column.
             QVERIFY2(height <= 43, qPrintable(QStringLiteral("пункт %1 растянут: %2px").arg(row).arg(height)));
         }
-        qDebug() << "test sees count" << nav->count() << "icon0null" << nav->item(0)->icon().isNull();
+        // The glyph is painted by the navigation delegate from the item's page key
+        // (Qt::UserRole + 2), not stored as a model icon: on Wayland the item view
+        // never painted an icon that came from a QPixmap, and a stored pixmap was
+        // drawn unscaled over the delegate's glyph on other backends, which is what
+        // made the icons look distorted (measured 2026-10-08, dpr=2).
+        QVERIFY2(nav->itemDelegate() != nullptr, "у левого меню нет делегата иконок");
         for (int row = 0; row < nav->count(); ++row) {
             QListWidgetItem* item = nav->item(row);
             QVERIFY(item != nullptr);
-            // The icon lives in the model's decoration role, which is what the delegate
-            // paints: QListWidgetItem::icon() reads a separate copy QListWidget does not
-            // keep in step here, so it reports null even when the menu shows the icon.
-            const QVariant decoration =
-                nav->model()->data(nav->model()->index(row, 0), Qt::DecorationRole);
-            QVERIFY2(decoration.isValid(),
-                qPrintable(QStringLiteral("у пункта %1 нет иконки в модели").arg(row)));
+            const QString key = item->data(Qt::UserRole + 2).toString();
+            QVERIFY2(!key.isEmpty(),
+                qPrintable(QStringLiteral("у пункта %1 нет ключа страницы для иконки").arg(row)));
         }
         window.hide();
         std::filesystem::remove(path);
@@ -1602,6 +1609,34 @@ private slots:
         // disabled instead of starting a session that cannot work.
         QVERIFY(!record->isEnabled());
         QVERIFY(!record->toolTip().isEmpty());
+        std::filesystem::remove(path);
+    }
+
+    void the_gamepad_rows_are_read_only_and_their_capture_is_disabled_without_a_backend()
+    {
+        voicetyper::platform::PortableClock clock;
+        voicetyper::platform::PortableFileSystem file_system;
+        const auto path = std::filesystem::temp_directory_path() / "voicetyper-ui-gamepad-test.json";
+        std::filesystem::remove(path);
+        voicetyper::app::SettingsPresenter presenter(path, file_system, clock);
+        static_cast<void>(presenter.load());
+
+        voicetyper::app::MainWindow window(presenter, voicetyper::app::WindowServices{});
+        // The bindings are informational readouts: they are set through the capture
+        // button only, exactly like the hotkey fields above them.
+        for (const auto& name : {QStringLiteral("recordGamepadEdit"), QStringLiteral("cancelGamepadEdit")}) {
+            auto* field = window.findChild<QLineEdit*>(name);
+            QVERIFY2(field != nullptr, qPrintable(name));
+            QVERIFY(field->isReadOnly());
+        }
+        // No gamepad capture backend is registered on this host, so the buttons
+        // must be disabled with a reason instead of waiting forever.
+        for (const auto& name : {QStringLiteral("recordGamepadCapture"), QStringLiteral("cancelGamepadCapture")}) {
+            auto* button = window.findChild<QPushButton*>(name);
+            QVERIFY2(button != nullptr, qPrintable(name));
+            QVERIFY(!button->isEnabled());
+            QVERIFY(!button->toolTip().isEmpty());
+        }
         std::filesystem::remove(path);
     }
 };

@@ -15,6 +15,11 @@
 #include <QThread>
 #include <QTimer>
 #include <QWidget>
+#include <QWindow>
+
+#if defined(VOICETYPER_HAS_LAYER_SHELL)
+#include <LayerShellQt/Window>
+#endif
 
 #include <utility>
 
@@ -31,6 +36,11 @@ using domain::ErrorCode;
 constexpr double kPulseLowOpacity = 0.35;
 
 } // namespace
+
+bool overlay_needs_layer_shell(std::string_view platform_name)
+{
+    return platform_name == "wayland";
+}
 
 QtStatusOverlay::QtStatusOverlay(QObject* parent)
     : QObject(parent)
@@ -57,8 +67,10 @@ QtStatusOverlay::QtStatusOverlay(QObject* parent)
 QtStatusOverlay::~QtStatusOverlay()
 {
     stop_pulse();
-    // The pill is a top-level widget with no parent QObject, so it is owned here.
-    delete pill_;
+    // The host is a top-level widget with no parent QObject, so it is owned here;
+    // the pill is its child and goes with it.
+    delete host_;
+    host_ = nullptr;
     pill_ = nullptr;
     dot_ = nullptr;
     status_text_ = nullptr;
@@ -115,8 +127,8 @@ platform::Status QtStatusOverlay::hide()
     }
 
     stop_pulse();
-    if (pill_ != nullptr) {
-        pill_->hide();
+    if (host_ != nullptr) {
+        host_->hide();
     }
     state_ = platform::OverlayState::idle;
     return platform::Status::success();
@@ -135,7 +147,8 @@ platform::Status QtStatusOverlay::destroy()
     }
 
     stop_pulse();
-    delete pill_;
+    delete host_;
+    host_ = nullptr;
     pill_ = nullptr;
     dot_ = nullptr;
     status_text_ = nullptr;
@@ -168,17 +181,60 @@ void QtStatusOverlay::post_state(platform::OverlayState state, std::string detai
 
 void QtStatusOverlay::build()
 {
-    // Qt::Tool keeps the pill out of the taskbar (and out of Alt+Tab), the
-    // focus flags keep typing in the target window untouched, and
-    // WA_TransparentForMouseEvents keeps clicks out of it.
-    pill_ = new QWidget(nullptr,
+    // On Wayland a client cannot place its own top-level window: the compositor
+    // decides where it goes, which is why a plain "move to the bottom" pill ended
+    // up in the middle of the screen (measured on KDE Plasma 6, 2026-10-08). The
+    // overlay is therefore a full-screen, click-through, focus-less host window -
+    // which the compositor does place at the screen origin - and the pill is an
+    // ordinary child widget inside it, positioned by the client itself.
+    host_ = new QWidget(nullptr,
         Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint | Qt::WindowDoesNotAcceptFocus
             | Qt::NoDropShadowWindowHint);
+    host_->setObjectName(QStringLiteral("statusOverlayHost"));
+    host_->setAttribute(Qt::WA_ShowWithoutActivating, true);
+    host_->setAttribute(Qt::WA_TransparentForMouseEvents, true);
+    host_->setAttribute(Qt::WA_TranslucentBackground, true);
+    host_->setFocusPolicy(Qt::NoFocus);
+
+#if defined(VOICETYPER_HAS_LAYER_SHELL)
+    if (overlay_needs_layer_shell(QGuiApplication::platformName().toStdString())) {
+        // LayerShellQt wants the native window before it is shown: winId() creates
+        // it, get() attaches the layer-shell surface, and the compositor then puts
+        // the surface in the overlay layer - no window-list entry, no keyboard
+        // focus, no activation, which the plain window flags do not guarantee on
+        // Wayland (reported from the running build, 2026-10-11).
+        host_->winId();
+        if (QWindow* handle = host_->windowHandle()) {
+            if (LayerShellQt::Window* layer = LayerShellQt::Window::get(handle)) {
+                layer->setLayer(LayerShellQt::Window::LayerOverlay);
+                layer->setKeyboardInteractivity(LayerShellQt::Window::KeyboardInteractivityNone);
+                // Only the bottom edge is anchored: the compositor centres the
+                // surface horizontally, and its size is the pill's. A full-screen
+                // surface in the overlay layer swallows every click, because its
+                // input region covers the whole screen (reported from the running
+                // build, 2026-10-11).
+                layer->setAnchors(LayerShellQt::Window::AnchorBottom);
+                layer->setMargins(QMargins(0, 0, 0, kOverlayBottomGapPx));
+                layer->setExclusiveZone(-1);
+                layer->setScope(QStringLiteral("voicetyper-status"));
+                layer->setActivateOnShow(false);
+                layer_shell_active_ = true;
+                // The Qt message handler routes this into the application log, so
+                // "is the overlay really a layer-shell surface?" is answerable
+                // from the journal without a screen.
+                qInfo("status overlay: host is a layer-shell surface (overlay layer)");
+            }
+        }
+    }
+#endif
+
+    // Qt::Tool on the host keeps the overlay out of the taskbar (and out of
+    // Alt+Tab), the focus flags keep typing in the target window untouched, and
+    // WA_TransparentForMouseEvents keeps clicks out of it.
+    pill_ = new QWidget(host_);
     pill_->setObjectName(QStringLiteral("statusOverlay"));
-    pill_->setAttribute(Qt::WA_ShowWithoutActivating, true);
     pill_->setAttribute(Qt::WA_TransparentForMouseEvents, true);
     pill_->setAttribute(Qt::WA_StyledBackground, true);
-    pill_->setAttribute(Qt::WA_TranslucentBackground, true);
     pill_->setFocusPolicy(Qt::NoFocus);
 
     auto* layout = new QHBoxLayout(pill_);
@@ -228,15 +284,21 @@ void QtStatusOverlay::apply_state(platform::OverlayState state, const std::strin
         detail_ = detail;
     }
 
-    if (state == platform::OverlayState::idle) {
-        if (state_ == platform::OverlayState::error) {
-            // Deliberate: the reason for a failed dictation stays on screen until
-            // the next dictation replaces it. Hiding it here would reproduce the
-            // .NET behaviour of showing nothing at all.
-            return;
-        }
+    if (state == platform::OverlayState::error) {
+        // The overlay is not an error channel. A missing model, a lost device or a
+        // refused engine goes to the window's status line and the log, and the
+        // overlay simply goes away: keeping the reason on screen meant the pill sat
+        // there and blocked the window the user was typing into (reported from the
+        // running build, 2026-10-11). The state is idle, because nothing is shown.
         stop_pulse();
-        pill_->hide();
+        host_->hide();
+        state_ = platform::OverlayState::idle;
+        return;
+    }
+
+    if (state == platform::OverlayState::idle) {
+        stop_pulse();
+        host_->hide();
         state_ = platform::OverlayState::idle;
         return;
     }
@@ -253,9 +315,8 @@ void QtStatusOverlay::apply_state(platform::OverlayState state, const std::strin
         stop_pulse();
         break;
     case platform::OverlayState::error:
-        set_pill_text(detail.empty() ? overlay_state_text(state, language_).toStdString() : detail);
-        set_accent(kOverlayErrorAccent);
-        stop_pulse();
+        // Unreachable: the branch above hides the overlay and returns. Kept so the
+        // switch stays exhaustive and a future edit cannot quietly draw an error.
         break;
     case platform::OverlayState::idle:
         break;
@@ -263,12 +324,13 @@ void QtStatusOverlay::apply_state(platform::OverlayState state, const std::strin
 
     state_ = state;
     reposition();
-    if (!pill_->isVisible()) {
-        pill_->show(); // WA_ShowWithoutActivating: the user keeps typing
+    if (!host_->isVisible()) {
+        host_->show(); // WA_ShowWithoutActivating: the user keeps typing
         reposition();  // the final size is only known after the first layout
-    } else {
-        pill_->raise();
     }
+    // No raise(): the layer-shell surface already decides the stacking on Wayland,
+    // and raising an ordinary window is what made the compositor surface the
+    // overlay as a separate window (reported from the running build, 2026-10-11).
 }
 
 void QtStatusOverlay::set_pill_text(const std::string& text)
@@ -351,9 +413,22 @@ void QtStatusOverlay::set_theme(domain::AppTheme theme)
 
 void QtStatusOverlay::reposition()
 {
-    if (pill_ == nullptr) {
+    if (pill_ == nullptr || host_ == nullptr) {
         return;
     }
+    pill_->adjustSize();
+
+    if (layer_shell_active_) {
+        // The compositor places the surface: it is anchored to the bottom with the
+        // frozen gap and centred horizontally, so this process only says how big
+        // the pill is. Moving a window here would fight the compositor, and
+        // stretching the surface to the screen would swallow every click
+        // (reported from the running build, 2026-10-11).
+        host_->setFixedSize(pill_->size());
+        pill_->move(0, 0);
+        return;
+    }
+
     QScreen* screen = QGuiApplication::screenAt(QCursor::pos());
     if (screen == nullptr) {
         screen = QGuiApplication::primaryScreen();
@@ -367,10 +442,12 @@ void QtStatusOverlay::reposition()
         return;
     }
 
-    pill_->adjustSize();
+    // The host covers the working area; the pill is placed inside it, so the
+    // position is decided by this process and not by the compositor.
+    host_->setGeometry(available);
     const QSize size = pill_->size();
-    const int x = available.x() + (available.width() - size.width()) / 2;
-    const int y = available.y() + available.height() - size.height() - kOverlayBottomGapPx;
+    const int x = (available.width() - size.width()) / 2;
+    const int y = available.height() - size.height() - kOverlayBottomGapPx;
     pill_->move(x, y);
 }
 

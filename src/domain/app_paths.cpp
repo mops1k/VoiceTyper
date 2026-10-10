@@ -38,6 +38,38 @@ AppPathRoots windows_app_path_roots(
     return roots;
 }
 
+AppPathRoots linux_app_path_roots(
+    const EnvironmentLookup& environment, std::filesystem::path application_directory)
+{
+    AppPathRoots roots;
+    const auto home = root_from_environment(environment, "HOME");
+    roots.roaming = root_from_environment(environment, "XDG_CONFIG_HOME");
+    roots.local = root_from_environment(environment, "XDG_DATA_HOME");
+    roots.application = std::move(application_directory);
+
+    // The XDG specification's own defaults, which are only used when the
+    // variable is unset or empty: an empty XDG_CONFIG_HOME is not a root of "".
+    if (roots.roaming.empty() && !home.empty()) {
+        roots.roaming = home / ".config";
+    }
+    if (roots.local.empty() && !home.empty()) {
+        roots.local = home / ".local" / "share";
+    }
+
+    // Same chain as the Windows resolver: a partially set environment still
+    // produces one consistent pair of roots, and a completely stripped one
+    // lands in the application directory instead of an empty path.
+    if (roots.roaming.empty() && roots.local.empty()) {
+        roots.roaming = roots.application;
+        roots.local = roots.application;
+    } else if (roots.roaming.empty()) {
+        roots.roaming = roots.local;
+    } else if (roots.local.empty()) {
+        roots.local = roots.roaming;
+    }
+    return roots;
+}
+
 AppPaths::AppPaths(AppPathRoots roots)
     : roots_(std::move(roots))
 {

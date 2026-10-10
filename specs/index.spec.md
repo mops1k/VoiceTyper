@@ -2,6 +2,12 @@
 
 **Status:** normative specification of the code in this repository.
 **Baseline:** `main` @ `3cc4c5a9a602afb96c2f478a562005f5eb850068` (tag `v2.2.1`, 2026-10-08).
+**Linux extension:** the requirements marked `VT-*-11xx`…`VT-*-16xx` (and the
+`Linux` rows of the port tables) describe the multiplatform work of 2026-10-09/10 in
+the working tree: `src/platform/linux/`, `src/app/linux_application.cpp`, the Linux
+branches of `parakeet_runtime.cpp` / `transcribe_runtime.cpp` and the Linux CMake
+targets. They are written against the code as it stands in that tree, not against the
+`3cc4c5a` baseline, and are marked as such wherever they change a Windows-only rule.
 **Product version constant:** `VOICETYPER_VERSION` (currently `2.2.1`, [CMakeLists.txt:22](../CMakeLists.txt#L22)).
 **Requirement keywords:** RFC 2119 (`MUST`, `MUST NOT`, `SHALL`, `SHALL NOT`, `SHOULD`, `SHOULD NOT`, `MAY`).
 
@@ -49,10 +55,14 @@ Business intent, as stated by the project owner across the history that produced
 
 ### 1.3 Out of scope
 
-- **VT-SYS-010 — Linux/macOS are not shipped.** Only the Windows build is
-  published ([README.md:86-88](../README.md#L86-L88)). Non-Windows builds exist to
-  run the portable logic and the contract tests, and MUST NOT be presented as a
-  product build.
+- **VT-SYS-010 — Two shipped platforms: Windows and Linux.** The Windows build is
+  published as `VoiceTyper-<version>-win64-Setup.exe`; the Linux build targets Arch
+  Linux with KDE Plasma 6 (X11 and Wayland) and is produced from the same sources
+  (`src/platform/linux/`, [platform.spec.md](modules/platform.spec.md) §VT-PLT-11xx…16xx).
+  Both platforms MUST run the same composition (hotkeys → capture → engine → clipboard
+  → paste), and neither MAY be a reduced "contract-test only" build. macOS is out of
+  scope: there is no macOS backend, and a configure for any other platform still
+  produces the portable contract build only.
 - **VT-SYS-011 — No telemetry.** The system MUST NOT add analytics, crash
   reporting or usage reporting. The updater MAY report nothing beyond what an
   HTTP GET to `api.github.com` inherently carries.
@@ -60,8 +70,11 @@ Business intent, as stated by the project owner across the history that produced
   MUST NOT show partial transcripts while the user is speaking.
 - **VT-SYS-013 — Continuous dictation mode is not implemented.** It is described
   only in [`continuous-mode-plan.md`](../continuous-mode-plan.md) and is a future feature.
-- **VT-SYS-014 — Linux self-update is out of scope.** A Linux package would be
-  updated by the system package manager, not by this updater.
+- **VT-SYS-014 — Linux self-update is out of scope.** A Linux package is updated by
+  the system package manager, not by this updater. The update check MUST still work
+  (VT-SYS-080…083), and the install action MUST open the release page instead of
+  downloading an installer the platform cannot run
+  ([src/app/linux_application.cpp](../src/app/linux_application.cpp), `update_install`).
 
 ### 1.4 Actors
 
@@ -80,6 +93,13 @@ Business intent, as stated by the project owner across the history that produced
 - **VT-SYS-022 — C++.** The sources MUST be C++20 (`CMAKE_CXX_STANDARD 20`, [CMakeLists.txt:5](../CMakeLists.txt#L5)), extensions off.
 - **VT-SYS-023 — Build tools.** CMake 3.28+ and Ninja ([CMakeLists.txt:1](../CMakeLists.txt#L1)); Python 3 is optional and only enables fixture/differential tests ([CMakeLists.txt:53-58](../CMakeLists.txt#L53-L58)).
 - **VT-SYS-024 — Disk.** Model files range from 42 MB (Whisper Tiny) to about 941 MB (Parakeet q8_0) plus the VAD model ([README.md:53-56](../README.md#L53-L56), [platform.spec.md](modules/platform.spec.md) §model catalog).
+- **VT-SYS-025 — Linux.** The Linux build targets Arch Linux with KDE Plasma 6 (X11 and
+  Wayland), GCC and Qt 6.9+ Widgets, and additionally needs `libpulse`/`libpulse-simple`
+  (capture and the level meter), readable `/dev/input/event*` nodes (global hotkeys and gamepad
+  buttons; the `input` group or an ACL), `org.kde.kglobalaccel` on the session bus (the hotkey
+  fallback when `/dev/input` is not readable, Qt 6 D-Bus module) and `ydotool` with its daemon
+  socket (automatic pasting). Missing input devices or a missing sound server MUST degrade per
+  port (VT-PLT-12xx/13xx), never abort the start.
 
 ---
 
@@ -108,7 +128,8 @@ Dependencies point inward; the portable layer MUST NOT include Qt or an OS SDK.
         |                   +----------v---------+
         |                   | src/platform       |
         +------------------>| api/*.hpp (ports)  |
-                            | windows/, portable/|
+                            | windows/, linux/,  |
+                            | portable/           |
                             +--------------------+
 ```
 
@@ -120,6 +141,11 @@ Dependencies point inward; the portable layer MUST NOT include Qt or an OS SDK.
   and `src/platform/portable/` MUST compile without Qt and without `<windows.h>`; this is
   enforced at configure time by `voicetyper_check_portable_headers`
   ([CMakeLists.txt:44-45](../CMakeLists.txt#L44-L45), `cmake/PortableHeaders.cmake`) and re-checked by the `portable-headers` CTest.
+- **VT-SYS-031a — Linux backends follow the same layering.** `src/platform/linux/` MUST be
+  split into a Qt-free target (`voicetyper_platform_linux`), a Qt-dependent part
+  (`voicetyper_platform_linux_gui`, the `QClipboard` marshalling) and a libpulse part
+  (`voicetyper_platform_linux_audio`), and the composition (`src/app/linux_application.cpp`)
+  MUST reach the OS only through the ports (VT-PLT-11xx…16xx).
 - **VT-SYS-032 — Domain must not include ASR.** `src/domain/` MUST NOT depend on
   `src/asr/`; limits that both layers need are duplicated on purpose
   ([src/domain/settings.hpp:225-236](../src/domain/settings.hpp#L225-L236) explains `kBestOfMin`/`kBestOfMax` duplicating the engine's limits).
@@ -168,6 +194,9 @@ attribute behavior to these two directories.
   to the front (local socket message `show` over `QLocalServer`/`QLocalSocket`) and then exit.
 - **VT-SYS-043.** If the channel cannot be claimed while the mutex is owned, the process
   MUST refuse to start and log a warning rather than run a duplicate (commit `dfca3a1`).
+- **VT-SYS-044.** On Linux the single-instance gate MUST be the `QLocalServer` channel
+  (`src/app/tray_controller.cpp`): the named mutex of VT-SYS-040 is Win32-only, and a second
+  launch MUST hand the `show` request to the owner and exit (VT-PLT-1106).
 
 ### 2.5 Lifecycle and startup
 
@@ -184,6 +213,12 @@ attribute behavior to these two directories.
   and logged (commit `wasapi_capture`/`win32_startup` contract, `docs/migration/cpp/compatibility-contracts.md` §2).
 - **VT-SYS-054.** `--selftest` MUST report state (including autostart) and MUST NOT write
   to the registry or modify settings.
+- **VT-SYS-053a.** On Linux the same reconciliation rule MUST hold for the freedesktop entry
+  `$XDG_CONFIG_HOME/autostart/voicetyper.desktop`: it MAY be rewritten only when it is absent,
+  unparsable, already owned by this product, or points at a file that no longer exists
+  (VT-PLT-1105).
+- **VT-SYS-054a.** On Linux `--selftest` MUST NOT write the autostart entry either; the
+  reconciliation runs only on a normal launch.
 
 ### 2.6 File locations (Windows)
 
@@ -205,6 +240,22 @@ attribute behavior to these two directories.
   as a second source of truth.
 - **VT-SYS-067.** A missing environment root MUST fall back to the other root and finally
   to the executable directory; an empty variable counts as unset.
+
+### 2.6a File locations (Linux)
+
+| Artifact | Location | Requirement |
+|---|---|---|
+| Settings | `$XDG_CONFIG_HOME/VoiceTyper/settings.json` (fallback `$HOME/.config/VoiceTyper/settings.json`) | VT-SYS-068 |
+| Models | `$XDG_DATA_HOME/VoiceTyper/models` (fallback `$HOME/.local/share/VoiceTyper/models`) | VT-SYS-068 |
+| Log | `$XDG_DATA_HOME/VoiceTyper/logs/voiceTyper.log` | VT-SYS-068 |
+| Update download | `$XDG_DATA_HOME/VoiceTyper/updates` (the Linux build does not download installers, VT-SYS-014) | VT-SYS-068 |
+| Engine libraries | beside the executable, then `<exe_dir>/engine-libs` | VT-PLT-1602 |
+| Autostart | `$XDG_CONFIG_HOME/autostart/voicetyper.desktop` (freedesktop desktop entry) | VT-SYS-065a |
+
+- **VT-SYS-068.** The Linux paths MUST come from the same resolver
+  (`domain::AppPaths` over `domain::linux_app_path_roots`, VT-COR-105) and MUST NOT be
+  re-assembled at call sites; `VOICETYPER_SETTINGS_PATH`, `VOICETYPER_LOG_DIR` and
+  `VOICETYPER_MODELS_DIR` MUST keep overriding them (VT-SYS-066).
 
 ### 2.7 Logging
 
@@ -236,6 +287,10 @@ attribute behavior to these two directories.
   and relaunch the application regardless of the installer's exit status.
 - **VT-SYS-085.** A downloaded asset whose name lacks the `win64` marker MUST NOT be run
   (`src/app/windows_application.cpp` check documented in `.github/workflows/release.yml`).
+- **VT-SYS-086.** On Linux the check of VT-SYS-080…083 MUST still run and report a newer
+  version, but the install action MUST open the release page in the browser instead of
+  downloading and launching an installer (VT-SYS-014,
+  [src/app/linux_application.cpp](../src/app/linux_application.cpp) `update_install`).
 
 ### 2.9 Privacy
 

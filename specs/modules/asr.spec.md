@@ -357,6 +357,38 @@ Machine-readable source of truth: `docs/migration/cpp/native-dependencies.json`,
   builds (`include/parakeet.h`) MUST NEVER be bound; it is a build side effect and is linked by
   nothing.
 
+### Linux shared libraries (`VT-ASR-82x`)
+
+Added 2026-10-10 with the multiplatform work (VT-SYS-010). The Linux build uses the
+same three engines; Parakeet and GigaAM are shared libraries loaded with
+`dlopen`/`dlsym` instead of `LoadLibraryW`.
+
+| Dependency | Kind | Pin | ABI | License |
+|---|---|---|---|---|
+| whisper.cpp + ggml | source-built, static | `d09f61a708f3487afa956ff578e60eae5e7a233c` (1.9.4 / ggml 0.25.1) | pin is the contract | MIT |
+| `libparakeet.so` | built from source, `dlopen` | `e75de9b6b9b688fd293aa22f7e27aa724ea286f8` (v0.5.0-1), ggml **static** | **6** | MIT |
+| `libtranscribe.so` + `libggml*.so` (0.25.3) | built from source, `dlopen` | commit `3f32fbcc…`, tag v0.3.1 | version string `0.3.1` | MIT |
+
+- **VT-ASR-820.** Parakeet and GigaAM MUST bind exactly the symbol lists and ABI of
+  VT-ASR-5xx/6xx through `dlopen`/`dlsym` with `RTLD_NOW | RTLD_GLOBAL | RTLD_NODELETE`
+  (transcribe needs its symbols to stay global for the ggml backend)
+  ([src/platform/windows/parakeet_runtime.cpp](../../src/platform/windows/parakeet_runtime.cpp),
+  [src/platform/windows/transcribe_runtime.cpp](../../src/platform/windows/transcribe_runtime.cpp),
+  `#elif defined(__linux__)` branches).
+- **VT-ASR-821.** The library MUST be looked for first next to the running executable and then in
+  `<exe_dir>/engine-libs`, so a development build runs without copying files.
+- **VT-ASR-822.** Unavailability MUST be `native_library_missing` with the loader's own message
+  (including the undefined symbol), never `platform_unsupported`: Linux is a supported platform
+  now (VT-ASR-803).
+- **VT-ASR-823.** `libparakeet.so` MUST link its ggml statically: parakeet.cpp pins ggml 0.13 and
+  transcribe.cpp pins ggml 0.25 while both shared libraries carry the same `libggml*.so.0`
+  soname, so two shared copies cannot coexist in one process (VT-PLT-1604).
+- **VT-ASR-824.** Whisper on Linux MUST use the same pinned whisper.cpp archive and the CPU
+  backend as on Windows; no engine MAY be silently substituted when another one is unavailable.
+- **VT-ASR-825.** The engine libraries MUST be built by the `voicetyper_parakeet_cpp` /
+  `voicetyper_transcribe_cpp` ExternalProject targets and exposed through the
+  `voicetyper-linux-engine-libs` target ([build-release.spec.md](build-release.spec.md) §VT-BLD-7xx).
+
 ---
 
 ## 9. Data model on the ASR boundary
@@ -394,9 +426,11 @@ Machine-readable source of truth: `docs/migration/cpp/native-dependencies.json`,
 
 ## 10. Known gaps
 
-- **G-1.** Real engines exist on Windows only: Parakeet reports `platform_unsupported` and
-  GigaAM `unsupported` off Windows; `src/platform/linux/` contains only `.gitkeep`. Arch has
-  never run a real engine (release gate pending).
+- **G-1 (closed 2026-10-10).** Real engines used to exist on Windows only (Parakeet reported
+  `platform_unsupported`, GigaAM `unsupported`). All three now run on Linux: Whisper through the
+  same pinned whisper.cpp, Parakeet and GigaAM through `libparakeet.so` / `libtranscribe.so`
+  (VT-ASR-820…825); measured 2026-10-08 on Arch: Whisper tiny load 51 ms / warmup 2460 /
+  transcribe 1212, GigaAM q8 58/29/137, Parakeet q8 `state=ready`.
 - **G-2.** Parakeet cancellation latency is bounded only by one full inference (D1).
 - **G-3.** Silero is optional at runtime; with no model file the product silently degrades to the
   energy heuristic (logged).

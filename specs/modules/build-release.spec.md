@@ -75,6 +75,10 @@ verification, portable header audit), `installer/`, `.github/workflows/`, `tests
 | `voicetyper_platform_win32_input` (WIN32) | hotkeys + low-level keyboard hook + XInput gamepad |
 | `voicetyper_platform_win32_startup` (WIN32) | HKCU Run autostart |
 | `voicetyper_platform_win32_update_launcher` (WIN32+GUI) | writes and starts `run-update.cmd` |
+| `voicetyper_platform_linux` (UNIX AND NOT APPLE) | Qt-free Linux backends: paths, executor, startup, keymap/hotkeys, paste, microphone, level, audio capture |
+| `voicetyper_platform_linux_gui` | the Qt-dependent part (clipboard over `QClipboard`) |
+| `voicetyper_platform_linux_audio` | libpulse (`pkg-config libpulse-simple`) |
+| `voicetyper-linux-engine-libs` | aggregate: `voicetyper_parakeet_cpp` + `voicetyper_transcribe_cpp` (ExternalProject) |
 
 - **VT-BLD-203.** The executable MUST be `voicetyper-qt-shell` (`qt_add_executable ... WIN32`) from
   `src/app/main.cpp` plus, on Windows, `src/app/windows_application.cpp`, linking the real engines
@@ -91,6 +95,14 @@ verification, portable header audit), `installer/`, `.github/workflows/`, `tests
 - **VT-BLD-207.** `cmake --build <dir> --target voicetyper-tests` MUST build every registered test
   executable, and CI MUST run it before `ctest` (a plain build otherwise leaves every test
   "Not Run").
+- **VT-BLD-208.** On Linux the composition MUST be `src/app/linux_application.cpp`, selected by
+  `VOICETYPER_HAS_LINUX_COMPOSITION` in `src/app/main.cpp`; it MUST build the same window, tray,
+  hotkey service, capture, engines, clipboard and paste as the Windows composition, and MUST
+  create the XDG directories (`settings`, `models`, `logs`, `updates`) before the first write.
+- **VT-BLD-209.** The Linux self-update action MUST open the release page
+  (`QDesktopServices::openUrl`) instead of downloading an installer (VT-SYS-014).
+- **VT-BLD-210.** A Linux build with `VOICETYPER_BUILD_ASR=ON` MUST link the real engines and MUST
+  NOT require the shipped Windows DLLs; the native pin audit of VT-BLD-301 stays Windows-only.
 
 ---
 
@@ -116,6 +128,17 @@ verification, portable header audit), `installer/`, `.github/workflows/`, `tests
   starts including `windows.h`, X11/ALSA or Qt fails the suite.
 - **VT-BLD-306.** The `_WIN32_WINNT=0x0601` deviation for the vendored targets MUST be recorded and
   overridable (`-DVOICETYPER_WHISPER_WINDOWS_API_LEVEL=default`).
+- **VT-BLD-307.** The Linux engine libraries MUST be built as `ExternalProject` targets with
+  pinned tags: `voicetyper_parakeet_cpp` MUST use `GIT_REPOSITORY
+  https://github.com/mudler/parakeet.cpp.git` with `GIT_SUBMODULES third_party/ggml` (its
+  `scripts/apply_ggml_patches.sh` requires a git checkout, so the codeload archive cannot be
+  used), `PARAKEET_SHARED=ON`, `BUILD_SHARED_LIBS=OFF` and `CMAKE_POSITION_INDEPENDENT_CODE=ON`
+  (static ggml, VT-ASR-823), and MUST copy `libparakeet.so` in `INSTALL_COMMAND` because the
+  project has no install rules. `voicetyper_transcribe_cpp` MUST use the codeload archive with
+  `URL_HASH` (`TRANSCRIBE_BUILD_SHARED=ON`, `TRANSCRIBE_INSTALL=ON`, tests/examples/tools off,
+  system BLAS off, Vulkan off). Both MUST land in `<binary_dir>/engine-libs`.
+- **VT-BLD-308.** The `voicetyper-linux-engine-libs` target MUST depend on both projects so a
+  single build produces every shared library the runtime loaders look for.
 
 ---
 
@@ -234,6 +257,17 @@ verification, portable header audit), `installer/`, `.github/workflows/`, `tests
   present, declared `audioFormat`).
 - **VT-BLD-606.** There MUST be no test or script that downloads a model or loads a native model,
   because that would break the offline contract (VT-ASR-804).
+- **VT-BLD-606a.** On Linux the suite MUST include the seven Linux contract tests —
+  `linux-platform-contract` (paths, `/proc/self/exe`, executor, freedesktop autostart),
+  `linux-clipboard-contract`, `linux-audio-contract` (libpulse, skipping with 77 when there is no
+  sound server), `linux-hotkeys-contract` (evdev key map and capture grammar, skipping without
+  readable devices), `linux-kglobalaccel-contract` (the WPF→Qt key map, the unreachable-bus
+  refusal, the press-only release model; the real registration runs only with
+  `VOICETYPER_KGLOBALACCEL_LIVE=1`), `linux-gamepad-contract` (the evdev poll loop through the
+  injected reader seam) and `linux-engines-contract` (the `dlopen` search path and the
+  `native_library_missing` diagnostic) — plus the shared UI suites.
+- **VT-BLD-606b.** The Linux contract tests MUST NOT require the `input` group or a running sound
+  server: they skip explicitly (VT-BLD-602), so the suite stays green on a CI container.
 
 ### Manual Windows smoke
 

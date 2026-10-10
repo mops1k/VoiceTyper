@@ -97,6 +97,11 @@ struct WindowServices {
     /// suspends paste injection for the duration; empty when the platform has no
     /// capture hook, and then the buttons stay disabled with a reason.
     std::function<void(std::function<void(std::optional<std::string>, QString)>)> capture_hotkey;
+    /// Waits for the next gamepad button; `report` receives the settings spelling
+    /// ("XInput|A") or nothing plus a reason when the capture was cancelled or
+    /// failed. Empty on a platform without a gamepad backend, and then the
+    /// buttons stay disabled with a reason.
+    std::function<void(std::function<void(std::optional<std::string>, QString)>)> capture_gamepad;
     /// Whether the model for an engine and size index is already on disk, and a
     /// request to delete it (the composition asks for confirmation first). Empty on a
     /// platform that cannot know, and then the rows say so.
@@ -218,7 +223,6 @@ private:
     void bind_settings_to_controls();
     void apply_theme();
     /// Re-renders the navigation glyph icons for the current theme.
-    void refresh_nav_icons();
     /// Redraws the minimize/close symbols of the custom title bar.
     void refresh_title_button_icons();
     /// True when Windows reports the dark app theme (the System theme option).
@@ -233,6 +237,10 @@ private:
     /// settings dialog does the same, and typing "Alt+Win+Space" by hand is not a
     /// thing a user can do.
     void capture_hotkey_into(bool record);
+    /// Captures the next gamepad button into the record or cancel field: the
+    /// settings grammar ("XInput|A") is what the poll loop matches, so the user
+    /// must not type it by hand.
+    void capture_gamepad_into(bool record);
     /// Shows the Whisper-only rows (temperature, candidates) for that engine and hides
     /// them for the engines that ignore those parameters.
     void update_engine_specific_rows();
@@ -450,6 +458,10 @@ private:
     QPushButton* record_hotkey_capture_ = nullptr;
     QPushButton* cancel_hotkey_capture_ = nullptr;
     QLineEdit* cancel_hotkey_ = nullptr;
+    QLineEdit* record_gamepad_ = nullptr;
+    QLineEdit* cancel_gamepad_ = nullptr;
+    QPushButton* record_gamepad_capture_ = nullptr;
+    QPushButton* cancel_gamepad_capture_ = nullptr;
     QPlainTextEdit* terms_ = nullptr;
     QSpinBox* silence_threshold_ = nullptr;
     QDoubleSpinBox* temperature_ = nullptr;

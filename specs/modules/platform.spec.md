@@ -14,31 +14,31 @@
   an implementation MUST be reachable through its own CMake target declared behind
   `if(WIN32)` (or the GUI switch) so a non-Windows configure never sees it.
 
-| Port | File | Windows implementation | Portable implementation |
-|---|---|---|---|
-| `AudioCapture` | [api/audio_capture.hpp](../../src/platform/api/audio_capture.hpp) | **none** (⚠ G-1: no implementing class) | — |
-| `AudioConverter` | [api/audio_converter.hpp](../../src/platform/api/audio_converter.hpp) | **none** (⚠ G-1: conversion is called directly through `domain::*` free functions) | — |
-| `CaptureGuard` | [api/capture_guard.hpp](../../src/platform/api/capture_guard.hpp) | `capture_guard.cpp` | ✓ (no-op hooks) |
-| `Clipboard` | [api/clipboard.hpp](../../src/platform/api/clipboard.hpp) | `windows/win32_clipboard.*` | `portable_runtime` |
-| `Clock` | [api/clock.hpp](../../src/platform/api/clock.hpp) | `windows/win32_clock.*` | `portable_runtime` |
-| `CpuTopologyProvider` | [api/cpu_topology.hpp](../../src/platform/api/cpu_topology.hpp) | `windows/win32_*` | `domain::StandardCpuTopologyProvider` |
-| `EngineRegistry` | [api/engine_registry.hpp](../../src/platform/api/engine_registry.hpp) | `asr::NativeEngineRegistry` | ✓ |
-| `Executor` | [api/executor.hpp](../../src/platform/api/executor.hpp) | `windows/win32_executor.*` | `ManualExecutor`, `InlineExecutor` |
-| `FileSystem` | [api/file_system.hpp](../../src/platform/api/file_system.hpp) | `windows/win32_file_system.*` | `portable_runtime` |
-| `GamepadService` | [api/gamepad.hpp](../../src/platform/api/gamepad.hpp) | `windows/win32_gamepad.*` | `portable_runtime` |
-| `HotkeyService` | [api/hotkeys.hpp](../../src/platform/api/hotkeys.hpp) | `windows/win32_hotkeys.*` | `portable_runtime` |
-| `HttpClient` | [api/http.hpp](../../src/platform/api/http.hpp) | `app/qt_http_client.*` | — |
-| `LifecycleService` | [api/lifecycle.hpp](../../src/platform/api/lifecycle.hpp) | **none** (⚠ G-2: single-instance and shutdown are implemented ad hoc in `src/app/tray_controller.cpp` and the composition; `SingleInstanceGuard` is never instantiated); autostart lives in `windows/win32_startup.*` | — |
-| `Logger` | [api/logger.hpp](../../src/platform/api/logger.hpp) | `windows/win32_logger.*` | `domain::FileLogger` |
-| `MicrophoneService` | [api/microphone.hpp](../../src/platform/api/microphone.hpp) | `windows/windows_microphone.*` | `portable_runtime` |
-| `MicrophoneLevelPort` | [api/microphone_level.hpp](../../src/platform/api/microphone_level.hpp) | `windows/mc_wasapi.cpp`, `microphone_level.cpp` | — |
-| `ModelStore` | [api/model_store.hpp](../../src/platform/api/model_store.hpp) | `platform/catalog_model_store.cpp`, `model_catalog.cpp` | ✓ (policy) |
-| `PasteSimulator` | [api/paste.hpp](../../src/platform/api/paste.hpp) | `windows/win32_paste.*` | `portable_runtime` |
-| `Paths` | [api/paths.hpp](../../src/platform/api/paths.hpp) | `domain::AppPaths` | ✓ |
-| `StatusOverlay` | [api/status_overlay.hpp](../../src/platform/api/status_overlay.hpp) | `app/status_overlay.*` (Qt) | ✓ (offscreen in tests) |
-| `Transcriber` | [api/transcriber.hpp](../../src/platform/api/transcriber.hpp) | `asr::*` | ✓ (policy) |
-| `Tray` | [api/tray.hpp](../../src/platform/api/tray.hpp) | **none** (⚠ G-3: `app/tray_controller.*` is a Qt class that does not inherit the port) | — |
-| `UpdateService` | [api/updater.hpp](../../src/platform/api/updater.hpp) | **none** (⚠ G-3: `core::support::UpdateService` is its own class, not a `platform::UpdateService` subclass) | ✓ (policy) |
+| Port | File | Windows implementation | Linux implementation | Portable implementation |
+|---|---|---|---|---|
+| `AudioCapture` | [api/audio_capture.hpp](../../src/platform/api/audio_capture.hpp) | **none** (⚠ G-1: no implementing class) | **none** (the seam is `domain::RecordingPort`, see `linux/linux_audio_capture.*`) | — |
+| `AudioConverter` | [api/audio_converter.hpp](../../src/platform/api/audio_converter.hpp) | **none** (⚠ G-1: conversion is called directly through `domain::*` free functions) | **none** (same: `domain::downmix_to_mono`/`resample_to_16k`) | — |
+| `CaptureGuard` | [api/capture_guard.hpp](../../src/platform/api/capture_guard.hpp) | `capture_guard.cpp` | `capture_guard.cpp` (no-op hooks + `log_stack_trace` through execinfo) | ✓ (no-op hooks) |
+| `Clipboard` | [api/clipboard.hpp](../../src/platform/api/clipboard.hpp) | `windows/win32_clipboard.*` | `linux/linux_clipboard.*` (Qt, marshalled to the GUI thread) | `portable_runtime` |
+| `Clock` | [api/clock.hpp](../../src/platform/api/clock.hpp) | `windows/win32_clock.*` | `portable_runtime` (`PortableClock`) | `portable_runtime` |
+| `CpuTopologyProvider` | [api/cpu_topology.hpp](../../src/platform/api/cpu_topology.hpp) | `windows/win32_*` | `domain::StandardCpuTopologyProvider` | `domain::StandardCpuTopologyProvider` |
+| `EngineRegistry` | [api/engine_registry.hpp](../../src/platform/api/engine_registry.hpp) | `asr::NativeEngineRegistry` | `asr::NativeEngineRegistry` | ✓ |
+| `Executor` | [api/executor.hpp](../../src/platform/api/executor.hpp) | `windows/win32_executor.*` | `linux/linux_executor.*` (`LinuxExecutor`) | `ManualExecutor`, `InlineExecutor` |
+| `FileSystem` | [api/file_system.hpp](../../src/platform/api/file_system.hpp) | `windows/win32_file_system.*` | `portable_runtime` (`PortableFileSystem`) | `portable_runtime` |
+| `GamepadService` | [api/gamepad.hpp](../../src/platform/api/gamepad.hpp) | `windows/win32_gamepad.*` | `linux/linux_gamepad.*` (evdev, XInput-name bindings mapped onto evdev codes) | `portable_runtime` |
+| `HotkeyService` | [api/hotkeys.hpp](../../src/platform/api/hotkeys.hpp) | `windows/win32_hotkeys.*` | `linux/linux_hotkeys.*` + `linux/linux_keymap.*` (evdev), with `linux/linux_kglobalaccel.*` (D-Bus) as the fallback | `portable_runtime` |
+| `HttpClient` | [api/http.hpp](../../src/platform/api/http.hpp) | `app/qt_http_client.*` | `app/qt_http_client.*` | — |
+| `LifecycleService` | [api/lifecycle.hpp](../../src/platform/api/lifecycle.hpp) | **none** (⚠ G-2: single-instance and shutdown are implemented ad hoc in `src/app/tray_controller.cpp` and the composition; `SingleInstanceGuard` is never instantiated); autostart lives in `windows/win32_startup.*` | **none** (same ad-hoc `QLocalServer` channel in `src/app/tray_controller.cpp`); autostart lives in `linux/linux_startup.*` | — |
+| `Logger` | [api/logger.hpp](../../src/platform/api/logger.hpp) | `windows/win32_logger.*` | `domain::FileLogger` | `domain::FileLogger` |
+| `MicrophoneService` | [api/microphone.hpp](../../src/platform/api/microphone.hpp) | `windows/windows_microphone.*` | `linux/linux_microphone.*` (libpulse) | `portable_runtime` |
+| `MicrophoneLevelPort` | [api/microphone_level.hpp](../../src/platform/api/microphone_level.hpp) | `windows/mc_wasapi.cpp`, `microphone_level.cpp` | `linux/linux_microphone_level.*` (libpulse source volume/mute) | — |
+| `ModelStore` | [api/model_store.hpp](../../src/platform/api/model_store.hpp) | `platform/catalog_model_store.cpp`, `model_catalog.cpp` | `platform/catalog_model_store.cpp`, `model_catalog.cpp` | ✓ (policy) |
+| `PasteSimulator` | [api/paste.hpp](../../src/platform/api/paste.hpp) | `windows/win32_paste.*` | `linux/linux_paste.*` (ydotool) | `portable_runtime` |
+| `Paths` | [api/paths.hpp](../../src/platform/api/paths.hpp) | `domain::AppPaths` | `domain::AppPaths` + `domain::linux_app_path_roots` (XDG) | ✓ |
+| `StatusOverlay` | [api/status_overlay.hpp](../../src/platform/api/status_overlay.hpp) | `app/status_overlay.*` (Qt) | `app/status_overlay.*` (Qt, host-window on Wayland) | ✓ (offscreen in tests) |
+| `Transcriber` | [api/transcriber.hpp](../../src/platform/api/transcriber.hpp) | `asr::*` | `asr::*` (Whisper, Parakeet, GigaAM) | ✓ (policy) |
+| `Tray` | [api/tray.hpp](../../src/platform/api/tray.hpp) | **none** (⚠ G-3: `app/tray_controller.*` is a Qt class that does not inherit the port) | **none** (same) | — |
+| `UpdateService` | [api/updater.hpp](../../src/platform/api/updater.hpp) | **none** (⚠ G-3: `core::support::UpdateService` is its own class, not a `platform::UpdateService` subclass) | **none** (same; the install action opens the release page, VT-SYS-014) | ✓ (policy) |
 
 ---
 
@@ -265,8 +265,8 @@ implementation: `src/app/status_overlay.*`; test: `ui-status-overlay-test`.
   recording state machine so the pill can never show a state the recorder is not in.
 - **VT-PLT-602.** The overlay MUST be a frameless, always-on-top pill, horizontally centred,
   `26 px` above the bottom of the working area, showing an `11 px` dot and a `15 px` semibold
-  label; the two states use `#4C8BF5` (recording) and `#F5A623` (processing), and the error state
-  uses `#E5484D`.
+  label; the two rendered states use `#4C8BF5` (recording) and `#F5A623` (processing). The error
+  state is never rendered (VT-PLT-608).
 - **VT-PLT-603.** The dot MUST pulse with `kOverlayPulsePeriod = 350 ms` between opacity `1.0` and
   `0.35` (a full cycle therefore takes 700 ms).
 - **VT-PLT-604.** The pill MUST NOT enter the taskbar, MUST NOT take focus and MUST NOT swallow a
@@ -279,8 +279,11 @@ implementation: `src/app/status_overlay.*`; test: `ui-status-overlay-test`.
 - **VT-PLT-607.** A worker thread MUST publish through a thread-safe queued `post_state()`;
   `create/show/set_state/hide/destroy` MUST be UI-thread-only and MUST report `invalid_state` when
   called from another thread.
-- **VT-PLT-608.** The `error` state MUST show the error code name plus the message and MUST stay on
-  screen until the next dictation replaces it (an `idle` transition MUST NOT hide an error).
+- **VT-PLT-608.** The `error` state MUST NOT be rendered. The overlay MUST hide and report `idle`,
+  because the reason belongs to the window's status line and the log — a pill that stayed on
+  screen sat on top of the window the user was typing into (reported from the running build,
+  2026-10-11). `OverlayState::error` stays in the port contract for parity, and an `idle`
+  transition MUST leave the overlay hidden.
 - **VT-PLT-609.** The overlay MUST NOT show a level meter, a progress bar or any transcript text
   (VT-SYS-012, VT-SYS-073).
 
@@ -395,7 +398,186 @@ Port: [api/cpu_topology.hpp](../../src/platform/api/cpu_topology.hpp).
 
 ---
 
-## 11. Known gaps
+## 11. Linux backends (`VT-PLT-11xx`…`VT-PLT-16xx`)
+
+Added 2026-10-10 with the multiplatform work (VT-SYS-010). Every rule below
+describes `src/platform/linux/`, `src/app/linux_application.cpp` and the Linux
+branches of the shared runtime loaders. The Windows rules above are unchanged.
+
+### Lifecycle, paths and executor (`VT-PLT-11xx`)
+
+- **VT-PLT-1101.** `domain::linux_app_path_roots(environment, application_directory)` MUST
+  resolve the XDG layout: settings under `$XDG_CONFIG_HOME/VoiceTyper` (fallback
+  `$HOME/.config`), models/logs/updates under `$XDG_DATA_HOME/VoiceTyper` (fallback
+  `$HOME/.local/share`). An unset **or empty** variable MUST be treated as unset, a missing
+  root MUST fall back to the other one, and a completely stripped environment MUST fall back
+  to the application directory — never to an empty path
+  ([src/domain/app_paths.cpp](../../src/domain/app_paths.cpp)).
+- **VT-PLT-1102.** `linuxos::executable_file_path()` MUST resolve `/proc/self/exe` with a
+  buffer that grows until the link fits, and MUST return an empty path when it cannot
+  ([src/platform/linux/linux_paths.cpp](../../src/platform/linux/linux_paths.cpp)).
+- **VT-PLT-1103.** Autostart MUST be a freedesktop desktop entry
+  `$XDG_CONFIG_HOME/autostart/voicetyper.desktop`, written atomically (temporary file +
+  rename) so a crash cannot leave a truncated entry, with the `Exec` value quoted by the
+  freedesktop rules and ` --start-minimized` appended when the setting is on
+  ([src/platform/linux/linux_startup.cpp](../../src/platform/linux/linux_startup.cpp)).
+- **VT-PLT-1104.** Enabling twice MUST store byte-identical content, and disabling an absent
+  entry MUST succeed (idempotence in both directions).
+- **VT-PLT-1105.** A launch-time reconciliation MUST NOT rewrite an entry that names a
+  different executable which still exists (the Linux form of VT-SYS-053).
+- **VT-PLT-1106.** Single instance on Linux MUST use the `QLocalServer` channel of
+  `src/app/tray_controller.cpp`; the global mutex of VT-PLT-104 is Windows-only. A second
+  launch MUST exit and the owner MUST raise its window.
+- **VT-PLT-1107.** `LinuxExecutor` MUST reproduce the frozen `Executor` semantics: a
+  generation-tagged `post`, silent drop of a stale epoch, `invoke()` running inline when
+  called on the executor's own thread, `shutdown()` clearing the queue and advancing the
+  epoch, and an exception becoming `ErrorCode::internal`
+  ([src/platform/linux/linux_executor.cpp](../../src/platform/linux/linux_executor.cpp)).
+
+### Audio (`VT-PLT-12xx`)
+
+- **VT-PLT-1201.** Microphone enumeration MUST use libpulse sources and MUST exclude monitor
+  sources (`monitor_of_sink != PA_INVALID_INDEX`); the id MUST be the source name and an
+  empty id MUST mean "the system default source"
+  ([src/platform/linux/linux_microphone.cpp](../../src/platform/linux/linux_microphone.cpp)).
+- **VT-PLT-1202.** An empty device list MUST be a success (VT-PLT-302), and the diagnostic
+  MUST distinguish "no sound server" from "no capture device".
+- **VT-PLT-1203.** Capture MUST be a `domain::RecordingPort` over `pa_simple` (10 ms blocks)
+  that delivers 16 kHz mono float through `domain::downmix_to_mono` /
+  `domain::resample_to_16k`, with the D7 bound of VT-DOM/D7
+  ([src/platform/linux/linux_audio_capture.cpp](../../src/platform/linux/linux_audio_capture.cpp)).
+- **VT-PLT-1204.** A source name that does not exist MUST be detected by enumeration *before*
+  the stream is opened: measured 2026-10-08, pipewire-pulse answers `pa_simple_new()` with a
+  working stream for an unknown name and no error.
+- **VT-PLT-1205.** `stop()` without a live session MUST be `invalid_state`, `cancel()` MUST be
+  idempotent, `drain()` MUST move a watermark without clearing, and a session that hits the
+  bound MUST fail with `resource_exhausted` instead of returning a truncated buffer (the
+  Windows rules of VT-PLT-3xx).
+- **VT-PLT-1206.** The microphone level MUST be the default source's volume and mute through
+  `pa_sw_volume_to_linear` / `pa_sw_volume_from_linear`, reported as `available == false`
+  when the session has no sound server or no source
+  ([src/platform/linux/linux_microphone_level.cpp](../../src/platform/linux/linux_microphone_level.cpp)).
+- **VT-PLT-1207.** The capture backend MUST expose the last ~0.2 s peak for the microphone
+  test (the Linux form of the Windows level meter).
+
+### Input (`VT-PLT-13xx`)
+
+- **VT-PLT-1301.** The key map MUST translate the settings' WPF key names ("Space", "D0"…"D9",
+  "NumPad0"…"NumPad9", "F1"…"F24", "Oem*", letters) to Linux input event codes and back, and
+  MUST report 0 / an empty name for anything it does not know
+  ([src/platform/linux/linux_keymap.cpp](../../src/platform/linux/linux_keymap.cpp)).
+- **VT-PLT-1302.** Global hotkeys MUST be read from `/dev/input/event*` nodes that report
+  `EV_KEY` and the letter keys, and MUST deliver the press **and** the release edge
+  (push-to-talk) on a backend-owned reader thread
+  ([src/platform/linux/linux_hotkeys.cpp](../../src/platform/linux/linux_hotkeys.cpp)).
+- **VT-PLT-1303.** A session without readable input devices MUST report per-hotkey
+  registration errors (never a whole-call failure) with a diagnostic naming the `input` group
+  or a udev rule, and MUST NOT block.
+- **VT-PLT-1304.** `unregister_all()` MUST stop the reader and close every device descriptor;
+  it MUST be idempotent and MUST leave no callback in flight.
+- **VT-PLT-1305.** The capture hook MUST reject a bare key without a modifier unless it is
+  F1…F24 (the frozen rule of `src/domain/hotkey_gesture.hpp`) and MUST return `cancelled` on
+  Escape or on a cancelled token.
+- **VT-PLT-1306.** (was G-15) The Linux gamepad backend MUST poll `/dev/input/event*` nodes that
+  report the gamepad buttons (`BTN_SOUTH`/`BTN_EAST`/`BTN_NORTH`/`BTN_WEST`) **and** the absolute
+  axes (`EV_ABS`), deliver the press **and** the release edge on a backend-owned poll thread at
+  the frozen 33 ms cadence, and debounce an edge until the same sample has been seen twice,
+  exactly as the Windows backend does. A node that reports the button codes without `EV_ABS` — a
+  virtual keyboard/mouse, such as ydotoold's device — MUST NOT be treated as a controller
+  (measured live 2026-10-11)
+  ([src/platform/linux/linux_gamepad.cpp](../../src/platform/linux/linux_gamepad.cpp)).
+- **VT-PLT-1310.** The settings bindings keep the Windows grammar, so the backend MUST map the
+  `XInputPadButton` names onto evdev codes: A=`BTN_SOUTH`, B=`BTN_EAST`, X=`BTN_WEST`, Y=`BTN_NORTH`,
+  LB=`BTN_TL`, RB=`BTN_TR`, LT/RT=`ABS_Z`/`ABS_RZ` normalised to the 0..255 scale with the 30
+  threshold, the D-pad to `ABS_HAT0X`/`ABS_HAT0Y`, Start=`BTN_START`, Back=`BTN_SELECT`,
+  LeftStick=`BTN_THUMBL`, RightStick=`BTN_THUMBR`. A `DInput|...` binding parses and is accepted but
+  never matches — the same deliberate gap the Windows backend documents.
+- **VT-PLT-1311.** An absent or empty binding MUST be a success ("no gamepad action"), a present but
+  malformed one MUST be `invalid_argument`, and a machine with no controller MUST keep polling with
+  an empty `devices()` instead of failing. `capture_next()` MUST return the first pressed button as
+  its settings spelling and MUST be cancelable; losing a controller MUST NOT stop the service.
+- **VT-PLT-1312.** The composition MUST connect the gamepad edges to the same recording machine as
+  the hotkeys and MUST expose `capture_gamepad` to the settings window, which shows the record and
+  cancel bindings in their own card with read-only readouts (empty when nothing is bound, and the
+  capture buttons disabled with a reason when the port is absent).
+- **VT-PLT-1307.** When the session has no readable `/dev/input` node, the global hotkeys MUST fall
+  back to `org.kde.kglobalaccel` through D-Bus
+  ([src/platform/linux/linux_kglobalaccel.cpp](../../src/platform/linux/linux_kglobalaccel.cpp)).
+  Registration MUST be `doRegister(actionId)` followed by
+  `setShortcut(actionId, keys, flags)` with `flags = SetPresent | NoAutoloading` (`SetPresent = 2`,
+  `NoAutoloading = 4`, from `kglobalaccel_p.h`): without `SetPresent` kglobalaccel stores the keys
+  but keeps the component inactive and emits no signal at all (measured 2026-10-11). The action id
+  is `{"voicetyper", "record" | "cancel", "VoiceTyper", "<friendly>"}`, and the signals are read
+  from `/component/voicetyper`, the same object the C++ API subscribes to.
+- **VT-PLT-1308.** The fallback MUST report what it can deliver, because the release edge decides
+  whether push-to-talk works at all. `HotkeyCapability` is `none` when neither mechanism is
+  available, `evdev` while keyboards are open (press **and** release), `kglobal_accel` when the bus
+  exposes `globalShortcutReleased`, and `kglobal_accel_press_only` when it does not. In the
+  press-only case the composition MUST force `RecordingMode::toggle` for the session and say so in
+  the window (`UiKey::k182`), never pretending push-to-talk is available.
+- **VT-PLT-1309.** The key names of the settings file MUST map to Qt key codes for the fallback
+  (`hotkey_qt_key_code`, `hotkey_qt_modifier_flags`): `Qt::Key_*` plus `Qt::KeypadModifier` for
+  `NumPad0`…`NumPad9`, and `Qt::*Modifier` for the gesture modifiers. A name the map does not know
+  MUST be refused per hotkey, not registered as something else. With kglobalaccel unreachable the
+  apply MUST report a per-hotkey reason, `unregister_all()` MUST release both actions and stay
+  idempotent, and no edge may reach the sink after it returns.
+
+### Output: clipboard and paste (`VT-PLT-14xx`)
+
+- **VT-PLT-1401.** The clipboard MUST be Qt's, marshalled to the GUI thread with a bounded
+  wait; a call with no `QGuiApplication` MUST be `unavailable`, never a silent success (the
+  gap the Windows backend closes, VT-PLT-501)
+  ([src/platform/linux/linux_clipboard.cpp](../../src/platform/linux/linux_clipboard.cpp)).
+- **VT-PLT-1402.** A clipboard holding an empty string MUST read back as "no text", exactly
+  like the Windows backend.
+- **VT-PLT-1403.** Paste MUST be a synthetic Ctrl+V through ydotool
+  (`key 29:1 47:1 47:0 29:0`), available only when the tool and the daemon socket exist;
+  otherwise it MUST report `unavailable` so the caller raises the explicit `clipboard_only`
+  state (VT-PLT-504)
+  ([src/platform/linux/linux_paste.cpp](../../src/platform/linux/linux_paste.cpp)).
+- **VT-PLT-1404.** The paste simulator MUST expose the suspend flag used while the settings
+  window captures a hotkey.
+
+### Status overlay on Wayland (`VT-PLT-15xx`)
+
+- **VT-PLT-1501.** The overlay MUST satisfy VT-PLT-602/605 (horizontally centred, 26 px above
+  the bottom of the working area) also on Wayland, where a client cannot place its own
+  top-level window: the top-level MUST be a full-screen click-through host window and the pill
+  a child widget positioned by the client
+  ([src/app/status_overlay.cpp](../../src/app/status_overlay.cpp)).
+- **VT-PLT-1502.** The host window MUST NOT take focus, MUST NOT swallow input and MUST NOT
+  appear in the window list / taskbar (the flags of VT-PLT-603/604), and the pill MUST remain
+  the widget the UI tests address as `statusOverlay`. On Wayland the plain window flags are
+  **not sufficient** for that: an ordinary `xdg-toplevel` still lands in the window list and can
+  be activated (reported from the running build, 2026-10-11). The host MUST therefore be
+  promoted to a `wl-layer-shell` surface through LayerShellQt with `LayerOverlay`,
+  `KeyboardInteractivityNone`, an anchor on the **bottom edge only** (the compositor centres it
+  horizontally), the frozen gap as the bottom margin and `ExclusiveZone = -1`, and MUST NOT be
+  raised on show. The surface MUST be sized to the pill, never to the screen: a screen-sized
+  surface in the overlay layer swallows every click, because its input region covers the whole
+  screen (also reported 2026-10-11). `overlay_needs_layer_shell()` is the testable decision
+  (Wayland only) and `QtStatusOverlay::layer_shell_active()` reports what happened; without
+  LayerShellQt the build keeps the ordinary window and configures.
+
+### Engine libraries (`VT-PLT-16xx`)
+
+- **VT-PLT-1601.** Parakeet and GigaAM MUST load `libparakeet.so` / `libtranscribe.so` through
+  `dlopen`/`dlsym`, binding exactly the symbol lists of VT-ASR-5xx/6xx and asserting the same
+  ABI (Parakeet ABI 6, transcribe.cpp 0.3.1) as the Windows DLLs
+  ([src/platform/windows/parakeet_runtime.cpp](../../src/platform/windows/parakeet_runtime.cpp),
+  [src/platform/windows/transcribe_runtime.cpp](../../src/platform/windows/transcribe_runtime.cpp),
+  `#elif defined(__linux__)` branches).
+- **VT-PLT-1602.** The library MUST be looked for first next to the running executable and then
+  in `<exe_dir>/engine-libs`, so a development build works without copying files.
+- **VT-PLT-1603.** A missing or unloadable library MUST report
+  `EngineAvailabilityReason::native_library_missing` with the loader's own message; no other
+  engine MAY be substituted (VT-ASR-3xx).
+- **VT-PLT-1604.** `libparakeet.so` MUST link its ggml statically: parakeet.cpp pins ggml 0.13
+  and transcribe.cpp pins ggml 0.25 while both shared libraries carry the same
+  `libggml*.so.0` soname, so two shared copies cannot coexist in one process
+  ([CMakeLists.txt](../../CMakeLists.txt), target `voicetyper_parakeet_cpp`).
+
+## 12. Known gaps
 
 - **G-1.** `platform::AudioCapture` and `platform::AudioConverter` have **no implementation** in
   this repository. The capture path that runs is `WindowsAudioCapture : domain::RecordingPort`

@@ -28,8 +28,34 @@ cmake --build --preset windows-mingw-release --target voicetyper-deploy
 
 `voicetyper-deploy` produces the runnable tree: one executable plus the Qt runtime, the
 platform plugin, the recognisers and `mc_wasapi.dll` (the native capture library, taken from
-`native/`). On Linux the same roles are played by `cmake --preset linux-arch-release` and
-`cmake --preset linux-arch-gui-off`.
+`native/`).
+
+### Linux (Arch Linux, KDE Plasma 6, Wayland)
+
+The Linux build uses the same sources; only the platform backends and the recogniser
+libraries differ. Beyond the common list it needs:
+
+- `libpulse` and `libpulse-simple` development packages — microphone enumeration, capture
+  and the level meter.
+- Qt 6 **DBus** module — the `org.kde.kglobalaccel` hotkey fallback for a session where
+  `/dev/input` is not readable. Without it the build configures and simply stays evdev-only.
+- Readable `/dev/input/event*` nodes — global hotkeys and gamepad buttons (the `input`
+  group or a udev ACL).
+- `ydotool` with its daemon running (`systemctl --user start ydotool`, the user unit) —
+  automatic pasting; without it the application degrades to clipboard-only and says so in
+  the log.
+
+```bash
+cmake --preset linux-arch-release
+cmake --build --preset linux-arch-release --target voicetyper-qt-shell
+# The recogniser shared objects are built into engine-libs; the loaders also look
+# next to the executable, so a development build runs without copying anything.
+./build/linux-arch-release/voicetyper-qt-shell
+```
+
+`linux-arch-gui-off` configures the portable window without the Qt backends (a headless
+compile check). Paths follow XDG: settings in `$XDG_CONFIG_HOME/VoiceTyper`, models and logs
+in `$XDG_DATA_HOME/VoiceTyper`, the autostart entry in `$XDG_CONFIG_HOME/autostart`.
 
 The product version lives in one place — the `VOICETYPER_VERSION` CMake variable. It is what
 the About page shows and what the update check compares against the release tag, so a release
@@ -47,6 +73,22 @@ nothing else; `voicetyper-tests` builds all the test executables at once. The su
 contracts with the .NET behaviour (settings JSON byte for byte, hotkey grammar, update
 manifest, capture guard, microphone level), the recording state machine, the update service
 and the settings window itself.
+
+On Linux the same commands work with the Linux preset:
+
+```bash
+cmake --build --preset linux-arch-release --target voicetyper-tests
+ctest --test-dir build/linux-arch-release --output-on-failure
+```
+
+The Linux contract tests are `linux-platform-contract` (XDG paths, `/proc/self/exe`,
+executor, freedesktop autostart), `linux-clipboard-contract`, `linux-audio-contract`
+(libpulse), `linux-hotkeys-contract` (evdev key map and capture grammar),
+`linux-kglobalaccel-contract` (the WPF→Qt key map, the unreachable-bus refusal and the
+press-only release model; a real registration runs only with
+`VOICETYPER_KGLOBALACCEL_LIVE=1`), `linux-gamepad-contract` (the evdev poll loop through its
+injected reader) and `linux-engines-contract` (`dlopen` search path). They never require the
+`input` group or a sound server: a session without them skips explicitly instead of failing.
 
 ## Installer
 

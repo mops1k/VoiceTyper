@@ -1059,7 +1059,13 @@ int run(int argc, char** argv)
             // thread affinity and the UI thread must never block on a request.
             app::QtHttpClient http;
             const auto version = domain::version();
-            core::support::UpdateService service(http, std::string(version));
+            // The same asset kind the install step uses: on Linux the release to
+            // offer is the AppImage, and asking for the installer made the check
+            // report "Installer not found in the release" whenever a release carried
+            // no Setup.exe (VT-SYS-014).
+            core::support::UpdateService service(http, std::string(version),
+                std::string(core::support::kUpdateLatestReleaseUrl),
+                core::support::UpdateAssetKind::appimage);
             const auto result = service.check(domain::CancellationToken{});
             std::string detail;
             switch (result.kind) {

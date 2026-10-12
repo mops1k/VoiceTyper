@@ -394,16 +394,21 @@ consequences are:
   the delegate alone.
 - **VT-UI-1004a.** A theme change MUST repaint the navigation list (the delegate reads the
   current text colour) and MUST NOT write icons into the model.
-- **VT-UI-1005.** The bundled Selawik family (Regular/Semibold/Bold, SIL OFL 1.1,
-  `assets/fonts/Selawik-*.ttf` with `assets/fonts/LICENSE-Selawik.txt`) MUST be registered from
-  the Qt resources before any widget is created, and its resource paths MUST stay in step with
-  `application_font.cpp`. Selawik is Microsoft's metrically Segoe UI-compatible open typeface;
-  it is the only typeface of the window, so the metrics the layout was measured against do not
-  depend on the host (reported 2026-10-11: the previous Inter resources were registered under
-  `:/assets/fonts/…` while the code asked for `:/fonts/…`, `addApplicationFont` failed silently
-  and the window silently used the system font — Segoe UI on Windows, Noto/DejaVu on Linux,
-  which overflowed the settings scroll viewports in CI). Segoe UI itself MUST NOT be bundled:
-  its licence does not allow redistribution and it does not exist on Linux.
+- **VT-UI-1005.** The bundled Source Sans 3 family (Regular/Semibold/Bold, SIL OFL 1.1,
+  `assets/fonts/SourceSans3-*.ttf` with `assets/fonts/LICENSE-SourceSans3.txt`, Adobe) MUST be
+  registered from the Qt resources before any widget is created, and its resource paths MUST stay
+  in step with `application_font.cpp`. It is the ONE typeface of the window for every language:
+  unlike the previous Selawik it carries Cyrillic as well as Latin, so Russian and English are
+  drawn from one bundled file set and the metrics the layout was measured against do not depend on
+  the host (measured 2026-10-12: with Selawik, Cyrillic fell through to the system fallback and
+  Linux text was 13.6% wider than Windows text, with a larger x-height than the Latin beside it;
+  the same class of failure was reported 2026-10-11, when the Inter resources were registered
+  under `:/assets/fonts/…` while the code asked for `:/fonts/…`, `addApplicationFont` failed
+  silently and the window used the system font, overflowing the settings scroll viewports in CI).
+  Selawik, Inter and Segoe UI MUST NOT be bundled or named: the first has no Cyrillic, Segoe UI
+  cannot be redistributed and does not exist on Linux. The test MUST prove that a Russian string
+  is drawn by the bundled family at every weight the window uses (a fallback substitution would
+  change its advance width).
 - **VT-UI-1005b.** The navigation-glyph family MUST be the bundled FluentSystemIcons
   (`assets/fonts/FluentSystemIcons-Regular.ttf`, MIT, Microsoft, with
   `assets/fonts/LICENSE-FluentSystemIcons.txt`), registered from `:/fonts/FluentSystemIcons-Regular.ttf`
@@ -413,8 +418,12 @@ consequences are:
   MUST belong to that family (the test asserts it with `QFontMetricsF::inFont`): the MDL2 codes of
   the .NET build do not exist in it and render as replacement boxes. `Segoe MDL2 Assets` and
   `Segoe Fluent Icons` MUST NOT be named: they are Windows-only and cannot be redistributed.
+- **VT-UI-1005c.** The semibold weight MUST resolve inside the single family: Source Sans 3 ships
+  its semibold in `Source Sans 3`, so the mockup's `font-weight: 600` (the card heading) is the
+  weight in use; the 700 workaround that Selawik needed (its semibold was a separate family and
+  600 fell back to Regular) MUST NOT return.
 - **VT-UI-1005a.** The window MUST NOT select a typeface by host: neither the stylesheet nor a
-  `QFont` MAY name `Segoe UI`, `Segoe UI Variable` or `Inter`. The monospaced family of the log
+  `QFont` MAY name `Segoe UI` or `Segoe UI Variable`. The monospaced family of the log
   and diagnostics panes (`"Cascadia Code", Consolas, monospace`) is the one documented exception,
   and it falls back to the platform monospace.
 - **VT-UI-1006.** The executable icon (`assets/voiceTyper.ico` via `assets/voiceTyper.rc`) and the

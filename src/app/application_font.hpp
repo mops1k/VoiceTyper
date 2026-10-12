@@ -4,14 +4,17 @@
 
 namespace voicetyper::app {
 
-/// Makes the bundled Selawik family the application font and registers the bundled
-/// icon family.
+/// Makes the bundled Source Sans 3 family the application font and registers the
+/// bundled icon family.
 ///
 /// Alexander asked for a nicer typeface than the system one (2026-10-06): Segoe UI
 /// Variable is picked up by Qt as a variable font and its weights come out uneven, so
-/// the UI type looks off. Selawik is bundled as a Qt resource instead (SIL OFL, see
-/// assets/fonts/LICENSE-Selawik.txt), which also makes the Windows and Linux builds
-/// look the same. A build without the resource keeps the system font.
+/// the UI type looks off. Source Sans 3 is bundled as a Qt resource instead (SIL OFL
+/// 1.1, see assets/fonts/LICENSE-SourceSans3.txt). It is the one typeface of the whole
+/// window, Cyrillic included: Selawik, the previous choice, has no Cyrillic, so Russian
+/// text fell through to the host fallback (Segoe UI on Windows, DejaVu on Linux) and
+/// the layout metrics depended on the machine - measured 12.10.2026, replaced by
+/// Alexander's decision. A build without the resource keeps the system font.
 ///
 /// The navigation-glyph family (FluentSystemIcons, MIT) is registered in the same call,
 /// so every entry point - both compositions, the snapshot tool and the tests - gets the

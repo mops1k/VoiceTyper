@@ -26,14 +26,16 @@ QString icon_font_family()
 void install_application_font()
 {
     // Regular, Semibold and Bold cover every weight the window asks for (400 body,
-    // 600 headings, 700 emphasis). Selawik is Microsoft's open (SIL OFL 1.1),
-    // metrically Segoe UI-compatible typeface, so one bundled file set serves both
-    // platforms and the layout keeps the metrics it was measured against; Segoe UI
-    // itself cannot be shipped (proprietary licence) and does not exist on Linux.
+    // 600 headings, 700 emphasis). Source Sans 3 (Adobe, SIL OFL 1.1) is the single
+    // typeface of the window: unlike Selawik it carries Cyrillic as well as Latin, so
+    // Russian and English are drawn from one bundled file set and the metrics no longer
+    // depend on the host (before, Cyrillic fell through to Segoe UI on Windows and
+    // DejaVu on Linux: 13.6% wider on Linux, with a larger x-height than the Latin
+    // text beside it - measured 12.10.2026, Alexander's decision).
     static const QStringList kResources{
-        QStringLiteral(":/fonts/Selawik-Regular.ttf"),
-        QStringLiteral(":/fonts/Selawik-Semibold.ttf"),
-        QStringLiteral(":/fonts/Selawik-Bold.ttf"),
+        QStringLiteral(":/fonts/SourceSans3-Regular.ttf"),
+        QStringLiteral(":/fonts/SourceSans3-Semibold.ttf"),
+        QStringLiteral(":/fonts/SourceSans3-Bold.ttf"),
     };
     bool registered = false;
     for (const QString& resource : kResources) {
@@ -55,7 +57,7 @@ void install_application_font()
     }
     // The point size here is only a fallback for widgets the stylesheet does not
     // cover (menus, dialogs, tooltips); the window sets its own sizes in the sheet.
-    QFont font(QStringLiteral("Selawik"));
+    QFont font(QStringLiteral("Source Sans 3"));
     font.setPointSize(10);
     QApplication::setFont(font);
 }

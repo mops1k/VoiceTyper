@@ -898,12 +898,13 @@ void render_log_lines(QTextEdit* view, const QString& text)
     }
 }
 
-/// One font for every label. Icons are drawn as geometry (NavigationIconDelegate),
-/// so no icon family is listed and the whole window has exactly one typeface.
+/// One font for every label. Icons are painted as glyphs of the bundled icon family
+/// (NavigationIconDelegate), so no icon family is listed and the whole window - Cyrillic
+/// and Latin alike - has exactly one typeface.
 QFont navigation_font(int pixel_size)
 {
     QFont font;
-    font.setFamilies({QStringLiteral("Selawik")});
+    font.setFamilies({QStringLiteral("Source Sans 3")});
     font.setPixelSize(pixel_size);
     return font;
 }
@@ -4226,13 +4227,15 @@ void MainWindow::apply_theme()
     QString qss = QStringLiteral(R"(
         QWidget {
             background: @{window}; color: @{text};
-            /* One family for both scripts. Selawik is bundled (SIL OFL 1.1) and is
-               Microsoft's metrically Segoe UI-compatible face, so Latin and Cyrillic
-               come from one font on every platform. The list used to be system-dependent
-               ("Segoe UI Variable"/"Inter"), which made Russian and English look like
-               different typefaces and changed the metrics the layout was measured
-               against (Alexander, 08.10.2026). */
-            font-family: "Selawik", sans-serif; font-size: 12px;
+            /* One family for both scripts, and the same one on every platform.
+               Source Sans 3 is bundled (SIL OFL 1.1) and carries Cyrillic as well as
+               Latin; the previous Selawik covered Latin only, so Russian came from the
+               host fallback (Segoe UI on Windows, DejaVu on Linux) and the metrics
+               depended on the machine: Linux text measured 13.6% wider, with a larger
+               x-height than the Latin beside it (measured 12.10.2026, Alexander's
+               decision). System-dependent lists ("Segoe UI Variable"/"Inter") had been
+               dropped for the same reason on 08.10.2026. */
+            font-family: "Source Sans 3", sans-serif; font-size: 12px;
         }
         /* Title bar: flat, like the system window chrome. */
         #titleBar { background: @{window}; border-bottom: 1px solid @{border}; }
@@ -4273,10 +4276,11 @@ void MainWindow::apply_theme()
         #cardHeader { background: transparent; border-bottom: 1px solid @{border}; }
         #cardHeaderCopy { background: transparent; }
         #cardTitle {
-            /* Weight 700 on purpose: Selawik exposes its semibold as a separate family
-               ("Selawik Semibold"), and 600 resolved to Regular without it (Alexander,
-               08.10.2026). */
-            font-weight: 700; color: @{text}; }
+            /* 600 as in the mockup. Selawik forced 700 here (its semibold was a separate
+               family, so 600 resolved to Regular - Alexander, 08.10.2026); Source Sans 3
+               ships its semibold inside the same family, so the mockup's weight works
+               again (checked 12.10.2026: QFontInfo reports style "Semibold" for 600). */
+            font-weight: 600; color: @{text}; }
         #cardCaption { color: @{muted}; }
         /* The pages sit on --surface-raised while the cards stay --surface. */
         QScrollArea { background: @{surface_raised}; border: none; }

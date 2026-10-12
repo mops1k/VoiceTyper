@@ -139,11 +139,12 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### Selawik (SIL OFL 1.1)
+### Source Sans 3 (SIL OFL 1.1)
 
-Шрифт интерфейса (`assets/fonts/Selawik-Regular.ttf`, `Selawik-Semibold.ttf`,
-`Selawik-Bold.ttf`), метрически совместим с Segoe UI, вшит ресурсом
-`:/fonts/Selawik-*.ttf` (VT-UI-1005).
-Источник: https://github.com/microsoft/Selawik. Copyright 2015, Microsoft
-Corporation, with Reserved Font Name Selawik.
-Текст лицензии: `assets/fonts/LICENSE-Selawik.txt`.
+Единственный шрифт интерфейса — и для русского, и для английского, и для остальных языков
+(`assets/fonts/SourceSans3-Regular.ttf`, `SourceSans3-Semibold.ttf`, `SourceSans3-Bold.ttf`),
+вшит ресурсом `:/fonts/SourceSans3-*.ttf` (VT-UI-1005).
+Источник: https://github.com/adobe-fonts/source-sans (release, `TTF/SourceSans3-*.ttf`).
+Copyright 2010-2024 Adobe (http://www.adobe.com/), with Reserved Font Name 'Source'.
+Source is a trademark of Adobe in the United States and/or other countries.
+Текст лицензии: `assets/fonts/LICENSE-SourceSans3.txt`.

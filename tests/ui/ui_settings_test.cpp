@@ -58,20 +58,45 @@ class SettingsWindowTest : public QObject {
     Q_OBJECT
 
 private slots:
-    void the_application_uses_the_bundled_selawik_typeface()
+    void the_application_uses_the_bundled_typeface_for_every_script()
     {
-        // One typeface on every platform. The window must not fall back to whatever
-        // the system ships (Segoe UI on Windows, Noto/DejaVu on Linux): the layout is
-        // measured against one set of metrics, and a different font overflows the
-        // scroll viewports - which is what the Windows CI run showed while the
-        // bundled font silently failed to load. The resource path is part of the
-        // contract, because a mismatch only makes addApplicationFont return -1 and
-        // the application keeps the system font without a word.
-        QVERIFY2(QFile(QStringLiteral(":/fonts/Selawik-Regular.ttf")).exists(),
-            "the bundled Selawik regular face is not in the Qt resources");
-        QVERIFY2(QFontDatabase::families().contains(QStringLiteral("Selawik")),
-            "Selawik was not registered as an application font");
-        QCOMPARE(QApplication::font().family(), QStringLiteral("Selawik"));
+        // One typeface on every platform and for every language. The window must not
+        // fall back to whatever the system ships (Segoe UI on Windows, DejaVu on Linux):
+        // the layout is measured against one set of metrics, and a different font
+        // overflows the scroll viewports - which is what the Windows CI run showed while
+        // the bundled font silently failed to load. The resource path is part of the
+        // contract, because a mismatch only makes addApplicationFont return -1 and the
+        // application keeps the system font without a word.
+        QVERIFY2(QFile(QStringLiteral(":/fonts/SourceSans3-Regular.ttf")).exists(),
+            "the bundled Source Sans 3 regular face is not in the Qt resources");
+        QVERIFY2(QFile(QStringLiteral(":/fonts/SourceSans3-Semibold.ttf")).exists(),
+            "the bundled Source Sans 3 semibold face is not in the Qt resources");
+        QVERIFY2(QFontDatabase::families().contains(QStringLiteral("Source Sans 3")),
+            "Source Sans 3 was not registered as an application font");
+        QCOMPARE(QApplication::font().family(), QStringLiteral("Source Sans 3"));
+
+        // Cyrillic has to come from that very family, not from a host fallback: Selawik,
+        // the previous typeface, had no Cyrillic at all, so Russian text was drawn by
+        // Segoe UI on Windows and DejaVu on Linux and its metrics depended on the machine
+        // (measured 12.10.2026). A font without the glyphs still reports the family in
+        // QFontInfo, so the check is the real advance width of a Russian string at every
+        // weight the window uses: it can only match the bundled family if the bundled
+        // family drew the text.
+        for (const QFont::Weight weight : {QFont::Normal, QFont::DemiBold, QFont::Bold}) {
+            QFont bundled(QStringLiteral("Source Sans 3"));
+            bundled.setPixelSize(13);
+            bundled.setWeight(weight);
+            const QFontMetricsF bundled_metrics(bundled);
+            QVERIFY2(bundled_metrics.inFont(QChar(0x041E)) && bundled_metrics.inFont(QChar(0x0451)),
+                "вшитый шрифт не содержит кириллицы");
+            QFont window;
+            window.setFamilies({QStringLiteral("Source Sans 3")});
+            window.setPixelSize(13);
+            window.setWeight(weight);
+            const QFontMetricsF window_metrics(window);
+            QCOMPARE(bundled_metrics.horizontalAdvance(QStringLiteral("Отправлять текст")),
+                window_metrics.horizontalAdvance(QStringLiteral("Отправлять текст")));
+        }
     }
 
     // Иконки меню берутся из вшитого шрифта иконок: Segoe MDL2 Assets есть только в

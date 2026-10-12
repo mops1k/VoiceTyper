@@ -458,9 +458,9 @@ if(VOICETYPER_BUILD_GUI)
         PREFIX "/fonts"
         BASE "assets/fonts"
         FILES
-            assets/fonts/Selawik-Regular.ttf
-            assets/fonts/Selawik-Semibold.ttf
-            assets/fonts/Selawik-Bold.ttf
+            assets/fonts/SourceSans3-Regular.ttf
+            assets/fonts/SourceSans3-Semibold.ttf
+            assets/fonts/SourceSans3-Bold.ttf
             assets/fonts/FluentSystemIcons-Regular.ttf
     )
 if(WIN32)
@@ -705,9 +705,9 @@ if(VOICETYPER_BUILD_TESTS)
             PREFIX "/fonts"
             BASE "assets/fonts"
             FILES
-                assets/fonts/Selawik-Regular.ttf
-                assets/fonts/Selawik-Semibold.ttf
-                assets/fonts/Selawik-Bold.ttf
+                assets/fonts/SourceSans3-Regular.ttf
+                assets/fonts/SourceSans3-Semibold.ttf
+                assets/fonts/SourceSans3-Bold.ttf
                 assets/fonts/FluentSystemIcons-Regular.ttf
         )
 
@@ -756,9 +756,9 @@ if(VOICETYPER_BUILD_TESTS)
                 PREFIX "/fonts"
                 BASE "assets/fonts"
                 FILES
-                    assets/fonts/Selawik-Regular.ttf
-                    assets/fonts/Selawik-Semibold.ttf
-                    assets/fonts/Selawik-Bold.ttf
+                    assets/fonts/SourceSans3-Regular.ttf
+                    assets/fonts/SourceSans3-Semibold.ttf
+                    assets/fonts/SourceSans3-Bold.ttf
                     assets/fonts/FluentSystemIcons-Regular.ttf
             )
             voicetyper_set_warnings(voicetyper-ui-snapshot)

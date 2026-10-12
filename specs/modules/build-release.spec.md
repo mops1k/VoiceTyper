@@ -84,8 +84,8 @@ verification, portable header audit), `installer/`, `.github/workflows/`, `tests
   `src/app/main.cpp` plus, on Windows, `src/app/windows_application.cpp`, linking the real engines
   and backends only on `WIN32 AND VOICETYPER_BUILD_ASR`.
 - **VT-BLD-204.** The product icon and the bundled typefaces MUST travel inside the executable
-  as a Qt resource (`assets/voiceTyper.png`, `spin-up.png`, `spin-down.png`, three Selawik faces at
-  `:/fonts/Selawik-*.ttf`, VT-UI-1005, and the navigation-glyph font at
+  as a Qt resource (`assets/voiceTyper.png`, `spin-up.png`, `spin-down.png`, three Source Sans 3
+  faces at `:/fonts/SourceSans3-*.ttf`, VT-UI-1005, and the navigation-glyph font at
   `:/fonts/FluentSystemIcons-Regular.ttf`, VT-UI-1005b),
   and the executable MUST additionally carry `assets/voiceTyper.rc` on Windows for the file icon.
   The test and snapshot targets MUST carry the same font resources, so a test builds the window

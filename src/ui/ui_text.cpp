@@ -1,8 +1,8 @@
-#include "app/ui_text.hpp"
+#include "ui/ui_text.hpp"
 
 #include <array>
 
-namespace voicetyper::app {
+namespace voicetyper::ui {
 
 namespace {
 
@@ -267,4 +267,4 @@ QString ui_text(UiKey key, domain::AppLanguage language)
     return QString::fromUtf8(text);
 }
 
-} // namespace voicetyper::app
+} // namespace voicetyper::ui

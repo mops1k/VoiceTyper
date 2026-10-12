@@ -141,9 +141,29 @@ version comes from the tag.
 src/domain/      settings, hotkey grammar, recording state machine, models, errors
 src/core/        recognition, audio, VAD, update service, SHA-256, support
 src/platform/    platform boundaries: ports and their Windows implementations
-src/app/         Qt: window, pages, tray, status overlay, HTTP client, composition
+src/ui/          Qt widget layer: settings window, pages, tray, status overlay, texts, fonts
+src/app/         application layer: entry point, composition roots, settings presenter, HTTP client
 native/          shipped native libraries (mc_wasapi.dll, parakeet.dll, transcribe/libtranscribe.dll + ggml) and their licences
 tests/           contract and UI tests, plus the .NET-generated migration fixtures
 installer/       Inno Setup script and the build script
 tools/           diagnostics, UI snapshot, fixture generators
 ```
+
+## Layers
+
+The interface and the application logic live in separate directories with separate
+namespaces, so a fork sees where a piece belongs before reading any code:
+
+| Layer | Directory | Namespace | CMake target | Contains |
+|---|---|---|---|---|
+| Widget layer | `src/ui/` | `voicetyper::ui` | `voicetyper_ui` (static, AUTOMOC) | settings window and its pages, tray, status overlay, string table, toggle switch, bundled typefaces |
+| Application layer | `src/app/` | `voicetyper::app` | `voicetyper_presenter` (portable) and the `voicetyper-qt-shell` executable | entry point, Windows/Linux composition roots, debounced settings presenter, Qt adapter of `platform::HttpClient` |
+
+The split, in three rules:
+
+* widget code lives in `src/ui/` only — no QWidget subclass is defined in `src/app/`;
+* the widget layer may use the application layer's `SettingsPresenter` (its view model)
+  and the portable layers (`src/domain/`, `src/platform/api/`), but never an OS SDK
+  directly — anything native goes behind a `src/platform/api/*.hpp` port;
+* the executable is built from `src/app/` and links `voicetyper_ui`, so the composition
+  roots own the lifetime of every widget.

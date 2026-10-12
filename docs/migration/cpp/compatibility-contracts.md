@@ -338,7 +338,7 @@ is never written, never deleted, and can never end up pointing at a test build.
 ### Status overlay (Phase D, LIFE-01, task `t_c0e3b56d32d2`)
 
 Contract: `src/platform/api/status_overlay.hpp` (frozen). Implementation:
-`src/app/status_overlay.{hpp,cpp}`, part of the `voicetyper_ui` target, so it is
+`src/ui/status_overlay.{hpp,cpp}`, part of the `voicetyper_ui` target, so it is
 only built when `VOICETYPER_BUILD_GUI` is on. Test:
 `tests/ui/ui_status_overlay_test.cpp` → CTest `ui-status-overlay-test`, which
 forces `QT_QPA_PLATFORM=offscreen` itself because the contract is a widget

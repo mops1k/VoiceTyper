@@ -11,7 +11,7 @@
 // platform-independent Qt behaviour, so the test must not depend on a desktop
 // session or on a real display being attached (CI has neither).
 
-#include "app/status_overlay.hpp"
+#include "ui/status_overlay.hpp"
 
 #include <QApplication>
 #include <QCursor>
@@ -60,7 +60,7 @@ class StatusOverlayTest : public QObject {
 private slots:
     void create_is_idempotent_and_starts_hidden()
     {
-        voicetyper::app::QtStatusOverlay overlay;
+        voicetyper::ui::QtStatusOverlay overlay;
         QCOMPARE(overlay.current_state(), voicetyper::platform::OverlayState::idle);
 
         QVERIFY(overlay.create().is_ok());
@@ -72,7 +72,7 @@ private slots:
 
     void recording_is_a_frameless_topmost_pill_that_never_takes_input()
     {
-        voicetyper::app::QtStatusOverlay overlay;
+        voicetyper::ui::QtStatusOverlay overlay;
         QVERIFY(overlay.show(voicetyper::platform::OverlayState::recording).is_ok());
         QTest::qWait(30);
 
@@ -108,10 +108,10 @@ private slots:
         // Wayland; a layer-shell surface does. This test runs offscreen by
         // default, where the host stays an ordinary window; run it with
         // QT_QPA_PLATFORM=wayland in a session to see the promoted path.
-        const bool on_wayland = voicetyper::app::overlay_needs_layer_shell(
+        const bool on_wayland = voicetyper::ui::overlay_needs_layer_shell(
             QGuiApplication::platformName().toStdString());
         QCOMPARE(overlay.layer_shell_active(),
-            on_wayland && voicetyper::app::layer_shell_build_available());
+            on_wayland && voicetyper::ui::layer_shell_build_available());
 
         QLabel* text = text_of(pill);
         QVERIFY(text != nullptr);
@@ -125,15 +125,15 @@ private slots:
         // be activated, which is exactly what was reported from the running build
         // (2026-10-11); the overlay therefore promotes its host to a layer-shell
         // surface there. Every other platform keeps the plain window.
-        QVERIFY(voicetyper::app::overlay_needs_layer_shell("wayland"));
-        QVERIFY(!voicetyper::app::overlay_needs_layer_shell("xcb"));
-        QVERIFY(!voicetyper::app::overlay_needs_layer_shell("offscreen"));
-        QVERIFY(!voicetyper::app::overlay_needs_layer_shell(""));
+        QVERIFY(voicetyper::ui::overlay_needs_layer_shell("wayland"));
+        QVERIFY(!voicetyper::ui::overlay_needs_layer_shell("xcb"));
+        QVERIFY(!voicetyper::ui::overlay_needs_layer_shell("offscreen"));
+        QVERIFY(!voicetyper::ui::overlay_needs_layer_shell(""));
     }
 
     void recording_pulses_with_the_frozen_period()
     {
-        voicetyper::app::QtStatusOverlay overlay;
+        voicetyper::ui::QtStatusOverlay overlay;
         QVERIFY(overlay.show(voicetyper::platform::OverlayState::recording).is_ok());
         QWidget* dot = dot_of(overlay.widget());
         QVERIFY(dot != nullptr);
@@ -154,7 +154,7 @@ private slots:
 
     void processing_changes_the_accent_and_stops_the_pulse()
     {
-        voicetyper::app::QtStatusOverlay overlay;
+        voicetyper::ui::QtStatusOverlay overlay;
         QVERIFY(overlay.show(voicetyper::platform::OverlayState::recording).is_ok());
         QWidget* dot = dot_of(overlay.widget());
         QVERIFY(dot != nullptr);
@@ -175,7 +175,7 @@ private slots:
 
     void an_error_hides_the_overlay_instead_of_showing_it()
     {
-        voicetyper::app::QtStatusOverlay overlay;
+        voicetyper::ui::QtStatusOverlay overlay;
         const std::string detail = "модель не загружена";
         QVERIFY(overlay.show(voicetyper::platform::OverlayState::error, detail).is_ok());
         // The overlay is not an error channel: a missing model, a lost device or a
@@ -197,7 +197,7 @@ private slots:
 
     void hide_keeps_the_window_and_idle_hides_it()
     {
-        voicetyper::app::QtStatusOverlay overlay;
+        voicetyper::ui::QtStatusOverlay overlay;
         QVERIFY(overlay.show(voicetyper::platform::OverlayState::processing).is_ok());
         QWidget* pill = overlay.widget();
         QVERIFY(pill != nullptr);
@@ -215,7 +215,7 @@ private slots:
 
     void geometry_is_centered_and_26px_above_the_bottom()
     {
-        voicetyper::app::QtStatusOverlay overlay;
+        voicetyper::ui::QtStatusOverlay overlay;
         QVERIFY(overlay.show(voicetyper::platform::OverlayState::recording).is_ok());
         QTest::qWait(30);
 
@@ -245,13 +245,13 @@ private slots:
         const QRect geometry = overlay.widget()->frameGeometry();
         QVERIFY2(qAbs(geometry.center().x() - available.center().x()) <= 1,
             "the pill sits horizontally centered");
-        QVERIFY2(qAbs((available.bottom() - geometry.bottom()) - voicetyper::app::kOverlayBottomGapPx) <= 1,
+        QVERIFY2(qAbs((available.bottom() - geometry.bottom()) - voicetyper::ui::kOverlayBottomGapPx) <= 1,
             "the pill sits kOverlayBottomGapPx above the bottom of the working area");
     }
 
     void post_state_from_a_worker_thread_reaches_the_ui_thread()
     {
-        voicetyper::app::QtStatusOverlay overlay;
+        voicetyper::ui::QtStatusOverlay overlay;
         QVERIFY(overlay.create().is_ok());
 
         std::thread worker([&overlay] {
@@ -273,7 +273,7 @@ private slots:
 
     void destroy_is_terminal_and_idempotent()
     {
-        voicetyper::app::QtStatusOverlay overlay;
+        voicetyper::ui::QtStatusOverlay overlay;
         QVERIFY(overlay.show(voicetyper::platform::OverlayState::recording).is_ok());
         QVERIFY(overlay.destroy().is_ok());
         QVERIFY(overlay.widget() == nullptr);

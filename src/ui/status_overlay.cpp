@@ -1,8 +1,8 @@
-// Qt status overlay. See src/app/status_overlay.hpp for the decisions this file
+// Qt status overlay. See src/ui/status_overlay.hpp for the decisions this file
 // implements; everything observable is asserted by tests/ui/ui_status_overlay_test.cpp.
 
-#include "app/status_overlay.hpp"
-#include "app/ui_text.hpp"
+#include "ui/status_overlay.hpp"
+#include "ui/ui_text.hpp"
 
 #include <QCursor>
 #include <QFont>
@@ -23,7 +23,7 @@
 
 #include <utility>
 
-namespace voicetyper::app {
+namespace voicetyper::ui {
 namespace {
 
 /// The pill's text for a state, in the interface language (defined below the class
@@ -477,4 +477,4 @@ void QtStatusOverlay::set_pulse_opacity(double value)
     }
 }
 
-} // namespace voicetyper::app
+} // namespace voicetyper::ui

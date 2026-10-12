@@ -15,9 +15,9 @@
 #include <algorithm>
 #include <functional>
 
-#include "app/application_font.hpp"
+#include "ui/application_font.hpp"
 #include "app/qt_http_client.hpp"
-#include "app/ui_text.hpp"
+#include "ui/ui_text.hpp"
 #include "core/support/appimage_update.hpp"
 #include "core/support/model_download_service.hpp"
 #include "core/support/update_service.hpp"
@@ -36,9 +36,9 @@
 #include "platform/linux/linux_paths.hpp"
 #include "platform/linux/linux_startup.hpp"
 #include "platform/api/microphone_level.hpp"
-#include "app/main_window.hpp"
-#include "app/status_overlay.hpp"
-#include "app/tray_controller.hpp"
+#include "ui/main_window.hpp"
+#include "ui/status_overlay.hpp"
+#include "ui/tray_controller.hpp"
 #include "app/settings_presenter.hpp"
 #include "asr/engine_host.hpp"
 #include "asr/gigaam_transcriber.hpp"
@@ -89,9 +89,9 @@ constexpr int kModelRowSlots = kModelRowsPerEngine * 3;
 
 /// The shell's status strings follow the interface language of the settings: the window
 /// re-letters itself, and these messages have to match it (Alexander, 06.10.2026).
-QString localized(UiKey key)
+QString localized(ui::UiKey key)
 {
-    return ui_text(key, current_language());
+    return ui::ui_text(key, ui::current_language());
 }
 
 /// The marker an installer must carry to be allowed to update THIS build: the native
@@ -313,17 +313,17 @@ int run(int argc, char** argv)
     const bool start_minimized_switch = platform::linuxos::wants_start_minimized(argc, argv);
     QApplication application(argc, argv);
     // The bundled typeface, before any widget is built.
-    voicetyper::app::install_application_font();
+    voicetyper::ui::install_application_font();
     // The product icon, embedded as a Qt resource: the window, the taskbar and the
     // tray all show the same image.
     if (const QIcon product_icon(QStringLiteral(":/assets/voiceTyper.png")); !product_icon.isNull()) {
         application.setWindowIcon(product_icon);
     }
-    if (!selftest && !claim_single_instance()) {
+    if (!selftest && !ui::claim_single_instance()) {
         // A live instance already owns the microphone and the global hotkeys; starting a
         // second recorder would fight it. Ask the first one to show itself and leave. The
         // owner logs the request, so nothing is logged here (the log is not open yet either).
-        static_cast<void>(notify_running_instance());
+        static_cast<void>(ui::notify_running_instance());
         return 0;
     }
     application.setApplicationName(QStringLiteral("VoiceTyper"));
@@ -456,7 +456,7 @@ int run(int argc, char** argv)
                         "autostart entry belongs to another installation and was left alone",
                         "entry=\"" + current.value().command_line
                             + "\" this=\"" + own_path.string()
-                            + "\" (" + localized(UiKey::k14).toStdString()
+                            + "\" (" + localized(ui::UiKey::k14).toStdString()
                             + " to re-register it for this build)"));
                     return;
                 }
@@ -485,7 +485,7 @@ int run(int argc, char** argv)
     // from a worker is a data race and, in Qt's own words, a hard error. This
     // executor is a separate thread, so UI results are handed over through
     // QMetaObject::invokeMethod with a queued connection - the project's established
-    // way (see StatusChannel::post) - and QApplication lives on that thread.
+    // way (see ui::StatusChannel::post) - and QApplication lives on that thread.
     const auto post_to_ui = [&application](std::function<void()> task) {
         QMetaObject::invokeMethod(
             &application, [task = std::move(task)] { task(); }, Qt::QueuedConnection);
@@ -576,9 +576,9 @@ int run(int argc, char** argv)
     // timer) on purpose: stack objects are destroyed in reverse order, so every
     // service that posts to it is destroyed first and can never call into a freed
     // overlay.
-    QtStatusOverlay status_overlay;
+    ui::QtStatusOverlay status_overlay;
     // The language the shell speaks before the first change arrives.
-    set_current_language(presenter.settings().app_language);
+    ui::set_current_language(presenter.settings().app_language);
     /// Set once the tray exists: the menu is created later in this function, so the
     /// language change reaches it through this hook (the same pattern used for the
     /// window before the language was applied in place).
@@ -754,7 +754,7 @@ int run(int argc, char** argv)
     // The window does not exist yet, so the channel is created here and adopted
     // by the window below. Posting to a null target is a no-op, so an event that
     // fires during startup is simply not shown instead of crashing.
-    auto status_channel = std::make_shared<StatusChannel>(nullptr);
+    auto status_channel = std::make_shared<ui::StatusChannel>(nullptr);
     machine.set_state_changed_handler(
         [&logger, status_channel, &status_overlay, describe_state](domain::RecordingState state) {
             const std::string name = describe_state(state);
@@ -763,9 +763,9 @@ int run(int argc, char** argv)
             // The state name is localized: the strip used to read "запись: idle", mixing a
             // Russian prefix with the enum's English name (Alexander, 08.10.2026).
             const QString localized_name = localized(state == domain::RecordingState::recording
-                    ? UiKey::k180
-                    : state == domain::RecordingState::processing ? UiKey::k7 : UiKey::k179);
-            status_channel->post(localized(UiKey::k84) + QStringLiteral(": ") + localized_name);
+                    ? ui::UiKey::k180
+                    : state == domain::RecordingState::processing ? ui::UiKey::k7 : ui::UiKey::k179);
+            status_channel->post(localized(ui::UiKey::k84) + QStringLiteral(": ") + localized_name);
             // The overlay is the frameless "Захват"/"Распознавание" indicator.
             // post_state is queued onto the UI thread: this handler runs on the
             // recording worker, and a widget must never be touched from there.
@@ -784,10 +784,10 @@ int run(int argc, char** argv)
         // wasapi capture configuration", which tells the user nothing. Say what can be
         // acted on; the raw detail stays in the log and on the overlay.
         const bool device_problem = error.code() == domain::ErrorCode::io_failure;
-        const QString device_message = localized(UiKey::k97);
+        const QString device_message = localized(ui::UiKey::k97);
         status_channel->post(device_problem
                 ? device_message
-                : localized(UiKey::k85) + QStringLiteral(": ")
+                : localized(ui::UiKey::k85) + QStringLiteral(": ")
                     + QString::fromStdString(std::string(error_code_name(error.code()))));
         // The overlay never shows an error: the status line above and the log carry
         // it. A pill that stayed on screen would sit on top of the window the user
@@ -812,7 +812,7 @@ int run(int argc, char** argv)
             "text delivered",
             "characters=" + std::to_string(text.size())));
         static_cast<void>(text.size());
-        status_channel->post(localized(UiKey::k86));
+        status_channel->post(localized(ui::UiKey::k86));
     });
 
     machine.set_options_provider([&presenter] {
@@ -963,7 +963,7 @@ int run(int argc, char** argv)
             gamepad.diagnostics().empty() ? std::string("no gamepad bindings") : gamepad.diagnostics()));
     }
 
-    WindowServices services;
+    ui::WindowServices services;
     // The footer dot is green only when the engine can really work: a missing model, a load
     // in progress or a failed start all keep it red (Alexander, 08.10.2026).
     services.engine_ready = [&engine_host] {
@@ -973,34 +973,34 @@ int run(int argc, char** argv)
         const auto snapshot = engine_host.state();
         switch (snapshot.readiness) {
         case asr::EngineReadiness::ready:
-            return localized(UiKey::k87);
+            return localized(ui::UiKey::k87);
         case asr::EngineReadiness::loading:
-            return localized(UiKey::k88);
+            return localized(ui::UiKey::k88);
         case asr::EngineReadiness::warming:
-            return localized(UiKey::k89);
+            return localized(ui::UiKey::k89);
         case asr::EngineReadiness::model_missing:
-            return localized(UiKey::k90);
+            return localized(ui::UiKey::k90);
         case asr::EngineReadiness::unavailable:
-            return localized(UiKey::k91) + QStringLiteral(": ")
+            return localized(ui::UiKey::k91) + QStringLiteral(": ")
                 .arg(QString::fromStdString(std::string(
                     platform::engine_availability_reason_name(snapshot.reason))));
         case asr::EngineReadiness::failed:
-            return localized(UiKey::k92) + QStringLiteral(": ")
+            return localized(ui::UiKey::k92) + QStringLiteral(": ")
                 + QString::fromStdString(snapshot.last_error);
         default:
-            return localized(UiKey::k93);
+            return localized(ui::UiKey::k93);
         }
     };
     services.record_hotkey_state = [&hotkeys, &presenter, hotkey_press_only] {
         const auto& current = presenter.settings();
         QString state = hotkeys->record_key_code() != 0
-            ? localized(UiKey::k94) + QStringLiteral(": ")
+            ? localized(ui::UiKey::k94) + QStringLiteral(": ")
                 + QString::fromStdString(current.record_hotkey)
-            : localized(UiKey::k95);
+            : localized(ui::UiKey::k95);
         if (hotkey_press_only) {
             // The fallback has no release edge, so the mode was forced to toggle;
             // say it instead of letting the hotkey look broken.
-            state += QStringLiteral(" · ") + localized(UiKey::k182);
+            state += QStringLiteral(" · ") + localized(ui::UiKey::k182);
         }
         return state;
     };
@@ -1367,7 +1367,7 @@ int run(int argc, char** argv)
         std::make_shared<std::vector<std::shared_ptr<domain::CancellationSource>>>(kModelRowSlots);
     services.model_download = [&logger, &update_executor, &ui_executor, &paths, transfer_sources](
                                  domain::TranscriptionEngine engine, int size_index,
-                                 std::function<void(app::WindowServices::ModelTransfer)> report) {
+                                 std::function<void(ui::WindowServices::ModelTransfer)> report) {
         if (size_index < 0 || size_index >= kModelRowsPerEngine) {
             return;
         }
@@ -1386,7 +1386,7 @@ int run(int argc, char** argv)
             const std::string& name = file_name;
             const auto status = service.download(download_engine, name,
                 [&ui_executor, report](const core::support::ModelDownloadProgress& progress) {
-                    app::WindowServices::ModelTransfer transfer;
+                    ui::WindowServices::ModelTransfer transfer;
                     transfer.percent = progress.total > 0
                         ? static_cast<int>(progress.fraction() * 100.0)
                         : -1;
@@ -1403,7 +1403,7 @@ int run(int argc, char** argv)
                     cancelled ? "model download cancelled" : "model download failed",
                     name + ": " + status.error().to_string()));
                 static_cast<void>(ui_executor.post([report, message, cancelled] {
-                    app::WindowServices::ModelTransfer transfer;
+                    ui::WindowServices::ModelTransfer transfer;
                     transfer.error = message;
                     transfer.cancelled = cancelled;
                     report(transfer);
@@ -1413,7 +1413,7 @@ int run(int argc, char** argv)
             static_cast<void>(logger.write(platform::LogLevel::info, "model downloaded",
                 std::string(engine_name(engine)) + " " + name));
             static_cast<void>(ui_executor.post([report] {
-                app::WindowServices::ModelTransfer transfer;
+                ui::WindowServices::ModelTransfer transfer;
                 transfer.percent = 100;
                 report(transfer);
             }));
@@ -1440,8 +1440,8 @@ int run(int argc, char** argv)
         const std::filesystem::path file = models_directory(paths) / std::filesystem::path(file_name);
         const std::string name = file.filename().string();
         // Deleting a file is irreversible, so it is confirmed first.
-        const auto answer = QMessageBox::question(nullptr, localized(UiKey::k99),
-            localized(UiKey::k100).arg(QString::fromStdString(name)),
+        const auto answer = QMessageBox::question(nullptr, localized(ui::UiKey::k99),
+            localized(ui::UiKey::k100).arg(QString::fromStdString(name)),
             QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
         if (answer != QMessageBox::Yes) {
             return false;
@@ -1495,7 +1495,7 @@ int run(int argc, char** argv)
         status_overlay.set_theme(updated.theme);
         status_overlay.set_language(updated.app_language);
         // Every later status string is built in the language the user just chose.
-        set_current_language(updated.app_language);
+        ui::set_current_language(updated.app_language);
         if (apply_language_to_tray) {
             apply_language_to_tray(updated.app_language);
         }
@@ -1568,7 +1568,7 @@ int run(int argc, char** argv)
 
     services.log_text = [&logger] {
         const auto lines = logger.tail(200);
-        return lines.is_ok() ? QString::fromStdString(lines.value()) : localized(UiKey::k96);
+        return lines.is_ok() ? QString::fromStdString(lines.value()) : localized(ui::UiKey::k96);
     };
 
     if (selftest) {
@@ -1621,21 +1621,21 @@ int run(int argc, char** argv)
         start_hidden ? "starting with the window hidden" : "starting with the window visible",
         std::string("source=") + (start_minimized_switch ? "--start-minimized" : "settings.start_minimized")));
 
-    // A language change re-letters the window in place (MainWindow::retranslate), so the
+    // A language change re-letters the window in place (ui::MainWindow::retranslate), so the
     // composition no longer rebuilds it and the window can own the services it was given.
-    const auto app_icon = TrayController::application_icon();
-    auto window = std::make_shared<MainWindow>(presenter, std::move(services), status_channel);
+    const auto app_icon = ui::TrayController::application_icon();
+    auto window = std::make_shared<ui::MainWindow>(presenter, std::move(services), status_channel);
     window->setWindowIcon(app_icon);
 
     QSystemTrayIcon tray_icon;
     tray_icon.setIcon(app_icon);
-    TrayController tray(tray_icon);
+    ui::TrayController tray(tray_icon);
     const auto wire_tray_window = [&tray, &window] {
         // One slot instead of show() + raise(): a click on the tray icon must put the
         // window in front of everything, not merely make it visible somewhere behind.
-        QObject::connect(&tray, &TrayController::show_requested, window.get(), &MainWindow::bring_to_front);
-        QObject::connect(&tray, &TrayController::record_requested, window.get(),
-            [weak = std::weak_ptr<MainWindow>(window)] {
+        QObject::connect(&tray, &ui::TrayController::show_requested, window.get(), &ui::MainWindow::bring_to_front);
+        QObject::connect(&tray, &ui::TrayController::record_requested, window.get(),
+            [weak = std::weak_ptr<ui::MainWindow>(window)] {
                 if (const auto current = weak.lock()) {
                     if (auto* record = current->findChild<QPushButton*>(QStringLiteral("recordButton"))) {
                         record->click();
@@ -1649,7 +1649,7 @@ int run(int argc, char** argv)
 
     // A second launch asks this instance to come to the front. The window exists from here on;
     // a request that arrived while it was still being built is honoured right away.
-    set_activation_hook([&logger, weak = std::weak_ptr<MainWindow>(window)] {
+    ui::set_activation_hook([&logger, weak = std::weak_ptr<ui::MainWindow>(window)] {
         if (auto raised = weak.lock()) {
             // Logged because a second launch is otherwise invisible: the window simply appears,
             // and during a check it must be possible to tell that from a fresh start.
@@ -1658,11 +1658,11 @@ int run(int argc, char** argv)
             raised->bring_to_front();
         }
     });
-    if (take_pending_activation()) {
+    if (ui::take_pending_activation()) {
         window->bring_to_front();
     }
     tray.set_language(presenter.settings().app_language);
-    QObject::connect(&tray, &TrayController::quit_requested, &application, &QCoreApplication::quit);
+    QObject::connect(&tray, &ui::TrayController::quit_requested, &application, &QCoreApplication::quit);
     if (QSystemTrayIcon::isSystemTrayAvailable()) {
         tray_icon.show();
     }
@@ -1670,7 +1670,7 @@ int run(int argc, char** argv)
     // (compatibility-contracts.md §2). The window object still exists - it owns
     // the clipboard buffer and the tray - and the tray icon is still up, so the
     // app is reachable; only the window stays hidden, exactly like the .NET
-    // build, which posted an already created MainWindow without calling Show.
+    // build, which posted an already created ui::MainWindow without calling Show.
     if (!start_hidden) {
         window->show();
     }

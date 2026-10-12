@@ -36,7 +36,7 @@
 // (migration plan, Phase E "Перенести localization, theme и log view"), and the
 // constants below are the single place that task has to touch.
 
-#include "app/ui_text.hpp"
+#include "ui/ui_text.hpp"
 #include "domain/settings.hpp"
 #include "platform/api/status_overlay.hpp"
 
@@ -51,7 +51,7 @@ class QLabel;
 class QTimer;
 class QWidget;
 
-namespace voicetyper::app {
+namespace voicetyper::ui {
 
 /// Vertical gap between the pill and the bottom of the working area, in logical
 /// pixels. Frozen from the .NET overlay (26 px at 100% scaling).
@@ -193,4 +193,4 @@ private:
     domain::AppLanguage language_ = domain::AppLanguage::ru;
 };
 
-} // namespace voicetyper::app
+} // namespace voicetyper::ui

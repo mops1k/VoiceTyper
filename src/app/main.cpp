@@ -37,9 +37,9 @@ int main(int argc, char** argv)
     return voicetyper::app::run(argc, argv);
 }
 #else
-#include "app/application_font.hpp"
-#include "app/main_window.hpp"
-#include "app/ui_text.hpp"
+#include "ui/application_font.hpp"
+#include "ui/main_window.hpp"
+#include "ui/ui_text.hpp"
 #include "app/settings_presenter.hpp"
 #include "platform/portable/portable_runtime.hpp"
 
@@ -66,7 +66,7 @@ int main(int argc, char** argv)
 {
     QApplication application(argc, argv);
     // The bundled typeface, before any widget is built.
-    voicetyper::app::install_application_font();
+    voicetyper::ui::install_application_font();
     application.setApplicationName(QStringLiteral("VoiceTyper"));
     // The product icon, embedded as a Qt resource: the window, the taskbar and the
     // tray all show the same image.
@@ -88,14 +88,14 @@ int main(int argc, char** argv)
         }
     }
 
-    voicetyper::app::WindowServices services;
+    voicetyper::ui::WindowServices services;
     // Read at call time, so these follow a language change like the rest of the window.
-    voicetyper::app::set_current_language(presenter.settings().app_language);
+    voicetyper::ui::set_current_language(presenter.settings().app_language);
     // Read at call time, so these follow a language change like the rest of the window.
-    services.engine_status = [] { return voicetyper::app::ui_text(voicetyper::app::UiKey::k101, voicetyper::app::current_language()); };
-    services.record_hotkey_state = [] { return voicetyper::app::ui_text(voicetyper::app::UiKey::k102, voicetyper::app::current_language()); };
+    services.engine_status = [] { return voicetyper::ui::ui_text(voicetyper::ui::UiKey::k101, voicetyper::ui::current_language()); };
+    services.record_hotkey_state = [] { return voicetyper::ui::ui_text(voicetyper::ui::UiKey::k102, voicetyper::ui::current_language()); };
 
-    voicetyper::app::MainWindow window(presenter, std::move(services));
+    voicetyper::ui::MainWindow window(presenter, std::move(services));
     window.show();
     return application.exec();
 }

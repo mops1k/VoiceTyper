@@ -1,6 +1,7 @@
 #pragma once
 
-// The settings window. It is a thin Qt view over SettingsPresenter: every edit
+// The settings window. It is a thin Qt view over the application-layer
+// voicetyper::app::SettingsPresenter: every edit
 // goes through presenter.update(...), which applies the change immediately and
 // restarts the 700 ms autosave debounce. Services that are not registered (no
 // hotkey backend, no microphone, no engine) leave their control disabled with a
@@ -9,7 +10,7 @@
 // ready to dictate".
 
 #include "app/settings_presenter.hpp"
-#include "app/toggle_switch.hpp"
+#include "ui/toggle_switch.hpp"
 
 #include <atomic>
 #include <functional>
@@ -39,7 +40,7 @@ class QLineEdit;
 class QDoubleSpinBox;
 class QSpinBox;
 
-namespace voicetyper::app {
+namespace voicetyper::ui {
 
 class MainWindow;
 
@@ -167,7 +168,7 @@ class MainWindow final : public QMainWindow {
     Q_OBJECT
 
 public:
-    MainWindow(SettingsPresenter& presenter,
+    MainWindow(voicetyper::app::SettingsPresenter& presenter,
                WindowServices services,
                std::shared_ptr<StatusChannel> adopted_channel = nullptr,
                QWidget* parent = nullptr);
@@ -305,7 +306,7 @@ private:
     /// has to react to, so the autosave tick can re-apply it exactly once.
     bool needs_service_apply() const;
 
-    SettingsPresenter& presenter_;
+    voicetyper::app::SettingsPresenter& presenter_;
     /// The interface language the texts were built with; a language change rebuilds
     /// the window (see the composition), because every label is created once.
     voicetyper::domain::AppLanguage language_ = voicetyper::domain::AppLanguage::ru;
@@ -484,7 +485,7 @@ private:
     std::vector<std::pair<QPushButton*, TitleButtonKind>> title_button_icons_;
     QString status_message_;
     std::shared_ptr<StatusChannel> status_channel_;
-    SettingsChange pending_service_change_ = SettingsChange::none;
+    voicetyper::app::SettingsChange pending_service_change_ = voicetyper::app::SettingsChange::none;
 };
 
-} // namespace voicetyper::app
+} // namespace voicetyper::ui

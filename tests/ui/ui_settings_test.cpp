@@ -5,12 +5,12 @@
 // disk: change the theme, let the debounce fire, read settings.json, then build
 // a second window on the same file and check it shows the stored value.
 
-#include "app/application_font.hpp"
-#include "app/status_overlay.hpp"
+#include "ui/application_font.hpp"
+#include "ui/status_overlay.hpp"
 #include "platform/api/status_overlay.hpp"
-#include "app/ui_text.hpp"
-#include "app/main_window.hpp"
-#include "app/tray_controller.hpp"
+#include "ui/ui_text.hpp"
+#include "ui/main_window.hpp"
+#include "ui/tray_controller.hpp"
 #include "app/settings_presenter.hpp"
 #include "platform/portable/portable_runtime.hpp"
 
@@ -19,7 +19,7 @@
 #include <QFontDatabase>
 #include <QFontMetrics>
 #include <QPixmap>
-#include "app/toggle_switch.hpp"
+#include "ui/toggle_switch.hpp"
 #include <QComboBox>
 #include <QListWidget>
 #include <QMenu>
@@ -107,7 +107,7 @@ private slots:
     {
         QVERIFY2(QFile(QStringLiteral(":/fonts/FluentSystemIcons-Regular.ttf")).exists(),
             "вшитый шрифт иконок навигации не попал в ресурсы Qt");
-        QVERIFY2(QFontDatabase::families().contains(voicetyper::app::icon_font_family()),
+        QVERIFY2(QFontDatabase::families().contains(voicetyper::ui::icon_font_family()),
             "FluentSystemIcons не зарегистрирован как шрифт приложения");
     }
 
@@ -121,7 +121,7 @@ private slots:
         voicetyper::app::SettingsPresenter presenter(path, file_system, clock);
         static_cast<void>(presenter.load());
 
-        voicetyper::app::MainWindow window(presenter, voicetyper::app::WindowServices{});
+        voicetyper::ui::MainWindow window(presenter, voicetyper::ui::WindowServices{});
         window.show();
 
         const auto theme_index = [&window] {
@@ -156,7 +156,7 @@ private slots:
         voicetyper::app::SettingsPresenter reloaded(path, file_system, clock);
         static_cast<void>(reloaded.load());
         QVERIFY(reloaded.settings().theme == voicetyper::domain::AppTheme::dark);
-        voicetyper::app::MainWindow second(reloaded, voicetyper::app::WindowServices{});
+        voicetyper::ui::MainWindow second(reloaded, voicetyper::ui::WindowServices{});
         QVERIFY(second.tab_title(theme_index) == QObject::tr("Внешний вид"));
 
         std::filesystem::remove(path);
@@ -175,7 +175,7 @@ private slots:
         voicetyper::app::SettingsPresenter presenter(path, file_system, clock);
         static_cast<void>(presenter.load());
 
-        voicetyper::app::MainWindow window(presenter, voicetyper::app::WindowServices{});
+        voicetyper::ui::MainWindow window(presenter, voicetyper::ui::WindowServices{});
         window.resize(980, 640);
         window.show();
 
@@ -258,12 +258,12 @@ private slots:
         static_cast<void>(presenter.load());
 
         int applied = 0;
-        voicetyper::app::WindowServices services;
+        voicetyper::ui::WindowServices services;
         services.settings_applied = [&applied](const voicetyper::domain::AppSettings& settings) {
             ++applied;
             Q_UNUSED(settings)
         };
-        voicetyper::app::MainWindow window(presenter, services);
+        voicetyper::ui::MainWindow window(presenter, services);
 
         int models_index = -1;
         for (int i = 0; i < window.page_count(); ++i) {
@@ -292,7 +292,7 @@ private slots:
         }
         QVERIFY(general_index >= 0);
         window.show_page(general_index);
-        auto* general = window.page_widget(general_index)->findChild<voicetyper::app::ToggleSwitch*>();
+        auto* general = window.page_widget(general_index)->findChild<voicetyper::ui::ToggleSwitch*>();
         QVERIFY(general != nullptr);
         general->setChecked(!general->isChecked());
         QTest::qWait(1200);
@@ -313,9 +313,9 @@ private slots:
         static_cast<void>(presenter.load());
 
         int applied = 0;
-        voicetyper::app::WindowServices services;
+        voicetyper::ui::WindowServices services;
         services.settings_applied = [&applied](const voicetyper::domain::AppSettings&) { ++applied; };
-        voicetyper::app::MainWindow window(presenter, services);
+        voicetyper::ui::MainWindow window(presenter, services);
 
         int general_index = -1;
         for (int i = 0; i < window.page_count(); ++i) {
@@ -353,8 +353,8 @@ private slots:
     // second window on that same file - the check the request asked for by name.
     void best_of_is_editable_and_survives_a_restart()
     {
-        using voicetyper::app::UiKey;
-        using voicetyper::app::ui_text;
+        using voicetyper::ui::UiKey;
+        using voicetyper::ui::ui_text;
         using voicetyper::domain::AppLanguage;
         using voicetyper::domain::kBestOfMax;
         using voicetyper::domain::kBestOfMin;
@@ -367,7 +367,7 @@ private slots:
         voicetyper::app::SettingsPresenter presenter(path, file_system, clock);
         static_cast<void>(presenter.load());
 
-        voicetyper::app::MainWindow window(presenter, voicetyper::app::WindowServices{});
+        voicetyper::ui::MainWindow window(presenter, voicetyper::ui::WindowServices{});
         window.show();
         QCoreApplication::processEvents();
 
@@ -409,7 +409,7 @@ private slots:
         voicetyper::app::SettingsPresenter reloaded(path, file_system, clock);
         static_cast<void>(reloaded.load());
         QCOMPARE(reloaded.settings().best_of, 5);
-        voicetyper::app::MainWindow second(reloaded, voicetyper::app::WindowServices{});
+        voicetyper::ui::MainWindow second(reloaded, voicetyper::ui::WindowServices{});
         second.show_page(models_index);
         QCoreApplication::processEvents();
         auto* second_best_of = second.page_widget(models_index)
@@ -441,9 +441,9 @@ private slots:
         static_cast<void>(presenter.load());
         QCOMPARE(presenter.settings().microphone_device_id.value_or(""), std::string("dev-x"));
 
-        voicetyper::app::WindowServices services;
+        voicetyper::ui::WindowServices services;
         services.microphones = [] { return std::vector<std::pair<std::string, std::string>>{}; };
-        voicetyper::app::MainWindow window(presenter, services);
+        voicetyper::ui::MainWindow window(presenter, services);
         QTest::qWait(1200);
 
         QVERIFY2(presenter.settings().microphone_device_id.has_value(),
@@ -469,11 +469,11 @@ private slots:
         voicetyper::app::SettingsPresenter presenter(path, file_system, clock);
         static_cast<void>(presenter.load());
 
-        voicetyper::app::WindowServices services;
+        voicetyper::ui::WindowServices services;
         services.microphones = [] {
             return std::vector<std::pair<std::string, std::string>>{{"dev-a", "Microphone A"}};
         };
-        voicetyper::app::MainWindow window(presenter, services);
+        voicetyper::ui::MainWindow window(presenter, services);
         QTest::qWait(1200);
 
         QCOMPARE(presenter.settings().microphone_device_id.value_or(""), std::string("dev-gone"));
@@ -497,7 +497,7 @@ private slots:
 
         int applied = 0;
         std::string applied_device;
-        voicetyper::app::WindowServices services;
+        voicetyper::ui::WindowServices services;
         services.microphones = [] {
             return std::vector<std::pair<std::string, std::string>>{
                 {"dev-a", "Microphone A"}, {"dev-b", "Microphone B"}};
@@ -506,7 +506,7 @@ private slots:
             ++applied;
             applied_device = settings.microphone_device_id.value_or("");
         };
-        voicetyper::app::MainWindow window(presenter, services);
+        voicetyper::ui::MainWindow window(presenter, services);
 
         auto* combo = window.findChild<QComboBox*>(QStringLiteral("microphoneCombo"));
         QVERIFY(combo != nullptr);
@@ -541,7 +541,7 @@ private slots:
         voicetyper::app::SettingsPresenter presenter(path, file_system, clock);
         static_cast<void>(presenter.load());
 
-        voicetyper::app::MainWindow window(presenter, voicetyper::app::WindowServices{});
+        voicetyper::ui::MainWindow window(presenter, voicetyper::ui::WindowServices{});
 
         const struct { const char* label; const char* control; } expected[] = {
             {"Общие", "silenceThresholdSpin"},
@@ -591,7 +591,7 @@ private slots:
         voicetyper::app::SettingsPresenter presenter(path, file_system, clock);
         static_cast<void>(presenter.load());
 
-        voicetyper::app::MainWindow window(presenter, voicetyper::app::WindowServices{});
+        voicetyper::ui::MainWindow window(presenter, voicetyper::ui::WindowServices{});
         window.resize(980, 640);
         window.show();
         QCoreApplication::processEvents();
@@ -720,7 +720,7 @@ private slots:
         voicetyper::app::SettingsPresenter presenter(path, file_system, clock);
         static_cast<void>(presenter.load());
 
-        voicetyper::app::WindowServices services;
+        voicetyper::ui::WindowServices services;
         int applied = 0;
         std::string applied_hotkey;
         services.settings_applied = [&](const voicetyper::domain::AppSettings& settings) {
@@ -733,7 +733,7 @@ private slots:
             report(std::string("Ctrl+Shift+F12"), QString());
         };
 
-        voicetyper::app::MainWindow window(presenter, std::move(services));
+        voicetyper::ui::MainWindow window(presenter, std::move(services));
         auto* button = window.findChild<QPushButton*>(QStringLiteral("recordHotkeyCapture"));
         QVERIFY(button != nullptr);
         QVERIFY2(button->isEnabled(), "the capture button is disabled although the platform offers a hook");
@@ -754,7 +754,7 @@ private slots:
         // Without the platform service the button says why instead of doing nothing.
         voicetyper::app::SettingsPresenter second_presenter(path, file_system, clock);
         static_cast<void>(second_presenter.load());
-        voicetyper::app::MainWindow second(second_presenter, voicetyper::app::WindowServices{});
+        voicetyper::ui::MainWindow second(second_presenter, voicetyper::ui::WindowServices{});
         auto* disabled = second.findChild<QPushButton*>(QStringLiteral("recordHotkeyCapture"));
         QVERIFY(disabled != nullptr);
         QVERIFY2(!disabled->isEnabled(), "without a capture hook the button must be disabled");
@@ -774,7 +774,7 @@ private slots:
         voicetyper::app::SettingsPresenter presenter(path, file_system, clock);
         static_cast<void>(presenter.load());
 
-        voicetyper::app::MainWindow window(presenter, voicetyper::app::WindowServices{});
+        voicetyper::ui::MainWindow window(presenter, voicetyper::ui::WindowServices{});
         // The window must be shown for isVisible() to mean anything: a child of a
         // hidden window is never visible.
         window.resize(980, 640);
@@ -791,11 +791,11 @@ private slots:
         QCoreApplication::processEvents();
 
         auto* page = window.page_widget(models_row);
-        const auto whisper_toggles = page->findChildren<voicetyper::app::ToggleSwitch*>(
+        const auto whisper_toggles = page->findChildren<voicetyper::ui::ToggleSwitch*>(
             QRegularExpression(QStringLiteral("^whisperModelToggle")));
-        const auto parakeet_toggles = page->findChildren<voicetyper::app::ToggleSwitch*>(
+        const auto parakeet_toggles = page->findChildren<voicetyper::ui::ToggleSwitch*>(
             QRegularExpression(QStringLiteral("^parakeetModelToggle")));
-        const auto gigaam_toggles = page->findChildren<voicetyper::app::ToggleSwitch*>(
+        const auto gigaam_toggles = page->findChildren<voicetyper::ui::ToggleSwitch*>(
             QRegularExpression(QStringLiteral("^gigaamModelToggle")));
         QCOMPARE(whisper_toggles.size(), 5);
         QCOMPARE(parakeet_toggles.size(), 4);
@@ -873,7 +873,7 @@ private slots:
         std::filesystem::remove(path);
         voicetyper::app::SettingsPresenter presenter(path, file_system, clock);
         static_cast<void>(presenter.load());
-        voicetyper::app::MainWindow window(presenter, voicetyper::app::WindowServices{});
+        voicetyper::ui::MainWindow window(presenter, voicetyper::ui::WindowServices{});
 
         int microphone_row = -1;
         int general_row = -1;
@@ -906,14 +906,14 @@ private slots:
         voicetyper::app::SettingsPresenter presenter(path, file_system, clock);
         static_cast<void>(presenter.load());
 
-        voicetyper::app::WindowServices services;
+        voicetyper::ui::WindowServices services;
         int deleted_index = -1;
-        services.model_is_downloaded = [](voicetyper::app::ModelList, int size_index) { return size_index == 2; };
-        services.model_delete = [&deleted_index](voicetyper::app::ModelList, int size_index) {
+        services.model_is_downloaded = [](voicetyper::ui::ModelList, int size_index) { return size_index == 2; };
+        services.model_delete = [&deleted_index](voicetyper::ui::ModelList, int size_index) {
             deleted_index = size_index;
             return true;
         };
-        voicetyper::app::MainWindow window(presenter, std::move(services));
+        voicetyper::ui::MainWindow window(presenter, std::move(services));
         window.resize(980, 640);
         window.show();
 
@@ -948,13 +948,13 @@ private slots:
         voicetyper::app::SettingsPresenter presenter(path, file_system, clock);
         static_cast<void>(presenter.load());
 
-        voicetyper::app::WindowServices services;
+        voicetyper::ui::WindowServices services;
         QString log;
         for (int line = 0; line < 400; ++line) {
             log += QStringLiteral("line %1 of the application log\n").arg(line);
         }
         services.log_text = [&log] { return log; };
-        voicetyper::app::MainWindow window(presenter, std::move(services));
+        voicetyper::ui::MainWindow window(presenter, std::move(services));
         window.resize(980, 640);
         window.show();
         window.show_page(6); // Журнал
@@ -987,7 +987,7 @@ private slots:
         presenter.update(voicetyper::app::SettingsChange::language, [](voicetyper::domain::AppSettings& settings) {
             settings.app_language = voicetyper::domain::AppLanguage::en;
         });
-        voicetyper::app::MainWindow window(presenter, voicetyper::app::WindowServices{});
+        voicetyper::ui::MainWindow window(presenter, voicetyper::ui::WindowServices{});
 
         QStringList titles;
         bool english_general = false;
@@ -1014,7 +1014,7 @@ private slots:
             [](voicetyper::domain::AppSettings& settings) {
                 settings.app_language = voicetyper::domain::AppLanguage::ru;
             });
-        voicetyper::app::MainWindow russian(russian_presenter, voicetyper::app::WindowServices{});
+        voicetyper::ui::MainWindow russian(russian_presenter, voicetyper::ui::WindowServices{});
         bool russian_label = false;
         for (auto* label : russian.findChildren<QLabel*>()) {
             russian_label = russian_label || label->text() == QStringLiteral("Язык интерфейса");
@@ -1035,7 +1035,7 @@ private slots:
         voicetyper::app::SettingsPresenter presenter(path, file_system, clock);
         static_cast<void>(presenter.load());
 
-        voicetyper::app::MainWindow window(presenter, voicetyper::app::WindowServices{});
+        voicetyper::ui::MainWindow window(presenter, voicetyper::ui::WindowServices{});
         window.resize(980, 640);
         window.show();
         QCoreApplication::processEvents();
@@ -1085,8 +1085,8 @@ private slots:
     // This walks the whole table instead of trusting the eye.
     void every_ui_key_has_a_text_in_both_languages()
     {
-        using voicetyper::app::UiKey;
-        using voicetyper::app::ui_text;
+        using voicetyper::ui::UiKey;
+        using voicetyper::ui::ui_text;
         using voicetyper::domain::AppLanguage;
         for (int index = 0; index < static_cast<int>(UiKey::kCount); ++index) {
             const auto key = static_cast<UiKey>(index);
@@ -1116,7 +1116,7 @@ private slots:
         voicetyper::app::SettingsPresenter presenter(path, file_system, clock);
         static_cast<void>(presenter.load());
 
-        voicetyper::app::WindowServices services;
+        voicetyper::ui::WindowServices services;
         services.application_version = [] { return QStringLiteral("1.2.3"); };
         int checks = 0;
         services.update_check = [&checks](std::function<void(bool, QString, QString, QString)> report) {
@@ -1128,7 +1128,7 @@ private slots:
             ++installs;
             progress(50, QStringLiteral("download"), QString());
         };
-        voicetyper::app::MainWindow window(presenter, std::move(services));
+        voicetyper::ui::MainWindow window(presenter, std::move(services));
         window.resize(980, 640);
         window.show();
 
@@ -1189,7 +1189,7 @@ private slots:
         std::filesystem::remove(path);
         voicetyper::app::SettingsPresenter presenter(path, file_system, clock);
         static_cast<void>(presenter.load());
-        voicetyper::app::MainWindow window(presenter, voicetyper::app::WindowServices{});
+        voicetyper::ui::MainWindow window(presenter, voicetyper::ui::WindowServices{});
         window.resize(980, 640);
         window.show();
         QCoreApplication::processEvents();
@@ -1219,7 +1219,7 @@ private slots:
     // painted it white while its text stayed the light grey of the dark theme.
     void the_status_pill_follows_the_theme()
     {
-        voicetyper::app::QtStatusOverlay overlay;
+        voicetyper::ui::QtStatusOverlay overlay;
         QVERIFY(overlay.create().is_ok());
         // The overlay is a click-through host window (the only top-level part;
         // on Wayland the pill itself is a child of it, because a client cannot
@@ -1270,7 +1270,7 @@ private slots:
         voicetyper::app::SettingsPresenter presenter(path, file_system, clock);
         static_cast<void>(presenter.load());
 
-        voicetyper::app::MainWindow window(presenter, voicetyper::app::WindowServices{});
+        voicetyper::ui::MainWindow window(presenter, voicetyper::ui::WindowServices{});
         window.resize(980, 640);
         window.show();
         QCoreApplication::processEvents();
@@ -1300,7 +1300,7 @@ private slots:
     void the_tray_menu_keeps_room_on_the_right()
     {
         QSystemTrayIcon icon;
-        voicetyper::app::TrayController tray(icon);
+        voicetyper::ui::TrayController tray(icon);
         QVERIFY2(tray.menu() != nullptr, "у контроллера трея нет меню");
         const QString sheet = tray.menu()->styleSheet();
         QVERIFY2(sheet.contains(QStringLiteral("QMenu::item")),
@@ -1313,7 +1313,7 @@ private slots:
     // Qt-слое, поэтому смена языка их не касалась (Александр, 06.10.2026).
     void the_status_overlay_follows_the_language()
     {
-        voicetyper::app::QtStatusOverlay overlay;
+        voicetyper::ui::QtStatusOverlay overlay;
         QVERIFY(overlay.create().is_ok());
         QWidget* host = nullptr;
         for (auto* widget : QApplication::topLevelWidgets()) {
@@ -1340,7 +1340,7 @@ private slots:
     void the_tray_menu_follows_the_language()
     {
         QSystemTrayIcon icon;
-        voicetyper::app::TrayController tray(icon);
+        voicetyper::ui::TrayController tray(icon);
         const auto entries = [&tray] {
             QStringList out;
             for (auto* action : tray.menu()->actions()) {
@@ -1376,7 +1376,7 @@ private slots:
         voicetyper::app::SettingsPresenter presenter(path, file_system, clock);
         static_cast<void>(presenter.load());
 
-        voicetyper::app::MainWindow window(presenter, voicetyper::app::WindowServices{});
+        voicetyper::ui::MainWindow window(presenter, voicetyper::ui::WindowServices{});
         window.resize(980, 640);
         window.show();
         QCoreApplication::processEvents();
@@ -1427,8 +1427,8 @@ private slots:
     // дословно, чтобы сдвиг падал здесь, а не на устройстве.
     void the_last_string_table_entries_are_exact()
     {
-        using voicetyper::app::UiKey;
-        using voicetyper::app::ui_text;
+        using voicetyper::ui::UiKey;
+        using voicetyper::ui::ui_text;
         QCOMPARE(ui_text(UiKey::k105, voicetyper::domain::AppLanguage::ru), QStringLiteral("Скачивание…"));
         QCOMPARE(ui_text(UiKey::k106, voicetyper::domain::AppLanguage::ru), QStringLiteral("Не удалось скачать модель"));
         QCOMPARE(ui_text(UiKey::k107, voicetyper::domain::AppLanguage::ru), QStringLiteral("Скачивание: %1%"));
@@ -1451,17 +1451,17 @@ private slots:
         voicetyper::app::SettingsPresenter presenter(path, file_system, clock);
         static_cast<void>(presenter.load());
 
-        voicetyper::app::WindowServices services;
-        std::function<void(voicetyper::app::WindowServices::ModelTransfer)> report;
+        voicetyper::ui::WindowServices services;
+        std::function<void(voicetyper::ui::WindowServices::ModelTransfer)> report;
         bool cancel_requested = false;
-        services.model_is_downloaded = [](voicetyper::app::ModelList, int) { return false; };
-        services.model_download = [&report](voicetyper::app::ModelList, int,
-            std::function<void(voicetyper::app::WindowServices::ModelTransfer)> progress) {
+        services.model_is_downloaded = [](voicetyper::ui::ModelList, int) { return false; };
+        services.model_download = [&report](voicetyper::ui::ModelList, int,
+            std::function<void(voicetyper::ui::WindowServices::ModelTransfer)> progress) {
             report = std::move(progress);
         };
-        services.model_download_cancel = [&cancel_requested](voicetyper::app::ModelList, int) { cancel_requested = true; };
+        services.model_download_cancel = [&cancel_requested](voicetyper::ui::ModelList, int) { cancel_requested = true; };
 
-        voicetyper::app::MainWindow window(presenter, std::move(services));
+        voicetyper::ui::MainWindow window(presenter, std::move(services));
         window.resize(980, 640);
         window.show();
 
@@ -1485,7 +1485,7 @@ private slots:
         QCOMPARE(percent->text(), QStringLiteral("0%"));
         QCOMPARE(button->property("buttonRole").toString(), QStringLiteral("remove"));
 
-        voicetyper::app::WindowServices::ModelTransfer progress;
+        voicetyper::ui::WindowServices::ModelTransfer progress;
         progress.percent = 42;
         report(progress);
         QCoreApplication::processEvents();
@@ -1548,7 +1548,7 @@ private slots:
         QCoreApplication::processEvents();
         QVERIFY2(cancel_requested, "повторное нажатие отменяет загрузку");
 
-        voicetyper::app::WindowServices::ModelTransfer cancelled;
+        voicetyper::ui::WindowServices::ModelTransfer cancelled;
         cancelled.error = QStringLiteral("the download was cancelled");
         cancelled.cancelled = true;
         report(cancelled);
@@ -1574,7 +1574,7 @@ private slots:
         voicetyper::app::SettingsPresenter presenter(path, file_system, clock);
         static_cast<void>(presenter.load());
 
-        voicetyper::app::MainWindow window(presenter, voicetyper::app::WindowServices{});
+        voicetyper::ui::MainWindow window(presenter, voicetyper::ui::WindowServices{});
         window.resize(980, 640);
         window.show();
         QCoreApplication::processEvents();
@@ -1599,7 +1599,7 @@ private slots:
         // stored pixmap was drawn unscaled over the delegate's glyph on other backends
         // (measured 2026-10-08, dpr=2).
         QVERIFY2(nav->itemDelegate() != nullptr, "у левого меню нет делегата иконок");
-        QFont glyph_font(voicetyper::app::icon_font_family());
+        QFont glyph_font(voicetyper::ui::icon_font_family());
         glyph_font.setPixelSize(16);
         const QFontMetricsF glyph_metrics(glyph_font);
         for (int row = 0; row < nav->count(); ++row) {
@@ -1663,7 +1663,7 @@ private slots:
         voicetyper::app::SettingsPresenter presenter(path, file_system, clock);
         static_cast<void>(presenter.load());
 
-        voicetyper::app::MainWindow window(presenter, voicetyper::app::WindowServices{});
+        voicetyper::ui::MainWindow window(presenter, voicetyper::ui::WindowServices{});
         window.resize(980, 640);
         window.show();
         QCoreApplication::processEvents();
@@ -1702,7 +1702,7 @@ private slots:
         voicetyper::app::SettingsPresenter presenter(path, file_system, clock);
         static_cast<void>(presenter.load());
 
-        voicetyper::app::MainWindow window(presenter, voicetyper::app::WindowServices{});
+        voicetyper::ui::MainWindow window(presenter, voicetyper::ui::WindowServices{});
         auto* record = window.findChild<QPushButton*>(QStringLiteral("recordButton"));
         QVERIFY(record != nullptr);
         // No recording backend is registered on this host, so the button must be
@@ -1721,7 +1721,7 @@ private slots:
         voicetyper::app::SettingsPresenter presenter(path, file_system, clock);
         static_cast<void>(presenter.load());
 
-        voicetyper::app::MainWindow window(presenter, voicetyper::app::WindowServices{});
+        voicetyper::ui::MainWindow window(presenter, voicetyper::ui::WindowServices{});
         // The bindings are informational readouts: they are set through the capture
         // button only, exactly like the hotkey fields above them.
         for (const auto& name : {QStringLiteral("recordGamepadEdit"), QStringLiteral("cancelGamepadEdit")}) {
@@ -1750,7 +1750,7 @@ int main(int argc, char** argv)
 {
     QApplication application(argc, argv);
     // Build every window in the shipped typeface, as the application does.
-    voicetyper::app::install_application_font();
+    voicetyper::ui::install_application_font();
     SettingsWindowTest test;
     const int failures = QTest::qExec(&test, argc, argv);
     std::cout << "ui-settings-test: result=" << (failures == 0 ? "passed" : "failed")

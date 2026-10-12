@@ -6,8 +6,8 @@
 //   * a second launch focuses/raises the existing window instead of starting a
 //     second recorder that would fight over the microphone and the clipboard.
 
-#include "app/tray_controller.hpp"
-#include "app/ui_text.hpp"
+#include "ui/tray_controller.hpp"
+#include "ui/ui_text.hpp"
 
 #include <QApplication>
 #include <QAction>
@@ -23,7 +23,8 @@
 #include <memory>
 
 #if defined(_WIN32)
-// Before any namespace: including windows.h inside voicetyper::app declared the Win32
+// Before any namespace: including windows.h inside the module namespace (it was
+// voicetyper::app when this file lived there, now voicetyper::ui) declared the Win32
 // API inside it, which is why CreateMutexW was not found.
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -34,7 +35,7 @@
 #include <windows.h>
 #endif
 
-namespace voicetyper::app {
+namespace voicetyper::ui {
 namespace {
 
 constexpr auto kSingleInstanceChannel = "VoiceTyper-single-instance";
@@ -249,4 +250,4 @@ bool take_pending_activation()
     return pending;
 }
 
-} // namespace voicetyper::app
+} // namespace voicetyper::ui

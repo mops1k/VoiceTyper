@@ -20,7 +20,7 @@ This file is the entry point. Module-level requirements live in
 | [platform.spec.md](modules/platform.spec.md) | frozen backend interfaces (ports) and their Win32/portable implementations | `src/platform/` |
 | [asr.spec.md](modules/asr.spec.md) | recognition engines, engine host lifecycle, Silero VAD, native libraries | `src/asr/`, `native/` |
 | [core-support.spec.md](modules/core-support.spec.md) | paths, logger, CPU topology, update manifest/service/launcher, model download, SHA-256 | `src/core/support/`, `src/domain/app_paths.hpp`, `src/domain/file_logger.hpp` |
-| [ui.spec.md](modules/ui.spec.md) | settings window (8 pages), tray, status overlay, localization, themes | `src/app/` |
+| [ui.spec.md](modules/ui.spec.md) | settings window (8 pages), tray, status overlay, localization, themes | `src/ui/` |
 | [build-release.spec.md](modules/build-release.spec.md) | CMake targets, presets, pinned dependencies, CI, installer, test suite, tools | `CMakeLists.txt`, `cmake/`, `installer/`, `tests/`, `tools/`, `.github/` |
 
 ---
@@ -117,10 +117,20 @@ Dependencies point inward; the portable layer MUST NOT include Qt or an OS SDK.
 
 ```
                        +---------------------------------------------+
-                       | src/app   (Qt 6 Widgets UI, composition)     |
-                       | main_window, tray, overlay, windows_app     |
-                       +---------------+-----------------------------+
-                                       |
+                       | src/app   (entry point, composition roots)   |
+                       | main.cpp, windows/linux_application.cpp,    |
+                       | qt_http_client (Qt HttpClient adapter)      |
+                       +-----------------------+---------------------+
+                                               | builds the widgets
+                       +-----------------------v---------------------+
+                       | src/ui    (Qt 6 Widgets: settings window,    |
+                       | pages, tray, status overlay, texts, fonts)  |
+                       +-----------------------+---------------------+
+                                               | view model
+                       +-----------------------v---------------------+
+                       | src/app/settings_presenter (portable state) |
+                       +-----------------------+---------------------+
+
         +------------------------------+---------------------------+
         |                              |                           |
 +-------v--------+          +----------v---------+      +----------v---------+
@@ -137,6 +147,14 @@ Dependencies point inward; the portable layer MUST NOT include Qt or an OS SDK.
                             | portable/           |
                             +--------------------+
 ```
+
+The Qt widget layer is `src/ui/` (target `voicetyper_ui`): the settings window,
+its pages, the tray, the status overlay, the string tables and the typefaces.
+`src/app/` is the application layer: the entry point (`main.cpp`), the platform
+composition roots (`windows_application.cpp`, `linux_application.cpp`), the Qt
+adapter of the `platform::HttpClient` port (`qt_http_client.*`) and the portable
+view model (`settings_presenter.*`, target `voicetyper_presenter`, no Qt). A fork
+must keep widget code in `src/ui/` and everything else in `src/app/`.
 
 - **VT-SYS-030 — Ports are the only crossing point.** Code above `src/platform/`
   MUST depend on `src/platform/api/*.hpp` (abstract interfaces) and MUST NOT call
@@ -160,11 +178,12 @@ Dependencies point inward; the portable layer MUST NOT include Qt or an OS SDK.
 
 ### 2.2 Key runtime components and their responsibilities
 
-**Placeholder directories.** `src/audio/` and `src/ui/` contain only a `.gitkeep`
-(`"Audio subsystem placeholder for a later migration phase."` and
-`"UI placeholder for a later migration phase."`). They hold no code: audio DSP lives in
-`src/domain/audio_wav.*` and all UI code lives in `src/app/`. A specification MUST NOT
-attribute behavior to these two directories.
+**Placeholder directories.** `src/audio/` contains only a `.gitkeep`
+(`"Audio subsystem placeholder for a later migration phase."`). It holds no code:
+audio DSP lives in `src/domain/audio_wav.*`. `src/ui/` stopped being a placeholder
+on 2026-10-12: it is now the Qt widget layer (VT-UI-1xx), and `src/app/` keeps the
+entry point, the composition roots and the portable settings presenter. A
+specification MUST NOT attribute behavior to `src/audio/`.
 
 | Component | Responsibility | Requirement block |
 |---|---|---|
@@ -200,7 +219,7 @@ attribute behavior to these two directories.
 - **VT-SYS-043.** If the channel cannot be claimed while the mutex is owned, the process
   MUST refuse to start and log a warning rather than run a duplicate (commit `dfca3a1`).
 - **VT-SYS-044.** On Linux the single-instance gate MUST be the `QLocalServer` channel
-  (`src/app/tray_controller.cpp`): the named mutex of VT-SYS-040 is Win32-only, and a second
+  (`src/ui/tray_controller.cpp`): the named mutex of VT-SYS-040 is Win32-only, and a second
   launch MUST hand the `show` request to the owner and exit (VT-PLT-1106).
 
 ### 2.5 Lifecycle and startup
@@ -446,6 +465,7 @@ The frozen ports are:
 |---|---|
 | Port | An abstract interface in `src/platform/api/*.hpp` that a backend implements. |
 | Composition root | `src/app/windows_application.cpp`: the one place where real backends are assembled. |
+| Widget layer | `src/ui/`: the Qt 6 Widgets settings window, tray, status overlay, string tables and bundled typefaces (target `voicetyper_ui`). |
 | Final-only | A transcript is emitted once, after recording stops; no streaming preview. |
 | Epoch | A generation counter that invalidates superseded loads/results (`asr::EngineHost`). |
 | Kept span / speech map | The VAD's answer carried with the audio so the detector runs once. |

@@ -1,8 +1,9 @@
 # VoiceTyper — UI Module Specification
 
-**Covers:** `src/app/` — entry points, the settings window (`main_window.*`), the tray
+**Covers:** `src/ui/` — the settings window (`main_window.*`), the tray
 (`tray_controller.*`), the status overlay (`status_overlay.*`), localization (`ui_text.*`),
-the settings presenter, the toggle switch, the fonts and the Qt HTTP client.
+the toggle switch and the fonts; and `src/app/` — the entry points, the composition
+roots, the settings presenter and the Qt HTTP client.
 **Baseline:** `main` @ `3cc4c5a9a602afb96c2f478a562005f5eb850068` (v2.2.1).
 **Requirement keywords:** RFC 2119. Parent document: [index.spec.md](../index.spec.md).
 **Prefix:** `VT-UI-*`.
@@ -378,7 +379,7 @@ consequences are:
   `#E8EFF6`, text `#333333`, muted `#6A6A6A`, border `#EFEFEF`, accent `#0067C0`, header
   `#EFF4F9`.
 - **VT-UI-1004.** The navigation icons MUST have exactly one painting path: `NavigationIconDelegate`
-  (`src/app/main_window.cpp`) paints the glyph of the row with the bundled icon family
+  (`src/ui/main_window.cpp`) paints the glyph of the row with the bundled icon family
   (`icon_font_family()`, FluentSystemIcons, VT-UI-1005b) as text over the row the base delegate
   already drew. The code point comes from the item data `Qt::UserRole + 1` (the page key stays in
   `Qt::UserRole + 2`); the item MUST NOT carry a `QPixmap`/`QIcon`, and no second glyph path MAY run

@@ -89,8 +89,8 @@ run. What exists and is machine-verified as of 2026-10-01:
 | Hotkeys + gamepad (XInput) | `src/platform/windows/win32_{hotkeys,gamepad}.*` | `win32-input-contract` (166 checks) | green; DInput still out of scope (PAD-01) |
 | WASAPI capture, device enumeration and selection | `src/platform/windows/{wasapi_capture,windows_audio_capture,windows_microphone}.*` | `windows-audio-capture-contract` | **skipped**: needs an interactive desktop session (COM), never reported as passed |
 | Autostart Run key | `src/platform/windows/win32_startup.*` | `win32-startup-contract` (real HKCU Run key, per-process value name) | green |
-| Tray, single instance, ordered teardown | `src/app/tray_controller.*`, `src/app/windows_application.cpp` | Qt UI test (close-to-tray) | green |
-| Frameless status overlay | `src/app/status_overlay.*` (contract in `src/platform/api/status_overlay.hpp`) | `ui-status-overlay-test` (11 cases, offscreen) | green; activation/taskbar behaviour on a real desktop waits for the physical smoke |
+| Tray, single instance, ordered teardown | `src/ui/tray_controller.*`, `src/app/windows_application.cpp` | Qt UI test (close-to-tray) | green |
+| Frameless status overlay | `src/ui/status_overlay.*` (contract in `src/platform/api/status_overlay.hpp`) | `ui-status-overlay-test` (11 cases, offscreen) | green; activation/taskbar behaviour on a real desktop waits for the physical smoke |
 
 Evidence (2026-10-01): Windows MinGW13 + Qt 6.11.2 configure/build/ctest =
 0/0/0 with **29/29** (2 skipped: no model in the environment, no capture

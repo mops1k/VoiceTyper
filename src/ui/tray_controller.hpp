@@ -18,7 +18,7 @@ class QAction;
 class QMenu;
 class QSystemTrayIcon;
 
-namespace voicetyper::app {
+namespace voicetyper::ui {
 
 class TrayController final : public QObject {
     Q_OBJECT
@@ -72,4 +72,4 @@ void set_activation_hook(std::function<void()> hook);
 /// True once, when a launch asked to show before the window existed.
 [[nodiscard]] bool take_pending_activation();
 
-} // namespace voicetyper::app
+} // namespace voicetyper::ui

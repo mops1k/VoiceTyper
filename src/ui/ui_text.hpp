@@ -4,7 +4,7 @@
 
 #include <QString>
 
-namespace voicetyper::app {
+namespace voicetyper::ui {
 
 /// Every user-visible string of the settings window, in one place.
 ///
@@ -248,4 +248,4 @@ void set_current_language(domain::AppLanguage language);
 
 [[nodiscard]] QString ui_text(UiKey key, domain::AppLanguage language);
 
-} // namespace voicetyper::app
+} // namespace voicetyper::ui

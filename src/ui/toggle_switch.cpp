@@ -1,9 +1,9 @@
-#include "app/toggle_switch.hpp"
+#include "ui/toggle_switch.hpp"
 
 #include <QPainter>
 #include <QPaintEvent>
 
-namespace voicetyper::app {
+namespace voicetyper::ui {
 
 namespace {
 /// `Width="40" Height="22"` and `CornerRadius="11"` from the .NET style.
@@ -70,4 +70,4 @@ void ToggleSwitch::paintEvent(QPaintEvent*)
     }
 }
 
-} // namespace voicetyper::app
+} // namespace voicetyper::ui

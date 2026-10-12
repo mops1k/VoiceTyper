@@ -14,8 +14,8 @@
 // It writes <dir>/page-<Key>.png for every navigation entry and prints the file
 // names, so a reviewer (or a subagent) can look at each page.
 
-#include "app/application_font.hpp"
-#include "app/main_window.hpp"
+#include "ui/application_font.hpp"
+#include "ui/main_window.hpp"
 #include "app/settings_presenter.hpp"
 #include "platform/portable/portable_runtime.hpp"
 
@@ -35,7 +35,7 @@
 int main(int argc, char** argv)
 {
     QApplication application(argc, argv);
-    voicetyper::app::install_application_font();
+    voicetyper::ui::install_application_font();
 
     const QString output_directory = argc > 1 ? QString::fromUtf8(argv[1])
                                               : QStringLiteral("ui-snapshots");
@@ -59,7 +59,7 @@ int main(int argc, char** argv)
     voicetyper::app::SettingsPresenter presenter(settings_path, file_system, clock);
     static_cast<void>(presenter.load());
 
-    voicetyper::app::MainWindow window(presenter, voicetyper::app::WindowServices{});
+    voicetyper::ui::MainWindow window(presenter, voicetyper::ui::WindowServices{});
     // The mockup's own window size, so a snapshot can be compared with it directly.
     window.resize(1220, 800);
     window.show();

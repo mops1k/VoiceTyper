@@ -110,7 +110,7 @@ handy-computer/gigaam-v3-e2e-rnnt-gguf) выпущена SberDevices/SaluteDevic
 ### Fluent System Icons (MIT)
 
 Иконки левого меню (`assets/fonts/FluentSystemIcons-Regular.ttf`, код в
-`src/app/main_window.cpp` и `src/app/application_font.cpp`), вшиты в исполняемый файл
+`src/ui/main_window.cpp` и `src/ui/application_font.cpp`), вшиты в исполняемый файл
 ресурсом `:/fonts/FluentSystemIcons-Regular.ttf` (VT-UI-1005b).
 Источник: https://github.com/microsoft/fluentui-system-icons.
 Текст лицензии: `assets/fonts/LICENSE-FluentSystemIcons.txt`.

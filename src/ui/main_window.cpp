@@ -1,6 +1,6 @@
-#include "app/application_font.hpp"
-#include "app/main_window.hpp"
-#include "app/ui_text.hpp"
+#include "ui/application_font.hpp"
+#include "ui/main_window.hpp"
+#include "ui/ui_text.hpp"
 
 #include "domain/error.hpp"
 #include "domain/version.hpp"
@@ -65,7 +65,7 @@
 #include <QVBoxLayout>
 #include <QWidget>
 
-namespace voicetyper::app {
+namespace voicetyper::ui {
 
 using domain::AppLanguage;
 using domain::AppTheme;
@@ -137,7 +137,7 @@ QString theme_text(AppTheme theme, AppLanguage language)
 } // namespace
 
 MainWindow::MainWindow(
-    SettingsPresenter& presenter,
+    voicetyper::app::SettingsPresenter& presenter,
     WindowServices services,
     std::shared_ptr<StatusChannel> adopted_channel,
     QWidget* parent)
@@ -733,7 +733,7 @@ QWidget* setting_row_impl(UiKey key, const UiKey* description, AppLanguage langu
     QWidget* control, int control_width)
 {
     const bool has_value_column = control != nullptr && control_width > 0
-        && !control->inherits("voicetyper::app::ToggleSwitch");
+        && !control->inherits("voicetyper::ui::ToggleSwitch");
     return settings_row_shell(row_copy(key, description, language), control, has_value_column);
 }
 
@@ -2647,7 +2647,7 @@ void MainWindow::build_tabs()
             // The click walks the very path the combo box used: the presenter stores the
             // theme, then apply_theme() re-dresses the window and re-marks the tiles.
             tile->on_click = [this](AppTheme chosen) {
-                presenter_.update(SettingsChange::appearance, [chosen](domain::AppSettings& settings) {
+                presenter_.update(voicetyper::app::SettingsChange::appearance, [chosen](domain::AppSettings& settings) {
                     settings.theme = chosen;
                 });
                 apply_theme();
@@ -2674,7 +2674,7 @@ void MainWindow::build_tabs()
         appearance_reset_->setCursor(Qt::PointingHandCursor);
         connect(appearance_reset_, &QPushButton::clicked, this, [this] {
             const domain::AppSettings defaults = domain::AppSettings::defaults();
-            presenter_.update(SettingsChange::appearance, [defaults](domain::AppSettings& settings) {
+            presenter_.update(voicetyper::app::SettingsChange::appearance, [defaults](domain::AppSettings& settings) {
                 settings.theme = defaults.theme;
             });
             {
@@ -2683,7 +2683,7 @@ void MainWindow::build_tabs()
                 const QSignalBlocker blocker(hide_on_focus_loss_);
                 hide_on_focus_loss_->setChecked(defaults.hide_on_focus_loss);
             }
-            presenter_.update(SettingsChange::behaviour, [defaults](domain::AppSettings& settings) {
+            presenter_.update(voicetyper::app::SettingsChange::behaviour, [defaults](domain::AppSettings& settings) {
                 settings.hide_on_focus_loss = defaults.hide_on_focus_loss;
             });
             apply_theme();
@@ -3473,7 +3473,7 @@ void MainWindow::bind_settings_to_controls()
 
     connect(app_language_, &QComboBox::currentIndexChanged, this, [this](int index) {
         const auto chosen = static_cast<AppLanguage>(app_language_->itemData(index).toInt());
-        presenter_.update(SettingsChange::language, [chosen](domain::AppSettings& settings) {
+        presenter_.update(voicetyper::app::SettingsChange::language, [chosen](domain::AppSettings& settings) {
             settings.app_language = chosen;
         });
         // In place: the window keeps its position, its size and the current page, and the
@@ -3484,69 +3484,69 @@ void MainWindow::bind_settings_to_controls()
     connect(recognition_language_, &QComboBox::currentIndexChanged, this, [this](int index) {
         // The recognition language shares the change code with the interface language and
         // reaches the engine that way.
-        pending_service_change_ = SettingsChange::language;
-        presenter_.update(SettingsChange::language, [this, index](domain::AppSettings& settings) {
+        pending_service_change_ = voicetyper::app::SettingsChange::language;
+        presenter_.update(voicetyper::app::SettingsChange::language, [this, index](domain::AppSettings& settings) {
             settings.language = static_cast<RecognitionLanguage>(recognition_language_->itemData(index).toInt());
         });
     });
     connect(recording_mode_, &QComboBox::currentIndexChanged, this, [this](int index) {
-        presenter_.update(SettingsChange::behaviour, [this, index](domain::AppSettings& settings) {
+        presenter_.update(voicetyper::app::SettingsChange::behaviour, [this, index](domain::AppSettings& settings) {
             settings.recording_mode = static_cast<RecordingMode>(recording_mode_->itemData(index).toInt());
         });
     });
     connect(engine_, &QComboBox::currentIndexChanged, this, [this](int index) {
-        presenter_.update(SettingsChange::engine, [this, index](domain::AppSettings& settings) {
+        presenter_.update(voicetyper::app::SettingsChange::engine, [this, index](domain::AppSettings& settings) {
             settings.transcription_engine = static_cast<TranscriptionEngine>(engine_->itemData(index).toInt());
         });
         refresh_status();
-        pending_service_change_ = SettingsChange::engine;
+        pending_service_change_ = voicetyper::app::SettingsChange::engine;
     });
     connect(whisper_size_, &QComboBox::currentIndexChanged, this, [this](int index) {
-        presenter_.update(SettingsChange::model, [this, index](domain::AppSettings& settings) {
+        presenter_.update(voicetyper::app::SettingsChange::model, [this, index](domain::AppSettings& settings) {
             settings.model_size = static_cast<ModelSize>(whisper_size_->itemData(index).toInt());
         });
-        pending_service_change_ = SettingsChange::model;
+        pending_service_change_ = voicetyper::app::SettingsChange::model;
     });
     connect(parakeet_size_, &QComboBox::currentIndexChanged, this, [this](int index) {
-        presenter_.update(SettingsChange::model, [this, index](domain::AppSettings& settings) {
+        presenter_.update(voicetyper::app::SettingsChange::model, [this, index](domain::AppSettings& settings) {
             settings.parakeet_model_size = static_cast<ParakeetModelSize>(parakeet_size_->itemData(index).toInt());
         });
     });
     connect(gigaam_size_, &QComboBox::currentIndexChanged, this, [this](int index) {
-        presenter_.update(SettingsChange::model, [this, index](domain::AppSettings& settings) {
+        presenter_.update(voicetyper::app::SettingsChange::model, [this, index](domain::AppSettings& settings) {
             settings.gigaam_model_size = static_cast<GigaamModelSize>(gigaam_size_->itemData(index).toInt());
         });
-        pending_service_change_ = SettingsChange::model;
+        pending_service_change_ = voicetyper::app::SettingsChange::model;
     });
     connect(temperature_, &QDoubleSpinBox::valueChanged, this, [this](double value) {
-        presenter_.update(SettingsChange::model, [value](domain::AppSettings& settings) { settings.temperature = value; });
+        presenter_.update(voicetyper::app::SettingsChange::model, [value](domain::AppSettings& settings) { settings.temperature = value; });
     });
     // The candidate count travels the same way as temperature: it is a decoder
     // parameter, so it is stored, autosaved by the presenter, and picked up by the
     // next dictation through the session options provider. No service restart.
     connect(best_of_, &QSpinBox::valueChanged, this, [this](int value) {
-        presenter_.update(SettingsChange::model, [value](domain::AppSettings& settings) { settings.best_of = value; });
+        presenter_.update(voicetyper::app::SettingsChange::model, [value](domain::AppSettings& settings) { settings.best_of = value; });
     });
     connect(terms_, &QPlainTextEdit::textChanged, this, [this] {
         const QString text = terms_->toPlainText();
-        presenter_.update(SettingsChange::model, [text](domain::AppSettings& settings) {
+        presenter_.update(voicetyper::app::SettingsChange::model, [text](domain::AppSettings& settings) {
             settings.terms_dictionary = text.toStdString();
         });
     });
     connect(record_hotkey_, &QLineEdit::textChanged, this, [this](const QString& text) {
-        presenter_.update(SettingsChange::hotkeys, [text](domain::AppSettings& settings) {
+        presenter_.update(voicetyper::app::SettingsChange::hotkeys, [text](domain::AppSettings& settings) {
             settings.record_hotkey = text.toStdString();
         });
         refresh_status();
-        pending_service_change_ = SettingsChange::hotkeys;
+        pending_service_change_ = voicetyper::app::SettingsChange::hotkeys;
     });
     connect(cancel_hotkey_, &QLineEdit::textChanged, this, [this](const QString& text) {
-        presenter_.update(SettingsChange::hotkeys, [text](domain::AppSettings& settings) {
+        presenter_.update(voicetyper::app::SettingsChange::hotkeys, [text](domain::AppSettings& settings) {
             settings.cancel_hotkey = text.toStdString();
         });
     });
     connect(record_gamepad_, &QLineEdit::textChanged, this, [this](const QString& text) {
-        presenter_.update(SettingsChange::hotkeys, [text](domain::AppSettings& settings) {
+        presenter_.update(voicetyper::app::SettingsChange::hotkeys, [text](domain::AppSettings& settings) {
             // An empty readout means "no gamepad action", which the settings layer
             // stores as JSON null.
             if (text.isEmpty()) {
@@ -3555,24 +3555,24 @@ void MainWindow::bind_settings_to_controls()
                 settings.record_gamepad_button = text.toStdString();
             }
         });
-        pending_service_change_ = SettingsChange::hotkeys;
+        pending_service_change_ = voicetyper::app::SettingsChange::hotkeys;
     });
     connect(cancel_gamepad_, &QLineEdit::textChanged, this, [this](const QString& text) {
-        presenter_.update(SettingsChange::hotkeys, [text](domain::AppSettings& settings) {
+        presenter_.update(voicetyper::app::SettingsChange::hotkeys, [text](domain::AppSettings& settings) {
             if (text.isEmpty()) {
                 settings.cancel_gamepad_button.reset();
             } else {
                 settings.cancel_gamepad_button = text.toStdString();
             }
         });
-        pending_service_change_ = SettingsChange::hotkeys;
+        pending_service_change_ = voicetyper::app::SettingsChange::hotkeys;
     });
     connect(microphone_, &QComboBox::currentIndexChanged, this, [this](int index) {
         if (index < 0) {
             return;
         }
         const auto id = microphone_->itemData(index).toString();
-        presenter_.update(SettingsChange::microphone, [id](domain::AppSettings& settings) {
+        presenter_.update(voicetyper::app::SettingsChange::microphone, [id](domain::AppSettings& settings) {
             if (id.isEmpty()) {
                 settings.microphone_device_id.reset();
             } else {
@@ -3582,41 +3582,41 @@ void MainWindow::bind_settings_to_controls()
         // This line used to sit outside the lambda, where it ran once during
         // binding instead of on a user edit, so a microphone change never reached
         // the running capture backend.
-        pending_service_change_ = SettingsChange::microphone;
+        pending_service_change_ = voicetyper::app::SettingsChange::microphone;
     });
     connect(auto_paste_, &QAbstractButton::toggled, this, [this](bool value) {
-        presenter_.update(SettingsChange::behaviour, [value](domain::AppSettings& settings) {
+        presenter_.update(voicetyper::app::SettingsChange::behaviour, [value](domain::AppSettings& settings) {
             settings.auto_paste_enabled = value;
         });
     });
     connect(noise_reduction_, &QAbstractButton::toggled, this, [this](bool value) {
-        presenter_.update(SettingsChange::behaviour, [value](domain::AppSettings& settings) {
+        presenter_.update(voicetyper::app::SettingsChange::behaviour, [value](domain::AppSettings& settings) {
             settings.noise_reduction_enabled = value;
         });
     });
     connect(condition_on_previous_text_, &QAbstractButton::toggled, this, [this](bool value) {
-        presenter_.update(SettingsChange::behaviour, [value](domain::AppSettings& settings) {
+        presenter_.update(voicetyper::app::SettingsChange::behaviour, [value](domain::AppSettings& settings) {
             settings.condition_on_previous_text = value;
         });
     });
     connect(silence_threshold_, &QSpinBox::valueChanged, this, [this](int value) {
-        presenter_.update(SettingsChange::behaviour, [value](domain::AppSettings& settings) {
+        presenter_.update(voicetyper::app::SettingsChange::behaviour, [value](domain::AppSettings& settings) {
             settings.silence_threshold_ms = value;
         });
-        pending_service_change_ = SettingsChange::behaviour;
+        pending_service_change_ = voicetyper::app::SettingsChange::behaviour;
     });
     connect(hide_on_focus_loss_, &QAbstractButton::toggled, this, [this](bool value) {
-        presenter_.update(SettingsChange::behaviour, [value](domain::AppSettings& settings) {
+        presenter_.update(voicetyper::app::SettingsChange::behaviour, [value](domain::AppSettings& settings) {
             settings.hide_on_focus_loss = value;
         });
     });
     connect(start_with_windows_, &QAbstractButton::toggled, this, [this](bool value) {
-        presenter_.update(SettingsChange::startup, [value](domain::AppSettings& settings) {
+        presenter_.update(voicetyper::app::SettingsChange::startup, [value](domain::AppSettings& settings) {
             settings.start_with_windows = value;
         });
     });
     connect(start_minimized_, &QAbstractButton::toggled, this, [this](bool value) {
-        presenter_.update(SettingsChange::startup, [value](domain::AppSettings& settings) {
+        presenter_.update(voicetyper::app::SettingsChange::startup, [value](domain::AppSettings& settings) {
             settings.start_minimized = value;
         });
     });
@@ -4828,16 +4828,16 @@ void MainWindow::on_presentation_refresh()
 bool MainWindow::needs_service_apply() const
 {
     switch (pending_service_change_) {
-    case SettingsChange::engine:
-    case SettingsChange::model:
-    case SettingsChange::hotkeys:
-    case SettingsChange::microphone:
+    case voicetyper::app::SettingsChange::engine:
+    case voicetyper::app::SettingsChange::model:
+    case voicetyper::app::SettingsChange::hotkeys:
+    case voicetyper::app::SettingsChange::microphone:
         return true;
-    case SettingsChange::behaviour:
+    case voicetyper::app::SettingsChange::behaviour:
         // Behaviour covers auto-paste, the recording mode and the VAD silence
         // threshold, all of which the running machine reads per session.
         return true;
-    case SettingsChange::language:
+    case voicetyper::app::SettingsChange::language:
         // The interface language cannot be applied to a built window: every label is
         // created once, so the composition has to hear about the change and build the
         // window again (Alexander: "переключил интерфейс на английский, но сам
@@ -4859,7 +4859,7 @@ void MainWindow::on_autosave_timeout()
     if (needs_service_apply()) {
         // Re-applying after the debounce is what keeps a model reload from
         // happening on every keystroke in the hotkey field.
-        pending_service_change_ = SettingsChange::none;
+        pending_service_change_ = voicetyper::app::SettingsChange::none;
         if (services_.settings_applied) {
             services_.settings_applied(presenter_.settings());
         }
@@ -4934,4 +4934,4 @@ QString MainWindow::tab_title(int index) const
     return nav_->item(index)->text();
 }
 
-} // namespace voicetyper::app
+} // namespace voicetyper::ui

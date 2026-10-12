@@ -8,9 +8,9 @@
 выведены из кода и арифметики, а **не измерены на экране** — числа по фактическим высотам строк требуют
 проверки на живом приложении. Правок в репозитории при аудите не делалось.
 
-Область чтения: `src/app/main_window.cpp` (2501 строка, целиком), `src/app/toggle_switch.cpp` (73 строки),
-выборочно — `src/app/ui_text.cpp`/`.hpp`, `src/app/main_window.hpp`, `src/domain/settings.hpp`,
-`src/app/application_font.cpp`, `src/app/windows_application.cpp`, `tests/ui/ui_settings_test.cpp`.
+Область чтения: `src/ui/main_window.cpp` (2501 строка, целиком), `src/ui/toggle_switch.cpp` (73 строки),
+выборочно — `src/ui/ui_text.cpp`/`.hpp`, `src/ui/main_window.hpp`, `src/domain/settings.hpp`,
+`src/ui/application_font.cpp`, `src/app/windows_application.cpp`, `tests/ui/ui_settings_test.cpp`.
 
 Согласованные отклонения от макета (по требованиям заказчика, 2026-10-08) — **не дефекты реализации**:
 

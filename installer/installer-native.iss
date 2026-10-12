@@ -12,7 +12,7 @@
 ;      path, so it also holds for the next update of the native build itself.
 ;   2. "the application must close when the installer runs":
 ;      AppMutex below names the mutex the application creates
-;      (kInstallerMutexName in src/app/tray_controller.cpp) and CloseApplications makes
+;      (kInstallerMutexName in src/ui/tray_controller.cpp) and CloseApplications makes
 ;      Setup close it through the Restart Manager instead of failing on a locked exe.
 ;   3. "after the installer finishes the application must start again":
 ;      [Run] starts it, except during an automatic update (/AutoUpdate), where the

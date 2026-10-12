@@ -1,4 +1,4 @@
-#include "app/application_font.hpp"
+#include "ui/application_font.hpp"
 
 #include <QApplication>
 #include <QDebug>
@@ -7,7 +7,7 @@
 #include <QString>
 #include <QStringList>
 
-namespace voicetyper::app {
+namespace voicetyper::ui {
 namespace {
 
 /// The navigation-glyph family: FluentSystemIcons (MIT, Microsoft), the cross-platform
@@ -62,4 +62,4 @@ void install_application_font()
     QApplication::setFont(font);
 }
 
-} // namespace voicetyper::app
+} // namespace voicetyper::ui

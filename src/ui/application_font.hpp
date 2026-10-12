@@ -2,7 +2,7 @@
 
 #include <QString>
 
-namespace voicetyper::app {
+namespace voicetyper::ui {
 
 /// Makes the bundled Source Sans 3 family the application font and registers the
 /// bundled icon family.
@@ -31,4 +31,4 @@ void install_application_font();
 /// family if the resource is missing, so the labels stay readable.
 QString icon_font_family();
 
-} // namespace voicetyper::app
+} // namespace voicetyper::ui

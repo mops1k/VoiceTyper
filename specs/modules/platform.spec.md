@@ -28,16 +28,16 @@
 | `GamepadService` | [api/gamepad.hpp](../../src/platform/api/gamepad.hpp) | `windows/win32_gamepad.*` | `linux/linux_gamepad.*` (evdev, XInput-name bindings mapped onto evdev codes) | `portable_runtime` |
 | `HotkeyService` | [api/hotkeys.hpp](../../src/platform/api/hotkeys.hpp) | `windows/win32_hotkeys.*` | `linux/linux_hotkeys.*` + `linux/linux_keymap.*` (evdev), with `linux/linux_kglobalaccel.*` (D-Bus) as the fallback | `portable_runtime` |
 | `HttpClient` | [api/http.hpp](../../src/platform/api/http.hpp) | `app/qt_http_client.*` | `app/qt_http_client.*` | — |
-| `LifecycleService` | [api/lifecycle.hpp](../../src/platform/api/lifecycle.hpp) | **none** (⚠ G-2: single-instance and shutdown are implemented ad hoc in `src/app/tray_controller.cpp` and the composition; `SingleInstanceGuard` is never instantiated); autostart lives in `windows/win32_startup.*` | **none** (same ad-hoc `QLocalServer` channel in `src/app/tray_controller.cpp`); autostart lives in `linux/linux_startup.*` | — |
+| `LifecycleService` | [api/lifecycle.hpp](../../src/platform/api/lifecycle.hpp) | **none** (⚠ G-2: single-instance and shutdown are implemented ad hoc in `src/ui/tray_controller.cpp` and the composition; `SingleInstanceGuard` is never instantiated); autostart lives in `windows/win32_startup.*` | **none** (same ad-hoc `QLocalServer` channel in `src/ui/tray_controller.cpp`); autostart lives in `linux/linux_startup.*` | — |
 | `Logger` | [api/logger.hpp](../../src/platform/api/logger.hpp) | `windows/win32_logger.*` | `domain::FileLogger` | `domain::FileLogger` |
 | `MicrophoneService` | [api/microphone.hpp](../../src/platform/api/microphone.hpp) | `windows/windows_microphone.*` | `linux/linux_microphone.*` (libpulse) | `portable_runtime` |
 | `MicrophoneLevelPort` | [api/microphone_level.hpp](../../src/platform/api/microphone_level.hpp) | `windows/mc_wasapi.cpp`, `microphone_level.cpp` | `linux/linux_microphone_level.*` (libpulse source volume/mute) | — |
 | `ModelStore` | [api/model_store.hpp](../../src/platform/api/model_store.hpp) | `platform/catalog_model_store.cpp`, `model_catalog.cpp` | `platform/catalog_model_store.cpp`, `model_catalog.cpp` | ✓ (policy) |
 | `PasteSimulator` | [api/paste.hpp](../../src/platform/api/paste.hpp) | `windows/win32_paste.*` | `linux/linux_paste.*` (ydotool) | `portable_runtime` |
 | `Paths` | [api/paths.hpp](../../src/platform/api/paths.hpp) | `domain::AppPaths` | `domain::AppPaths` + `domain::linux_app_path_roots` (XDG) | ✓ |
-| `StatusOverlay` | [api/status_overlay.hpp](../../src/platform/api/status_overlay.hpp) | `app/status_overlay.*` (Qt) | `app/status_overlay.*` (Qt, host-window on Wayland) | ✓ (offscreen in tests) |
+| `StatusOverlay` | [api/status_overlay.hpp](../../src/platform/api/status_overlay.hpp) | `ui/status_overlay.*` (Qt) | `ui/status_overlay.*` (Qt, host-window on Wayland) | ✓ (offscreen in tests) |
 | `Transcriber` | [api/transcriber.hpp](../../src/platform/api/transcriber.hpp) | `asr::*` | `asr::*` (Whisper, Parakeet, GigaAM) | ✓ (policy) |
-| `Tray` | [api/tray.hpp](../../src/platform/api/tray.hpp) | **none** (⚠ G-3: `app/tray_controller.*` is a Qt class that does not inherit the port) | **none** (same) | — |
+| `Tray` | [api/tray.hpp](../../src/platform/api/tray.hpp) | **none** (⚠ G-3: `ui/tray_controller.*` is a Qt class that does not inherit the port) | **none** (same) | — |
 | `UpdateService` | [api/updater.hpp](../../src/platform/api/updater.hpp) | **none** (⚠ G-3: `core::support::UpdateService` is its own class, not a `platform::UpdateService` subclass) | **none** (same; the install action replaces the running AppImage, VT-SYS-014) | ✓ (policy) |
 
 ---
@@ -259,7 +259,7 @@ implementation: `windows/win32_gamepad.*`.
 ## 6. Status overlay (`VT-PLT-6xx`)
 
 Port: [api/status_overlay.hpp](../../src/platform/api/status_overlay.hpp);
-implementation: `src/app/status_overlay.*`; test: `ui-status-overlay-test`.
+implementation: `src/ui/status_overlay.*`; test: `ui-status-overlay-test`.
 
 - **VT-PLT-601.** `OverlayState` MUST be `idle | recording | processing | error`, matching the
   recording state machine so the pill can never show a state the recorder is not in.
@@ -291,7 +291,7 @@ implementation: `src/app/status_overlay.*`; test: `ui-status-overlay-test`.
 
 ## 7. Tray (`VT-PLT-7xx`)
 
-Port: [api/tray.hpp](../../src/platform/api/tray.hpp); implementation: `src/app/tray_controller.*`.
+Port: [api/tray.hpp](../../src/platform/api/tray.hpp); implementation: `src/ui/tray_controller.*`.
 
 - **VT-PLT-701.** `TrayAction` MUST be `open_settings | record | cancel | quit`; `quit` is the only
   action that ends the process.
@@ -426,7 +426,7 @@ branches of the shared runtime loaders. The Windows rules above are unchanged.
 - **VT-PLT-1105.** A launch-time reconciliation MUST NOT rewrite an entry that names a
   different executable which still exists (the Linux form of VT-SYS-053).
 - **VT-PLT-1106.** Single instance on Linux MUST use the `QLocalServer` channel of
-  `src/app/tray_controller.cpp`; the global mutex of VT-PLT-104 is Windows-only. A second
+  `src/ui/tray_controller.cpp`; the global mutex of VT-PLT-104 is Windows-only. A second
   launch MUST exit and the owner MUST raise its window.
 - **VT-PLT-1107.** `LinuxExecutor` MUST reproduce the frozen `Executor` semantics: a
   generation-tagged `post`, silent drop of a stale epoch, `invoke()` running inline when
@@ -544,7 +544,7 @@ branches of the shared runtime loaders. The Windows rules above are unchanged.
   the bottom of the working area) also on Wayland, where a client cannot place its own
   top-level window: the top-level MUST be a full-screen click-through host window and the pill
   a child widget positioned by the client
-  ([src/app/status_overlay.cpp](../../src/app/status_overlay.cpp)).
+  ([src/ui/status_overlay.cpp](../../src/ui/status_overlay.cpp)).
 - **VT-PLT-1502.** The host window MUST NOT take focus, MUST NOT swallow input and MUST NOT
   appear in the window list / taskbar (the flags of VT-PLT-603/604), and the pill MUST remain
   the widget the UI tests address as `statusOverlay`. On Wayland the plain window flags are
@@ -588,9 +588,9 @@ branches of the shared runtime loaders. The Windows rules above are unchanged.
   code today.
 - **G-2.** `platform::LifecycleService` has **no implementation**; `SingleInstanceGuard` is never
   instantiated. The single-instance gate and the shutdown order are implemented ad hoc in
-  `src/app/tray_controller.cpp` and in the composition root.
+  `src/ui/tray_controller.cpp` and in the composition root.
 - **G-3.** `platform::Tray` and `platform::UpdateService` are **not implemented as ports**:
-  `app/tray_controller.*` is a Qt class and `core::support::UpdateService` is a plain class.
+  `ui/tray_controller.*` is a Qt class and `core::support::UpdateService` is a plain class.
   Only `platform::StatusOverlay` has a real implementation outside `src/platform/`
   (`QtStatusOverlay`).
 - **G-4.** `unregister_all()` does not remove the permanent dictation low-level hook and does not

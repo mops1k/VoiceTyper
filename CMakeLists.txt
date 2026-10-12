@@ -394,17 +394,18 @@ if(VOICETYPER_BUILD_GUI)
 endif()
 
 if(VOICETYPER_BUILD_GUI)
-    # The window lives in its own library so the UI test can drive the real
-    # widgets instead of a copy of their logic. Q_OBJECT needs moc, so automoc is
-    # enabled explicitly.
+    # The widget layer lives in src/ui and in its own library so the UI test can
+    # drive the real widgets instead of a copy of their logic. Q_OBJECT needs moc,
+    # so automoc is enabled explicitly. Everything that is not a widget stays in
+    # src/app: the entry point, the composition roots, the settings presenter and
+    # the Qt HTTP adapter.
     add_library(voicetyper_ui STATIC
-        src/app/main_window.cpp
-        src/app/ui_text.cpp
-        src/app/application_font.cpp
-        src/app/qt_http_client.cpp
-        src/app/toggle_switch.cpp
-        src/app/status_overlay.cpp
-        src/app/tray_controller.cpp
+        src/ui/main_window.cpp
+        src/ui/ui_text.cpp
+        src/ui/application_font.cpp
+        src/ui/toggle_switch.cpp
+        src/ui/status_overlay.cpp
+        src/ui/tray_controller.cpp
     )
     target_link_libraries(voicetyper_ui
         PUBLIC
@@ -434,6 +435,10 @@ if(VOICETYPER_BUILD_GUI)
 
     qt_add_executable(voicetyper-qt-shell WIN32
         src/app/main.cpp
+        # The Qt Network adapter of platform::HttpClient is application-layer code:
+        # both compositions are its only users, and voicetyper_ui stays a widget
+        # library. Qt6::Network reaches this target through voicetyper_ui.
+        src/app/qt_http_client.cpp
         $<$<BOOL:${WIN32}>:src/app/windows_application.cpp>
     )
     # The product icon travels inside the executable as a Qt resource, so the tray,

@@ -4,7 +4,7 @@
 #include <QColor>
 #include <QSize>
 
-namespace voicetyper::app {
+namespace voicetyper::ui {
 
 /// The .NET ToggleSwitch (`MainWindow.axaml:96-121`) as a Qt widget: a 40x22
 /// track with an 18x18 thumb, Accent when on, `Bg.ControlHover` + `Border` when
@@ -35,4 +35,4 @@ private:
     QColor thumb_{QStringLiteral("#9A9A9A")};
 };
 
-} // namespace voicetyper::app
+} // namespace voicetyper::ui

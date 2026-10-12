@@ -4,7 +4,8 @@
 //
 // Why this exists: the .NET build does not capture through its IAudioClient
 // interop at all. VoiceTyper.Core/Audio/NativeWasapiCapture.cs calls a third-party
-// native library, dist/mc_wasapi.dll, whose header comment says the interop breaks
+// native library, `dist/mc_wasapi.dll` in the old .NET tree (tracked here as
+// `native/mc_wasapi.dll`), whose header comment says the interop breaks
 // on the Intel Smart Sound array ("Initialize succeeds, GetService returns
 // DEVICE_INVALIDATED") while the DLL captures fine, and its own fallback path
 // (RawWasapiCapture.cs) documents that shared mode "always gives E_INVALIDARG" on

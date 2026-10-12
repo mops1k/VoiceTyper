@@ -2,8 +2,8 @@
 
 ## parakeet.cpp (MIT)
 
-Нативный рантайм распознавания Parakeet (`VoiceTyper.App/Native/parakeet.dll`,
-сборка описана в `VoiceTyper.App/Native/parakeet/BUILD.txt`,
+Нативный рантайм распознавания Parakeet (`native/parakeet.dll`,
+сборка описана в `native/parakeet/BUILD.txt`,
 репозиторий: https://github.com/mudler/parakeet.cpp).
 
 Сборка VoiceTyper включает производные файлы лицензии MIT:
@@ -46,10 +46,9 @@ Attribution 4.0 (CC-BY-4.0):
 через приложение (раздел «Модели») с HuggingFace. После загрузки распознавание выполняется
 полностью локально.
 
-## whisper.cpp / Whisper.net
+## whisper.cpp
 
 - whisper.cpp: https://github.com/ggml-org/whisper.cpp (MIT).
-- Whisper.net: https://github.com/sandrohanea/whisper.net (MIT).
 - Весовые модели Whisper с https://huggingface.co/ggerganov/whisper.cpp — см. карточки моделей
   (MIT/CC-BY в зависимости от модели).
 - Silero VAD: https://github.com/snakers4/silero-vad (MIT).

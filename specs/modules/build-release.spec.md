@@ -2,7 +2,7 @@
 
 **Covers:** `CMakeLists.txt`, `CMakePresets.json`, `cmake/` (toolchain, native dependency
 verification, portable header audit), `installer/`, `.github/workflows/`, `tests/`, `tools/`,
-`assets/`, `packaging/`, `dist/`.
+`assets/`, `packaging/`.
 **Baseline:** `main` @ `3cc4c5a9a602afb96c2f478a562005f5eb850068` (v2.2.1).
 **Requirement keywords:** RFC 2119. Parent document: [index.spec.md](../index.spec.md).
 **Prefix:** `VT-BLD-*`.
@@ -221,8 +221,7 @@ verification, portable header audit), `installer/`, `.github/workflows/`, `tests
 - **VT-BLD-501.** `voicetyper-deploy` (Windows + GUI) MUST write a runnable tree into
   `VOICETYPER_DEPLOY_DIR` (default `<build>/deploy`) containing:
   1. `voicetyper-qt-shell.exe`;
-  2. `mc_wasapi.dll` copied from the tracked `native/` location the manifest verifies (`dist/` is
-     a build output and is not in the repository);
+  2. `mc_wasapi.dll` copied from the tracked `native/` location the manifest verifies;
   3. Qt6 `Core/Gui/Widgets/Network` DLLs from `VOICETYPER_QT_ROOT/bin`;
   4. `platforms/qwindows.dll`;
   5. `tls/qschannelbackend.dll` and `tls/qcertonlybackend.dll` (required for every HTTPS request;
@@ -272,9 +271,9 @@ verification, portable header audit), `installer/`, `.github/workflows/`, `tests
 - **VT-BLD-522.** A release MUST be reproducible from the tag: the tag version reaches the binary
   through `VOICETYPER_VERSION`, so the About page and the update check always agree with the
   release.
-- **VT-BLD-523.** The build directory MUST NOT be a deliverable: `dist/` is stale, untracked
-  legacy output and `packaging/` is an empty placeholder; the deliverables are
-  `build/<preset>/deploy` and the Setup executable.
+- **VT-BLD-523.** The build directory MUST NOT be a deliverable: `packaging/` is an empty
+  placeholder and the legacy .NET output (`dist/`, the C# fixture generator) was removed on
+  2026-10-12; the deliverables are `build/<preset>/deploy` and the Setup executable.
 
 ---
 
@@ -357,7 +356,6 @@ verification, portable header audit), `installer/`, `.github/workflows/`, `tests
 | `tools/compare-contract-json.py` | deterministic two-document JSON comparator with `--normalize-enums`; exit 1 on any difference |
 | `tools/verify-migration-fixtures.py` | manifest-driven byte/hash/container verification |
 | `tools/generate-wav-fixtures/` | writes the WAV input fixtures with `decimal.Decimal` sine recurrence for bit-exact determinism |
-| `tools/generate-settings-fixtures/` | the .NET generator that wrote the settings fixtures with the real `SettingsService.JsonOptions` |
 | `tools/build-parakeet-native.ps1` | rebuilds `parakeet.dll` from the pinned upstream, applies the local `cstdint` patch, writes `BUILD.txt` |
 | `tools/generate-icons.ps1` | rebuilds `assets/icon-256.png` (README header) and the multi-frame `assets/voiceTyper.ico` from the master `assets/voiceTyper.png` |
 
@@ -386,8 +384,10 @@ verification, portable header audit), `installer/`, `.github/workflows/`, `tests
 - **G-3.** The JSON comparator does not know `gigaam`.
 - **G-4.** `docs/migration/cpp/windows-smoke.md` is stale on VAD ("energy heuristic, not Silero")
   and `parity-ledger.md` says "22 properties" while the schema has 23.
-- **G-5.** `packaging/` is an empty placeholder and `dist/` holds stale untracked output; neither
-  is part of the C++ delivery.
+- **G-5.** `packaging/` is an empty placeholder; it is not part of the C++ delivery. The legacy
+  .NET leftovers (`dist/`, the C# settings-fixture generator `tools/generate-settings-fixtures/`)
+  were deleted on 2026-10-12: the settings fixtures stay as frozen oracles and their provenance
+  stays recorded in `tests/fixtures/migration/manifest.json`.
 - **G-6.** The `windows-mingw-release` preset depends on environment variables
   (`VOICETYPER_QT_ROOT`, `VOICETYPER_MINGW_ROOT`) that a fresh checkout does not have; a
   hand-written `cmake` invocation without the toolchain fails with an explicit message, which is

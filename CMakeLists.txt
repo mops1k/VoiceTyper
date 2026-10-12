@@ -1082,10 +1082,9 @@ if(WIN32 AND VOICETYPER_BUILD_GUI)
             COMMAND ${CMAKE_COMMAND} -E make_directory "${VOICETYPER_DEPLOY_DIR}"
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                     "$<TARGET_FILE:voicetyper-qt-shell>" "${VOICETYPER_DEPLOY_DIR}"
-            # The native capture library, exactly as the .NET distribution shipped it.
+            # The native capture library, exactly as the legacy distribution shipped it.
             # The copy comes from the tracked location (native), which is
-            # also the one the manifest check above verifies; dist/ is a build output and
-            # is not in the repository.
+            # also the one the manifest check above verifies.
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                     "${CMAKE_SOURCE_DIR}/native/mc_wasapi.dll" "${VOICETYPER_DEPLOY_DIR}"
             # Qt runtime + the platform plugin, from the Qt root only.

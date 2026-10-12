@@ -45,6 +45,7 @@
 #include "platform/windows/win32_clipboard.hpp"
 #include "platform/windows/win32_executor.hpp"
 #include "platform/windows/win32_file_system.hpp"
+#include "platform/windows/win32_gamepad.hpp"
 #include "platform/windows/win32_hotkeys.hpp"
 #include "platform/windows/win32_paste.hpp"
 #include "platform/windows/win32_startup.hpp"
@@ -457,6 +458,16 @@ int run(int argc, char** argv)
     platform::Win32Clipboard clipboard;
     platform::Win32PasteSimulator paste;
     platform::Win32Executor ui_executor;
+    // Every report a service hands back to the window must run on the interface
+    // thread: the progress of an update download is delivered on a worker, and
+    // touching a QWidget from there produced "QWidget::repaint: Recursive repaint
+    // detected" and killed the process in the middle of the download, so the
+    // installer never ran (reproduced 2026-10-12). The Linux composition has
+    // marshalled its reports this way from the start; this is the same hand-off.
+    const auto post_to_ui = [&application](std::function<void()> task) {
+        QMetaObject::invokeMethod(
+            &application, [task = std::move(task)] { task(); }, Qt::QueuedConnection);
+    };
     domain::RetryingClipboard retrying(clipboard, clock);
     domain::TextOutputService output(retrying, paste, clock, ui_executor);
     // Why the text did or did not reach the document. "Pasted" and "only on the
@@ -856,6 +867,51 @@ int run(int argc, char** argv)
         }
     }
 
+    // --- gamepad -------------------------------------------------------------
+    // The same Win32GamepadService the portable contract test drives, wired the
+    // way the Linux composition wires its backend (VT-PLT-414): the edges reach
+    // the same recording machine as the hotkeys, so a bound button is a second
+    // push-to-talk. No controller attached is not an error: the poll stays idle
+    // and the settings page shows empty readouts.
+    platform::win32::Win32GamepadService gamepad;
+    static_cast<void>(gamepad.set_event_sink([&machine, &logger](const platform::GamepadEdge& edge) {
+        switch (edge.action) {
+        case platform::GamepadAction::record_pressed: {
+            const auto status = machine.press_record();
+            static_cast<void>(logger.write(status.is_ok() ? platform::LogLevel::info : platform::LogLevel::warn,
+                "gamepad record pressed", status.is_ok() ? std::string() : status.error().to_string()));
+            break;
+        }
+        case platform::GamepadAction::record_released: {
+            const auto status = machine.release_record();
+            static_cast<void>(logger.write(status.is_ok() ? platform::LogLevel::info : platform::LogLevel::warn,
+                "gamepad record released", status.is_ok() ? std::string() : status.error().to_string()));
+            break;
+        }
+        case platform::GamepadAction::cancel_pressed:
+            machine.cancel();
+            static_cast<void>(logger.write(platform::LogLevel::info, "gamepad cancel pressed"));
+            break;
+        }
+    }));
+    const auto gamepad_status = gamepad.apply_settings(presenter.settings());
+    if (gamepad_status.is_error()) {
+        // A present but malformed binding is the only failure here; the user sees
+        // it in the settings field and the log keeps the reason.
+        static_cast<void>(logger.write(platform::LogLevel::warn, "gamepad settings refused",
+            gamepad_status.error().to_string()));
+        std::cerr << "gamepad: " << gamepad_status.error().to_string() << '\n';
+    } else {
+        // Which XInput runtime answered is the fact that separates "no controller"
+        // from "this machine has no XInput at all"; without it the log could not
+        // explain a gamepad that never fires.
+        const std::string runtime = platform::win32::xinput_runtime_name();
+        static_cast<void>(logger.write(platform::LogLevel::info, "gamepad",
+            runtime.empty()
+                ? std::string("no XInput runtime: ") + platform::win32::xinput_runtime_failure()
+                : "XInput runtime " + runtime));
+    }
+
     ui::WindowServices services;
     // The footer dot is green only when the engine can really work: a missing model, a load
     // in progress or a failed start all keep it red (Alexander, 08.10.2026).
@@ -902,6 +958,9 @@ int run(int argc, char** argv)
     // presses a combination, and neither the UI thread nor the recording worker may
     // ever be parked like that.
     platform::Win32Executor capture_executor;
+    // A gamepad capture waits for a button press too, and it must not queue behind
+    // a hotkey capture that the user left waiting.
+    platform::Win32Executor gamepad_capture_executor;
     /// Updates run off the UI thread: the release query and a 60 MB download both block.
     platform::Win32Executor update_executor;
 
@@ -936,9 +995,9 @@ int run(int argc, char** argv)
         const auto text = domain::version();
         return QString::fromUtf8(text.data(), static_cast<int>(text.size()));
     };
-    services.update_check = [&logger, &update_executor, &ui_executor](
+    services.update_check = [&logger, &update_executor, post_to_ui](
                                 std::function<void(bool, QString, QString, QString)> report) {
-        static_cast<void>(update_executor.post([&logger, &ui_executor, report = std::move(report)] {
+        static_cast<void>(update_executor.post([&logger, post_to_ui, report = std::move(report)] {
             // The client is created here, on this worker: QNetworkAccessManager has
             // thread affinity and the UI thread must never block on a request.
             app::QtHttpClient http;
@@ -967,15 +1026,15 @@ int run(int argc, char** argv)
                 ? QString::fromStdString(*result.update->release_notes).left(600)
                 : QString();
             const QString error = result.is_failed() ? QString::fromStdString(result.error) : QString();
-            static_cast<void>(ui_executor.post([report, available = result.is_available(), version_text,
+            static_cast<void>(post_to_ui([report, available = result.is_available(), version_text,
                                                    notes, error] {
                 report(available, version_text, notes, error);
             }));
         }));
     };
-    services.update_install = [&logger, &update_executor, &ui_executor, &application, &presenter](
+    services.update_install = [&logger, &update_executor, post_to_ui, &application, &presenter](
                                  std::function<void(int, QString, QString)> progress) {
-        static_cast<void>(update_executor.post([&logger, &ui_executor, &application,
+        static_cast<void>(update_executor.post([&logger, post_to_ui, &application,
                                                    progress = std::move(progress)] {
             app::QtHttpClient http;
             const auto version = domain::version();
@@ -984,7 +1043,7 @@ int run(int argc, char** argv)
             if (!result.is_available() || !result.update.has_value()) {
                 const QString error = QString::fromStdString(
                     result.is_failed() ? result.error : std::string("no update available"));
-                static_cast<void>(ui_executor.post([progress, error] { progress(-1, QStringLiteral("download"), error); }));
+                static_cast<void>(post_to_ui([progress, error] { progress(-1, QStringLiteral("download"), error); }));
                 return;
             }
             const QString name = QString::fromStdString(
@@ -992,7 +1051,7 @@ int run(int argc, char** argv)
             if (kNativeInstallerMarker.empty() || !name.contains(QString::fromLatin1(kNativeInstallerMarker))) {
                 static_cast<void>(logger.write(platform::LogLevel::warn, "update install refused",
                     "the release carries no installer built for this application"));
-                static_cast<void>(ui_executor.post([progress] {
+                static_cast<void>(post_to_ui([progress] {
                     progress(-1, QStringLiteral("download"),
                         localized(ui::UiKey::k103));
                 }));
@@ -1002,17 +1061,26 @@ int run(int argc, char** argv)
                 + QStringLiteral("/updates");
             const std::filesystem::path installer = std::filesystem::path(updates_dir.toStdString())
                 / ("VoiceTyper-" + result.update->version + "-Setup.exe");
+            // The download reports every chunk; the UI needs whole percents only, and a
+            // few thousand queued events would flood the Qt thread for nothing. The Linux
+            // composition throttles the same way, and the flood is what killed the process
+            // while the progress bar was updated from the worker (reproduced 2026-10-12).
+            auto last_percent = std::make_shared<int>(-1);
             const auto status = service.download(*result.update, installer,
-                [&ui_executor, progress](std::uint64_t received, std::uint64_t total) {
+                [post_to_ui, progress, last_percent](std::uint64_t received, std::uint64_t total) {
                     const int percent = total > 0 ? static_cast<int>(received * 100U / total) : -1;
-                    static_cast<void>(ui_executor.post([progress, percent] {
+                    if (percent == *last_percent) {
+                        return;
+                    }
+                    *last_percent = percent;
+                    static_cast<void>(post_to_ui([progress, percent] {
                         progress(percent, QStringLiteral("download"), QString());
                     }));
                 },
                 domain::CancellationToken{});
             if (status.is_error()) {
                 const QString error = QString::fromStdString(status.error().to_string());
-                static_cast<void>(ui_executor.post([progress, error] { progress(-1, QStringLiteral("download"), error); }));
+                static_cast<void>(post_to_ui([progress, error] { progress(-1, QStringLiteral("download"), error); }));
                 return;
             }
             const std::filesystem::path runner = std::filesystem::path(updates_dir.toStdString())
@@ -1021,13 +1089,13 @@ int run(int argc, char** argv)
                 std::filesystem::path(QCoreApplication::applicationFilePath().toStdString()));
             if (launched.is_error()) {
                 const QString error = QString::fromStdString(launched.error().to_string());
-                static_cast<void>(ui_executor.post([progress, error] { progress(-1, QStringLiteral("download"), error); }));
+                static_cast<void>(post_to_ui([progress, error] { progress(-1, QStringLiteral("download"), error); }));
                 return;
             }
-            static_cast<void>(ui_executor.post([progress] { progress(100, QStringLiteral("done"), QString()); }));
+            static_cast<void>(post_to_ui([progress] { progress(100, QStringLiteral("done"), QString()); }));
             // The launcher script waits for the installer and starts the app again; this
             // process must be gone by then.
-            static_cast<void>(ui_executor.post([&application] { QCoreApplication::quit(); }));
+            static_cast<void>(post_to_ui([&application] { QCoreApplication::quit(); }));
         }));
     };
 
@@ -1055,11 +1123,11 @@ int run(int argc, char** argv)
     auto probe_cancel = std::make_shared<std::atomic<bool>>(false);
     services.microphone_probe_level = [probe_level] { return probe_level->load(); };
     services.microphone_probe_cancel = [probe_cancel] { probe_cancel->store(true); };
-    services.microphone_probe = [&capture_options, &logger, &capture_executor, &ui_executor,
+    services.microphone_probe = [&capture_options, &logger, &capture_executor, post_to_ui,
                                     probe_level, probe_cancel](
                                     std::function<void(ui::WindowServices::MicrophoneProbeOutcome, double, QString)> report) {
         probe_cancel->store(false);
-        static_cast<void>(capture_executor.post([&capture_options, &logger, &ui_executor,
+        static_cast<void>(capture_executor.post([&capture_options, &logger, post_to_ui,
                                                     probe_level, probe_cancel,
                                                     report = std::move(report)] {
             platform::WindowsAudioCapture probe(capture_options);
@@ -1089,7 +1157,7 @@ int run(int argc, char** argv)
                 : outcome.verdict == MicrophoneProbeVerdict::silent
                     ? ui::WindowServices::MicrophoneProbeOutcome::silent
                     : ui::WindowServices::MicrophoneProbeOutcome::no_audio;
-            static_cast<void>(ui_executor.post([report, ui_outcome, peak = outcome.peak, detail] {
+            static_cast<void>(post_to_ui([report, ui_outcome, peak = outcome.peak, detail] {
                 report(ui_outcome, peak, detail);
             }));
         }));
@@ -1102,7 +1170,7 @@ int run(int argc, char** argv)
         static_cast<void>(capture_executor.post([&, hook, report = std::move(report)] {
             const auto run = [&](std::optional<std::string> gesture, QString error) {
                 paste.set_suspended(false);
-                static_cast<void>(ui_executor.post(
+                static_cast<void>(post_to_ui(
                     [report = std::move(report), gesture = std::move(gesture), error = std::move(error)] {
                         report(gesture, error);
                     }));
@@ -1128,6 +1196,40 @@ int run(int argc, char** argv)
             run(text, QString());
         }));
     };
+    // The gamepad capture waits for a button press on its own worker, exactly like
+    // the hotkey capture above. A machine whose XInput runtime could not be loaded
+    // gets no service at all, so its buttons stay disabled with the localised
+    // reason instead of failing on the first click.
+    if (!platform::win32::xinput_runtime_name().empty()) {
+        services.capture_gamepad = [&](std::function<void(std::optional<std::string>, QString)> report) {
+            static_cast<void>(gamepad_capture_executor.post([&, report = std::move(report)] {
+                domain::CancellationSource source;
+                const auto captured = gamepad.capture_next(source.token());
+                std::optional<std::string> binding;
+                QString error;
+                if (captured.is_error()) {
+                    if (captured.error().code() == domain::ErrorCode::device_disconnected) {
+                        // The raw reason names the technical cause; an unplugged
+                        // controller is a user-facing state, so the window says so
+                        // in the chosen language and the log keeps the detail.
+                        static_cast<void>(logger.write(platform::LogLevel::warn, "gamepad capture",
+                            captured.error().to_string()));
+                        error = localized(ui::UiKey::k188);
+                    } else if (captured.error().code() != domain::ErrorCode::cancelled) {
+                        // A cancel is not a failure: the dialog must stay silent.
+                        error = QString::fromStdString(captured.error().to_string());
+                    }
+                } else {
+                    binding = captured.value().to_string();
+                    static_cast<void>(logger.write(platform::LogLevel::info, "gamepad captured", *binding));
+                }
+                static_cast<void>(post_to_ui(
+                    [report = std::move(report), binding = std::move(binding), error = std::move(error)] {
+                        report(binding, error);
+                    }));
+            }));
+        };
+    }
 
     // Which models are on disk, and the ability to remove one. The .NET page offers
     // the same pair, and a downloaded model showing "Скачать" instead of "Удалить"
@@ -1149,7 +1251,7 @@ int run(int argc, char** argv)
     // transfer that is already running; the service then removes the partial file.
     auto transfer_sources =
         std::make_shared<std::vector<std::shared_ptr<domain::CancellationSource>>>(kModelRowSlots);
-    services.model_download = [&logger, &update_executor, &ui_executor, &paths, transfer_sources](
+    services.model_download = [&logger, &update_executor, post_to_ui, &paths, transfer_sources](
                                  domain::TranscriptionEngine engine, int size_index,
                                  std::function<void(ui::WindowServices::ModelTransfer)> report) {
         if (size_index < 0 || size_index >= kModelRowsPerEngine) {
@@ -1162,21 +1264,21 @@ int run(int argc, char** argv)
         const int slot = static_cast<int>(engine) * kModelRowsPerEngine + size_index;
         auto source = std::make_shared<domain::CancellationSource>();
         (*transfer_sources)[static_cast<std::size_t>(slot)] = source;
-        static_cast<void>(update_executor.post([&logger, &ui_executor, &paths, engine, file_name,
+        static_cast<void>(update_executor.post([&logger, post_to_ui, &paths, engine, file_name,
                                                    source, report = std::move(report)] {
             app::QtHttpClient http;
             core::support::ModelDownloadService service(http, models_directory(paths));
             const auto download_engine = download_model_engine(engine);
             const std::string& name = file_name;
             const auto status = service.download(download_engine, name,
-                [&ui_executor, report](const core::support::ModelDownloadProgress& progress) {
+                [post_to_ui, report](const core::support::ModelDownloadProgress& progress) {
                     ui::WindowServices::ModelTransfer transfer;
                     transfer.percent = progress.total > 0
                         ? static_cast<int>(progress.fraction() * 100.0)
                         : -1;
                     transfer.bytes_per_second = progress.bytes_per_second;
                     transfer.remaining_seconds = progress.remaining_seconds().value_or(-1.0);
-                    static_cast<void>(ui_executor.post([report, transfer] { report(transfer); }));
+                    static_cast<void>(post_to_ui([report, transfer] { report(transfer); }));
                 },
                 source->token());
             if (status.is_error()) {
@@ -1186,7 +1288,7 @@ int run(int argc, char** argv)
                     cancelled ? platform::LogLevel::info : platform::LogLevel::warn,
                     cancelled ? "model download cancelled" : "model download failed",
                     name + ": " + status.error().to_string()));
-                static_cast<void>(ui_executor.post([report, message, cancelled] {
+                static_cast<void>(post_to_ui([report, message, cancelled] {
                     ui::WindowServices::ModelTransfer transfer;
                     transfer.error = message;
                     transfer.cancelled = cancelled;
@@ -1196,7 +1298,7 @@ int run(int argc, char** argv)
             }
             static_cast<void>(logger.write(platform::LogLevel::info, "model downloaded",
                 std::string(engine_name(engine)) + " " + name));
-            static_cast<void>(ui_executor.post([report] {
+            static_cast<void>(post_to_ui([report] {
                 ui::WindowServices::ModelTransfer transfer;
                 transfer.percent = 100;
                 report(transfer);
@@ -1333,6 +1435,14 @@ int run(int argc, char** argv)
             }
         }
 
+        // The gamepad bindings live in the same settings change: an empty binding
+        // stops the action, a malformed one is refused with a reason.
+        const auto gamepad_report = gamepad.apply_settings(updated);
+        if (gamepad_report.is_error()) {
+            static_cast<void>(logger.write(platform::LogLevel::warn, "gamepad settings refused",
+                gamepad_report.error().to_string()));
+        }
+
         // Autostart is re-applied through the same hook the rest of the running
         // services use, which is where the .NET build called
         // StartupManager.SetRunAtStartup (SettingsViewModel.cs:1262, inside
@@ -1379,6 +1489,7 @@ int run(int argc, char** argv)
         std::cout << "}\n";
         std::cout << "voicetyper-selftest: OK\n";
         static_cast<void>(hotkeys.unregister_all());
+        static_cast<void>(gamepad.stop());
         static_cast<void>(engine_host.shutdown(std::chrono::milliseconds(2000)));
         return 0;
     }
@@ -1454,10 +1565,11 @@ int run(int argc, char** argv)
     const auto exit_code = application.exec();
 
     // Shutdown, in the order the .NET app uses: hotkeys first so no new session
-    // can start, then the machine (which cancels and stops capture), then the
-    // engine, which is only released once nothing is in flight.
+    // can start, then the gamepad poll, then the machine (which cancels and stops
+    // capture), then the engine, which is only released once nothing is in flight.
     static_cast<void>(logger.write(platform::LogLevel::info, "shutting down"));
     static_cast<void>(hotkeys.unregister_all());
+    static_cast<void>(gamepad.stop());
     machine.cancel();
     static_cast<void>(engine_host.shutdown(std::chrono::milliseconds(5000)));
     // Last: the overlay is the only thing still on screen, and destroying it

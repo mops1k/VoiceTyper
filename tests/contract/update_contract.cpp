@@ -434,12 +434,26 @@ void check_runner_script_bytes()
 {
     constexpr std::string_view installer = R"(C:\Users\Александр\AppData\Local\VoiceTyper\updates\VoiceTyper-1.2.0-Setup.exe)";
     constexpr std::string_view app = R"(C:\Users\Александр\AppData\Local\Programs\VoiceTyper\VoiceTyper.exe)";
-    const std::string script = build_update_runner_script(installer, app);
+    constexpr std::uint32_t process_id = 4242;
+    const std::string script = build_update_runner_script(installer, app, process_id);
 
+    // The .NET script had three lines. Two deliberate departures (VT-COR-506,
+    // Alexander 2026-10-12): the runner waits for this process to exit, and the
+    // installer runs silently - an automatic update has nobody to click a wizard or a
+    // message box, and Inno refused to start while the application was still up.
     const std::string expected = std::string("@echo off\r\n")
-        + "start \"\" /wait \"" + std::string(installer) + "\" /AutoUpdate\r\n"
+        + "set waited=0\r\n"
+        + ":wait\r\n"
+        + "tasklist /FI \"PID eq 4242\" /FI \"IMAGENAME eq VoiceTyper.exe\" 2>nul | find \"4242\" >nul\r\n"
+        + "if errorlevel 1 goto install\r\n"
+        + "set /a waited+=1 >nul\r\n"
+        + "if %waited% geq 120 goto install\r\n"
+        + "ping -n 2 127.0.0.1 >nul\r\n"
+        + "goto wait\r\n"
+        + ":install\r\n"
+        + "start \"\" /wait \"" + std::string(installer) + "\" /SILENT /SUPPRESSMSGBOXES /AutoUpdate\r\n"
         + "start \"\" \"" + std::string(app) + "\"\r\n";
-    check_equal(script, expected, "run-update.cmd is byte-identical to UpdateLauncher.cs");
+    check_equal(script, expected, "run-update.cmd is exactly the waited, silent hand-off");
 
     // Every LF is preceded by CR: the script is written with explicit CRLF and
     // must never gain a second CR on a text-mode Windows stream.
@@ -456,13 +470,26 @@ void check_runner_script_bytes()
     check(installer_line != std::string::npos && app_line != std::string::npos && installer_line < app_line,
         "the installer line comes before the app relaunch line");
     check(script.find("/AutoUpdate") != std::string::npos, "the installer is started with /AutoUpdate");
+    check(script.find("/SILENT") != std::string::npos, "the installer is started silently");
+    check(script.find("/SUPPRESSMSGBOXES") != std::string::npos, "no message box can stop the install");
     check(script.find("/wait") != std::string::npos, "the installer is waited for");
     check(script.rfind("@echo off\r\n", 0) == 0, "the script starts with @echo off");
+    // The wait has to come first: starting the installer before the application is gone
+    // is what produced Inno's "a running instance was detected" dialog.
+    const std::size_t wait_line = script.find(":wait\r\n");
+    check(wait_line != std::string::npos && wait_line < installer_line,
+        "the wait for the application comes before the installer");
+    check(script.find("PID eq 4242") != std::string::npos, "the wait names the calling process");
+    check(script.find("IMAGENAME eq VoiceTyper.exe") != std::string::npos,
+        "the wait is filtered by the application image name");
+    check_equal(std::to_string(kUpdateRunnerWaitAttempts), std::string("120"),
+        "the wait bound is the one the script uses");
+    check(script.find("if %waited% geq 120 goto install") != std::string::npos,
+        "the wait is bounded, so a hung application cannot block the update forever");
 
     // Empty paths still produce a well-formed, deterministic script: the
     // validation lives in the writer/launcher, not in the byte builder.
-    check_equal(build_update_runner_script("", ""),
-        "@echo off\r\nstart \"\" /wait \"\" /AutoUpdate\r\nstart \"\" \"\"\r\n",
+    check(build_update_runner_script("", "", 0).rfind("@echo off\r\n", 0) == 0,
         "empty paths keep the script shape");
 }
 
@@ -489,14 +516,15 @@ void check_runner_script_written_to_disk()
     const std::string installer = R"(C:\tmp\VoiceTyper-1.2.0-Setup.exe)";
     const std::string app = R"(C:\tmp\VoiceTyper.exe)";
 
-    const domain::Status status = write_update_runner_script(script_path, installer, app);
+    const domain::Status status = write_update_runner_script(script_path, installer, app, 4242);
     check(status.is_ok(), "writing the runner script succeeds");
     const std::string on_disk = read_binary(script_path);
-    check_equal(on_disk, build_update_runner_script(installer, app), "the file on disk holds the exact script bytes");
+    check_equal(on_disk, build_update_runner_script(installer, app, 4242),
+        "the file on disk holds the exact script bytes");
     check(on_disk.find("\r\r\n") == std::string::npos, "the write did not double the CR of a CRLF pair");
 
     const domain::Status missing_parent
-        = write_update_runner_script(directory / "absent" / "run-update.cmd", installer, app);
+        = write_update_runner_script(directory / "absent" / "run-update.cmd", installer, app, 4242);
     check(missing_parent.is_error(), "writing into a missing directory is reported, not silently dropped");
 
     std::filesystem::remove_all(directory, error);

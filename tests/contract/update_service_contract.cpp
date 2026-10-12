@@ -228,13 +228,15 @@ void the_failure_statuses_and_bodies_are_explained()
 
 void a_download_is_streamed_hashed_and_reported()
 {
+    const std::string payload = "VoiceTyper-installer";
     FakeHttp http;
     http.chunks = {std::string("Voice"), std::string("Typer"), std::string("-installer")};
-    http.open_length = 21;
+    // The announced length has to be the length of the body: the service now refuses a
+    // stream that ends short of it, which is what an aborted transfer looks like.
+    http.open_length = payload.size();
     const auto path = std::filesystem::temp_directory_path() / "voicetyper-update-service-test.bin";
     std::filesystem::remove(path);
 
-    const std::string payload = "VoiceTyper-installer";
     UpdateInfo info;
     info.version = "9.9.9";
     info.installer_url = "https://example.invalid/setup.exe";
@@ -283,6 +285,32 @@ void a_failed_open_leaves_no_file()
     check(!std::filesystem::exists(path), "no file is left behind");
 }
 
+/// A body that stops short of the promised length is what an aborted transfer looks
+/// like from here. Without the size guard the partial file was accepted whenever the
+/// release published no digest, and the launcher then ran half an installer.
+void a_truncated_download_is_refused_and_removed()
+{
+    FakeHttp http;
+    http.chunks = {std::string("Voice"), std::string("Typer")};
+    http.open_length = 21;
+    const auto path = std::filesystem::temp_directory_path() / "voicetyper-update-service-truncated.bin";
+    std::filesystem::remove(path);
+
+    UpdateInfo info;
+    info.version = "9.9.9";
+    info.installer_url = "https://example.invalid/setup.exe";
+    // Deliberately no digest: the size check is the only guard left.
+    voicetyper::core::support::UpdateService service(http, "1.1.3");
+    const Status status = service.download(info, path, {}, CancellationToken{});
+
+    check(!status.is_ok(), "a short body fails the download");
+    check(!std::filesystem::exists(path), "a partial installer is removed");
+    check(status.is_error()
+            && status.error().message().find("incomplete") != std::string::npos,
+        std::string("the reason names the truncation: ")
+            + (status.is_error() ? status.error().message() : std::string("no error")));
+}
+
 } // namespace
 
 int main()
@@ -293,6 +321,7 @@ int main()
     the_failure_statuses_and_bodies_are_explained();
     a_download_is_streamed_hashed_and_reported();
     a_failed_open_leaves_no_file();
+    a_truncated_download_is_refused_and_removed();
     if (failures == 0) {
         std::printf("update-service-contract: OK (%d checks)\n", checks);
         return 0;

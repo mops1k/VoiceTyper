@@ -12,7 +12,7 @@ struct Entry {
 };
 
 /// One row per UiKey, in the same order as the enum.
-constexpr std::array<Entry, 191> kTexts{{
+constexpr std::array<Entry, 192> kTexts{{
     Entry{" мс", " ms"},
     Entry{"%1 (недоступен)", "%1 (unavailable)"},
     Entry{"%1 · Скорость: %2 · Качество: %3", "%1 · Speed: %2 · Quality: %3"},
@@ -236,6 +236,8 @@ constexpr std::array<Entry, 191> kTexts{{
     Entry{"Кнопка: %1", "Button: %1"},
     Entry{"микрофон не отдал звук — проверьте устройство и повторите",
         "the microphone delivered no audio — check the device and try again"},
+    // Очистка привязки кнопки геймпада (кнопка «Очистить» в карточке «Геймпад»).
+    Entry{"Привязка очищена", "Binding cleared"},
 }};
 
 } // namespace

@@ -252,6 +252,13 @@ private:
     /// settings grammar ("XInput|A") is what the poll loop matches, so the user
     /// must not type it by hand.
     void capture_gamepad_into(bool record);
+    /// Drops the gamepad binding of that row: an empty readout is how the settings
+    /// layer spells "no gamepad action" (JSON null), and assigning it fires the
+    /// textChanged handler that stores and re-applies it.
+    void clear_gamepad_into(bool record);
+    /// Enables a "clear" button only while its readout carries a binding and no
+    /// capture is in flight for that row.
+    void refresh_gamepad_clear_buttons();
     /// Shows the Whisper-only rows (temperature, candidates) for that engine and hides
     /// them for the engines that ignore those parameters.
     void update_engine_specific_rows();
@@ -473,6 +480,10 @@ private:
     QLineEdit* cancel_gamepad_ = nullptr;
     QPushButton* record_gamepad_capture_ = nullptr;
     QPushButton* cancel_gamepad_capture_ = nullptr;
+    /// "Очистить" beside each gamepad capture button; the hotkey rows have none,
+    /// because an empty hotkey is not a valid state.
+    QPushButton* record_gamepad_clear_ = nullptr;
+    QPushButton* cancel_gamepad_clear_ = nullptr;
     QPlainTextEdit* terms_ = nullptr;
     QSpinBox* silence_threshold_ = nullptr;
     QDoubleSpinBox* temperature_ = nullptr;

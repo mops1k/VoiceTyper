@@ -11,6 +11,7 @@
 #include <windows.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -118,7 +119,8 @@ domain::Status launch_update(const std::filesystem::path& runner_path,
     }
 
     const domain::Status written = core::support::write_update_runner_script(
-        runner_path, to_utf8(installer_path), to_utf8(app_path));
+        runner_path, to_utf8(installer_path), to_utf8(app_path),
+        static_cast<std::uint32_t>(::GetCurrentProcessId()));
     if (!written.is_ok()) {
         return written;
     }

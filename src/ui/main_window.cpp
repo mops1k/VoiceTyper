@@ -2473,8 +2473,11 @@ void MainWindow::build_tabs()
         connect(cancel_hotkey_capture_, &QPushButton::clicked, this, [this] { capture_hotkey_into(false); });
 
         // The mockup's .hotkey-control: the combination is a kbd chip (still a
-        // QLineEdit - the keys are typed into it) with the button beside it.
-        const auto hotkey_control = [content](QLineEdit* field, QPushButton* button) {
+        // QLineEdit - the keys are typed into it) with the button beside it. The
+        // gamepad rows add a third widget (the "Очистить" button); the hotkey rows
+        // pass none, because an empty hotkey is not a valid state.
+        const auto hotkey_control = [content](
+                                        QLineEdit* field, QPushButton* button, QPushButton* clear = nullptr) {
             auto* box = new QWidget(content);
             box->setObjectName(QStringLiteral("hotkeyControl"));
             auto* layout = new QHBoxLayout(box);
@@ -2488,6 +2491,9 @@ void MainWindow::build_tabs()
             field->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
             layout->addWidget(field, 0, Qt::AlignVCenter);
             layout->addWidget(button, 0, Qt::AlignVCenter);
+            if (clear != nullptr) {
+                layout->addWidget(clear, 0, Qt::AlignVCenter);
+            }
             return box;
         };
 
@@ -2523,11 +2529,25 @@ void MainWindow::build_tabs()
         cancel_gamepad_capture_->setFocusPolicy(Qt::NoFocus);
         connect(cancel_gamepad_capture_, &QPushButton::clicked, this, [this] { capture_gamepad_into(false); });
 
+        // The binding is optional, so unlike a hotkey it can be dropped entirely:
+        // "Очистить" writes the empty readout the settings layer stores as null.
+        // The hotkey rows above deliberately have no such button.
+        record_gamepad_clear_ = new QPushButton(ui_text(UiKey::k141, language_), content);
+        record_gamepad_clear_->setObjectName(QStringLiteral("recordGamepadClear"));
+        record_gamepad_clear_->setProperty("uiKey", static_cast<int>(UiKey::k141));
+        record_gamepad_clear_->setFocusPolicy(Qt::NoFocus);
+        connect(record_gamepad_clear_, &QPushButton::clicked, this, [this] { clear_gamepad_into(true); });
+        cancel_gamepad_clear_ = new QPushButton(ui_text(UiKey::k141, language_), content);
+        cancel_gamepad_clear_->setObjectName(QStringLiteral("cancelGamepadClear"));
+        cancel_gamepad_clear_->setProperty("uiKey", static_cast<int>(UiKey::k141));
+        cancel_gamepad_clear_->setFocusPolicy(Qt::NoFocus);
+        connect(cancel_gamepad_clear_, &QPushButton::clicked, this, [this] { clear_gamepad_into(false); });
+
         const auto gamepad_group = settings_group(content, UiKey::k183, UiKey::k184, language_);
         gamepad_group.rows->addWidget(setting_row(
-            UiKey::k185, language_, hotkey_control(record_gamepad_, record_gamepad_capture_)));
+            UiKey::k185, language_, hotkey_control(record_gamepad_, record_gamepad_capture_, record_gamepad_clear_)));
         gamepad_group.rows->addWidget(setting_row(
-            UiKey::k186, language_, hotkey_control(cancel_gamepad_, cancel_gamepad_capture_)));
+            UiKey::k186, language_, hotkey_control(cancel_gamepad_, cancel_gamepad_capture_, cancel_gamepad_clear_)));
         rows->addWidget(gamepad_group.card);
 
         const bool can_capture = static_cast<bool>(services_.capture_hotkey);
@@ -2544,6 +2564,8 @@ void MainWindow::build_tabs()
                     ? ui_text(UiKey::k187, language_)
                     : ui_text(UiKey::k188, language_));
         }
+        // Clearing needs no backend - only a binding that is actually there.
+        refresh_gamepad_clear_buttons();
         // The hint of this page carries no hotkey: hint_bar must not .arg() it.
         rows->addWidget(hint_bar(UiKey::k136, UiKey::k137, language_, QString(), content));
         rows->addStretch(1);
@@ -3296,6 +3318,10 @@ void MainWindow::capture_gamepad_into(bool record)
     button->setEnabled(false);
     button->setText(ui_text(UiKey::k135, language_));
     field->deselect();
+    // The capture owns the readout until it returns: clearing underneath it would be
+    // undone by the captured binding a moment later.
+    field->setProperty("captureInFlight", true);
+    refresh_gamepad_clear_buttons();
     const QString previous_placeholder = field->placeholderText();
     field->setPlaceholderText(ui_text(UiKey::k187, language_));
     set_status_message(ui_text(UiKey::k187, language_));
@@ -3304,18 +3330,49 @@ void MainWindow::capture_gamepad_into(bool record)
                                   std::optional<std::string> binding, QString error) {
         button->setEnabled(true);
         button->setText(ui_text(UiKey::k134, language_));
+        field->setProperty("captureInFlight", false);
         // The readout stays read-only; assigning the text still fires
         // textChanged, so the binding is saved and the poll loop re-bound.
         field->setPlaceholderText(previous_placeholder);
         if (!binding.has_value()) {
+            refresh_gamepad_clear_buttons();
             // Cancelled (Escape) is not an error and must not leave a message.
             set_status_message(error.isEmpty() ? QString() : error);
             return;
         }
         field->setText(QString::fromStdString(*binding));
         field->deselect();
+        refresh_gamepad_clear_buttons();
         set_status_message(ui_text(UiKey::k189, language_).arg(QString::fromStdString(*binding)));
     });
+}
+
+void MainWindow::clear_gamepad_into(bool record)
+{
+    QLineEdit* field = record ? record_gamepad_ : cancel_gamepad_;
+    if (field == nullptr || field->text().isEmpty()) {
+        return;
+    }
+    // An empty readout is the settings layer's spelling of "no gamepad action"
+    // (JSON null): the textChanged handler stores null and the running poll loop
+    // drops the binding on the spot.
+    field->setText(QString());
+    field->deselect();
+    refresh_gamepad_clear_buttons();
+    set_status_message(ui_text(UiKey::k191, language_));
+}
+
+void MainWindow::refresh_gamepad_clear_buttons()
+{
+    const auto sync = [](QLineEdit* field, QPushButton* button) {
+        if (field == nullptr || button == nullptr) {
+            return;
+        }
+        const bool busy = field->property("captureInFlight").toBool();
+        button->setEnabled(!field->text().isEmpty() && !busy);
+    };
+    sync(record_gamepad_, record_gamepad_clear_);
+    sync(cancel_gamepad_, cancel_gamepad_clear_);
 }
 
 std::vector<ToggleSwitch*>& MainWindow::toggles_for(ModelList list) noexcept
@@ -3565,6 +3622,9 @@ void MainWindow::bind_settings_to_controls()
                 settings.record_gamepad_button = text.toStdString();
             }
         });
+        // The "Очистить" button follows the readout: there is nothing to clear
+        // while it is empty.
+        refresh_gamepad_clear_buttons();
         pending_service_change_ = voicetyper::app::SettingsChange::hotkeys;
     });
     connect(cancel_gamepad_, &QLineEdit::textChanged, this, [this](const QString& text) {
@@ -3575,6 +3635,7 @@ void MainWindow::bind_settings_to_controls()
                 settings.cancel_gamepad_button = text.toStdString();
             }
         });
+        refresh_gamepad_clear_buttons();
         pending_service_change_ = voicetyper::app::SettingsChange::hotkeys;
     });
     connect(microphone_, &QComboBox::currentIndexChanged, this, [this](int index) {
@@ -3630,6 +3691,10 @@ void MainWindow::bind_settings_to_controls()
             settings.start_minimized = value;
         });
     });
+
+    // The readouts were filled above, before these handlers existed, so the "clear"
+    // buttons need one explicit pass over the loaded bindings.
+    refresh_gamepad_clear_buttons();
 }
 
 bool MainWindow::system_theme_is_dark() const
@@ -3834,6 +3899,16 @@ void MainWindow::bind_update_controls()
             if (self == nullptr) {
                 return;
             }
+            // The report arrives on a worker thread and everything below touches widgets.
+            // Handling it there killed the process while an update was being downloaded
+            // ("QWidget::repaint: Recursive repaint detected", reproduced 2026-10-12), so
+            // the whole handler is marshalled onto the interface thread - the same rule the
+            // model-download handler below already follows.
+            QMetaObject::invokeMethod(self, [self, available, version,
+                                               notes = std::move(notes), error = std::move(error)] {
+            if (self == nullptr) {
+                return;
+            }
             self->update_check_->setEnabled(true);
             self->update_available_ = available;
             if (!error.isEmpty()) {
@@ -3864,6 +3939,7 @@ void MainWindow::bind_update_controls()
             // The height comes from WrappingLabel now: the deferred setMinimumHeight that
             // used to stand here only ever grew, so every check added a little more blank
             // space to the block (Alexander, 08.10.2026).
+            }, Qt::QueuedConnection);
         });
     });
 
@@ -3875,6 +3951,14 @@ void MainWindow::bind_update_controls()
             set_inset_visible(update_progress_, true);
             update_status_->setText(ui_text(UiKey::k69, language_));
             services_.update_install([self](int percent, QString stage, QString error) {
+                if (self == nullptr) {
+                    return;
+                }
+                // The progress of the download arrives on a worker thread; the bar, the
+                // status line and the button are widgets, so the handler is marshalled
+                // onto the interface thread exactly like the update check above.
+                QMetaObject::invokeMethod(self, [self, percent, stage = std::move(stage),
+                                                    error = std::move(error)] {
                 if (self == nullptr) {
                     return;
                 }
@@ -3891,6 +3975,7 @@ void MainWindow::bind_update_controls()
                 if (stage == QStringLiteral("done")) {
                     self->update_status_->setText(ui_text(UiKey::k70, self->language_));
                 }
+                }, Qt::QueuedConnection);
             });
         });
     } else {
@@ -4378,7 +4463,7 @@ void MainWindow::apply_theme()
         /* The Hotkeys page keeps a real QLineEdit - the keys are typed into it - but
            draws it as the mockup's kbd chip (index.css: .hotkey-control kbd): 36 px
            tall with its 1 px border, radius 6, monospace, min-width 146. */
-        #recordHotkeyEdit, #cancelHotkeyEdit {
+        #recordHotkeyEdit, #cancelHotkeyEdit, #recordGamepadEdit, #cancelGamepadEdit {
             min-height: 34px; max-height: 34px; padding: 0px 11px; border-radius: 6px;
             background: @{control}; border: 1px solid @{border};
             font-family: "Cascadia Code", Consolas, monospace; font-size: 10px;
@@ -4386,12 +4471,28 @@ void MainWindow::apply_theme()
                selected - the value is changed through the button, not in the field. */
             selection-background-color: transparent; selection-color: @{text};
         }
-        #recordHotkeyCapture, #cancelHotkeyCapture {
+        #recordHotkeyCapture, #cancelHotkeyCapture, #recordGamepadCapture, #cancelGamepadCapture {
             min-height: 34px; max-height: 34px; padding: 0px 13px; border-radius: 6px;
             background: @{hover}; border: 1px solid @{border}; font-size: 10px;
         }
-        #recordHotkeyCapture:hover, #cancelHotkeyCapture:hover { border: 1px solid @{accent}; color: @{accent}; }
-        #recordHotkeyCapture:disabled, #cancelHotkeyCapture:disabled { color: @{muted}; border: 1px solid @{border}; }
+        #recordHotkeyCapture:hover, #cancelHotkeyCapture:hover,
+        #recordGamepadCapture:hover, #cancelGamepadCapture:hover { border: 1px solid @{accent}; color: @{accent}; }
+        #recordHotkeyCapture:disabled, #cancelHotkeyCapture:disabled,
+        #recordGamepadCapture:disabled, #cancelGamepadCapture:disabled { color: @{muted}; border: 1px solid @{border}; }
+        /* The gamepad card's own action: an optional binding can be dropped, so the
+           row carries a third button beside "Изменить". Quiet until it is usable,
+           red on hover like the log's clear action. */
+        #recordGamepadClear, #cancelGamepadClear {
+            min-height: 34px; max-height: 34px; padding: 0px 13px; border-radius: 6px;
+            background: transparent; border: 1px solid @{border}; color: @{text_secondary};
+            font-size: 10px;
+        }
+        #recordGamepadClear:hover, #cancelGamepadClear:hover {
+            color: #E55A63; border: 1px solid rgba(229,90,99,50%);
+        }
+        #recordGamepadClear:disabled, #cancelGamepadClear:disabled {
+            color: @{muted}; border: 1px solid @{border};
+        }
         /* The Journal page: quiet heading actions over a monospace log surface
            (index.css: .log-heading button, .log-view, .log-empty). */
         #logActions { background: transparent; }

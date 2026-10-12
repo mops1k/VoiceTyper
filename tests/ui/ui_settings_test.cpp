@@ -43,6 +43,7 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <thread>
 
 namespace {
 
@@ -1800,6 +1801,175 @@ private slots:
             QVERIFY(!button->isEnabled());
             QVERIFY(!button->toolTip().isEmpty());
         }
+        std::filesystem::remove(path);
+    }
+
+    // The gamepad binding is optional, so unlike a hotkey it can be dropped by the
+    // user: the "Очистить" button empties the readout, and the empty string travels
+    // the normal path - presenter, autosave - where the settings layer stores JSON
+    // null, which the running poll loop reads as "no gamepad action".
+    void the_gamepad_clear_button_drops_the_binding()
+    {
+        voicetyper::platform::PortableClock clock;
+        voicetyper::platform::PortableFileSystem file_system;
+        const auto path = std::filesystem::temp_directory_path() / "voicetyper-ui-gamepad-clear-test.json";
+        std::filesystem::remove(path);
+        voicetyper::app::SettingsPresenter presenter(path, file_system, clock);
+        static_cast<void>(presenter.load());
+        // A stored binding, as if the user had already captured one: only then is
+        // there anything to clear.
+        presenter.update(voicetyper::app::SettingsChange::hotkeys,
+            [](voicetyper::domain::AppSettings& settings) {
+                settings.record_gamepad_button = std::string("XInput|A");
+                settings.cancel_gamepad_button = std::string("XInput|B");
+            });
+
+        int applied = 0;
+        voicetyper::ui::WindowServices services;
+        services.settings_applied = [&applied](const voicetyper::domain::AppSettings&) { ++applied; };
+
+        voicetyper::ui::MainWindow window(presenter, std::move(services));
+        auto* field = window.findChild<QLineEdit*>(QStringLiteral("recordGamepadEdit"));
+        auto* cancel_field = window.findChild<QLineEdit*>(QStringLiteral("cancelGamepadEdit"));
+        auto* clear = window.findChild<QPushButton*>(QStringLiteral("recordGamepadClear"));
+        auto* cancel_clear = window.findChild<QPushButton*>(QStringLiteral("cancelGamepadClear"));
+        QVERIFY(field != nullptr);
+        QVERIFY(cancel_field != nullptr);
+        QVERIFY(clear != nullptr);
+        QVERIFY(cancel_clear != nullptr);
+        // The readouts and the buttons are in step right after the window is built.
+        QCOMPARE(field->text(), QStringLiteral("XInput|A"));
+        QVERIFY2(clear->isEnabled(), "a stored binding leaves its clear button usable");
+        QVERIFY2(cancel_clear->isEnabled(), "the other row has a binding too");
+
+        clear->click();
+        QCoreApplication::processEvents();
+        QCOMPARE(field->text(), QString());
+        QVERIFY2(!clear->isEnabled(), "with nothing bound there is nothing to clear");
+        QVERIFY2(cancel_field->text() == QStringLiteral("XInput|B"),
+            "clearing one row must not touch the other");
+
+        QTest::qWait(1200);
+        QVERIFY2(!presenter.settings().record_gamepad_button.has_value(),
+            "an empty readout is stored as an absent binding");
+        QVERIFY2(presenter.settings().cancel_gamepad_button.has_value(),
+            "the other binding survives the clear");
+        QVERIFY2(applied >= 1, "the cleared binding reached the running services");
+        // What lands on disk is null, not "": the poll loop matches that spelling.
+        const std::string written = read_all(path);
+        QVERIFY2(written.find("\"recordGamepadButton\": null") != std::string::npos,
+            qPrintable(QString::fromStdString(written)));
+
+        // A capture in flight owns the readout: its clear button must stay disabled
+        // until the captured binding (or the cancel) arrives.
+        voicetyper::app::SettingsPresenter second_presenter(path, file_system, clock);
+        static_cast<void>(second_presenter.load());
+        second_presenter.update(voicetyper::app::SettingsChange::hotkeys,
+            [](voicetyper::domain::AppSettings& settings) {
+                settings.record_gamepad_button = std::string("XInput|X");
+            });
+        std::function<void(std::optional<std::string>, QString)> pending;
+        voicetyper::ui::WindowServices capture_services;
+        capture_services.capture_gamepad =
+            [&pending](std::function<void(std::optional<std::string>, QString)> report) {
+                pending = std::move(report);
+            };
+        voicetyper::ui::MainWindow capturing(second_presenter, std::move(capture_services));
+        auto* capturing_field = capturing.findChild<QLineEdit*>(QStringLiteral("recordGamepadEdit"));
+        auto* capturing_clear = capturing.findChild<QPushButton*>(QStringLiteral("recordGamepadClear"));
+        auto* capture_button = capturing.findChild<QPushButton*>(QStringLiteral("recordGamepadCapture"));
+        QVERIFY(capturing_field != nullptr);
+        QVERIFY(capturing_clear != nullptr);
+        QVERIFY(capture_button != nullptr);
+        QVERIFY2(capturing_clear->isEnabled(), "the stored binding is clearable before the capture");
+        capture_button->click();
+        QCoreApplication::processEvents();
+        QVERIFY2(pending != nullptr, "the capture was handed to the platform service");
+        QVERIFY2(!capturing_clear->isEnabled(),
+            "a capture in flight owns the readout, so clearing it is not offered");
+        pending(std::string("XInput|Y"), QString());
+        QCoreApplication::processEvents();
+        QCOMPARE(capturing_field->text(), QStringLiteral("XInput|Y"));
+        QVERIFY2(capturing_clear->isEnabled(), "the captured binding is clearable again");
+        std::filesystem::remove(path);
+    }
+
+    // The platform services report from their own worker thread. Handling an update
+    // report there painted widgets from two threads and killed the process while the
+    // installer was downloading ("QWidget::repaint: Recursive repaint detected",
+    // reproduced 2026-10-12), so both update reports are marshalled onto the interface
+    // thread. The queued delivery is observable: right after the report returns, no
+    // widget has changed yet; the change happens on the event loop.
+    void the_update_reports_are_handled_on_the_interface_thread()
+    {
+        voicetyper::platform::PortableClock clock;
+        voicetyper::platform::PortableFileSystem file_system;
+        const auto path = std::filesystem::temp_directory_path() / "voicetyper-ui-update-thread-test.json";
+        std::filesystem::remove(path);
+        voicetyper::app::SettingsPresenter presenter(path, file_system, clock);
+        static_cast<void>(presenter.load());
+
+        std::function<void(bool, QString, QString, QString)> check_report;
+        std::function<void(int, QString, QString)> install_report;
+        voicetyper::ui::WindowServices services;
+        services.update_check = [&check_report](std::function<void(bool, QString, QString, QString)> report) {
+            check_report = std::move(report);
+        };
+        services.update_install = [&install_report](std::function<void(int, QString, QString)> progress) {
+            install_report = std::move(progress);
+        };
+
+        voicetyper::ui::MainWindow window(presenter, std::move(services));
+        window.resize(980, 640);
+        window.show();
+        QCoreApplication::processEvents();
+
+        auto* check = window.findChild<QPushButton*>(QStringLiteral("updateCheckButton"));
+        auto* install = window.findChild<QPushButton*>(QStringLiteral("updateInstallButton"));
+        auto* bar = window.findChild<QProgressBar*>(QStringLiteral("updateProgress"));
+        auto* status = window.findChild<QLabel*>(QStringLiteral("updateStatus"));
+        QVERIFY(check != nullptr);
+        QVERIFY(install != nullptr);
+        QVERIFY(bar != nullptr);
+        QVERIFY(status != nullptr);
+
+        check->click();
+        QCoreApplication::processEvents();
+        QVERIFY2(static_cast<bool>(check_report), "the check was handed to the platform service");
+        const QString status_before = status->text();
+
+        std::thread checking([&check_report] {
+            check_report(true, QStringLiteral("9.9.9"), QStringLiteral("notes"), QString());
+        });
+        checking.join();
+        QCOMPARE(status->text(), status_before);
+        QTRY_VERIFY(status->text().contains(QStringLiteral("9.9.9")));
+        // The About page is not the page on screen, so isVisible() is false for every
+        // widget on it; what the report changes is the button's own hidden flag.
+        QVERIFY2(!install->isHidden(), "an offered update shows its install button");
+
+        install->click();
+        QCoreApplication::processEvents();
+        QVERIFY2(static_cast<bool>(install_report), "the download was handed to the platform service");
+
+        std::thread downloading([&install_report] {
+            install_report(40, QStringLiteral("download"), QString());
+        });
+        downloading.join();
+        // Nothing may have been painted by the worker thread itself: the bar is still in
+        // its indeterminate state (range 0..0) until the queued report is applied.
+        QCOMPARE(bar->maximum(), 0);
+        QTRY_COMPARE(bar->value(), 40);
+
+        std::thread finishing([&install_report] {
+            install_report(100, QStringLiteral("done"), QString());
+        });
+        finishing.join();
+        QTRY_COMPARE(bar->value(), 100);
+        // "Обновление установлено, приложение перезапустится": the sentence the user sees
+        // once the installer has really been started.
+        QTRY_VERIFY(status->text() != status_before);
+        window.hide();
         std::filesystem::remove(path);
     }
 };

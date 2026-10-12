@@ -33,12 +33,16 @@ namespace voicetyper::platform::win32 {
 /// why the update did not start instead of showing a progress bar forever.
 [[nodiscard]] domain::Status start_update_runner(const std::filesystem::path& runner_path);
 
-/// Writes the runner script and starts it: the whole hand-off.
+// Writes the runner script and starts it: the whole hand-off.
 ///
 /// `runner_path` is the caller's path (AppPaths::update_launcher_file()); its
 /// parent directory is created when absent, which is the .NET
 /// Directory.CreateDirectory step and matters on a clean profile that has never
 /// downloaded an update.
+///
+/// The script waits for THIS process (GetCurrentProcessId) to exit and then runs the
+/// installer with `/SILENT /SUPPRESSMSGBOXES /AutoUpdate` (VT-COR-506), so an
+/// automatic update needs no clicks; the caller still quits right after this returns.
 ///
 /// Refuses an installer that does not exist (the .NET FileNotFoundException) and
 /// a missing app path, because a script pointing at nothing looks like a

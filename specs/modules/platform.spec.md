@@ -237,6 +237,23 @@ implementation: `windows/win32_gamepad.*`.
   release can be matched to the press.
 - **VT-PLT-413.** Device loss MUST be recovered: a controller that disappears MUST NOT leave a
   capture or a recording stuck.
+- **VT-PLT-414.** The Windows composition MUST wire `Win32GamepadService` exactly as the Linux
+  composition wires its backend (VT-PLT-1312): the edges MUST drive the same recording machine as
+  the hotkeys (`record_pressed`, `record_released` for push-to-talk, `cancel_pressed`), the
+  bindings MUST be re-applied on every settings change of kind `hotkeys`, and `capture_gamepad`
+  MUST be exposed to the settings window on a capture worker separate from the hotkey capture.
+  When no XInput runtime can be loaded the composition MUST NOT expose the capture service, so
+  those buttons stay disabled with the localised reason (`UiKey::k188`) instead of failing on the
+  first click, and `stop()` MUST be called both on shutdown and in `--selftest`
+  ([src/app/windows_application.cpp](../../src/app/windows_application.cpp)).
+- **VT-PLT-415.** Every report a Windows service delivers back to the settings window (update
+  check, update install progress, model transfer, microphone probe) MUST cross to the interface
+  thread through a queued invocation (`QMetaObject::invokeMethod` with `Qt::QueuedConnection`),
+  exactly as the Linux composition has done from the start (VT-PLT-1312, VT-UI-315). A worker
+  executor is not an interface thread: delivering these reports on one painted widgets from two
+  threads and killed the process while an installer was downloading
+  ([src/app/windows_application.cpp](../../src/app/windows_application.cpp), reproduced
+  2026-10-12).
 
 ---
 

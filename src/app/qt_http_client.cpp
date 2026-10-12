@@ -180,7 +180,17 @@ public:
             loop.exec();
         }
         const QNetworkReply::NetworkError error = reply_->error();
-        if (error != QNetworkReply::NoError && error != QNetworkReply::OperationCanceledError) {
+        if (error == QNetworkReply::OperationCanceledError) {
+            // An aborted transfer is not a completed one: Qt reports the abort of a
+            // stalled or cancelled reply this way, and what is on disk is a prefix of
+            // the file, not the file. Calling this success let a truncated installer
+            // look downloaded, so the caller sees the cancellation and deletes what it
+            // wrote.
+            close();
+            return platform::Status::failure(
+                platform::ErrorCode::cancelled, "the transfer was aborted before it finished");
+        }
+        if (error != QNetworkReply::NoError) {
             const QString text = reply_->errorString();
             close();
             return platform::Status::failure(classify(error), text.toStdString());

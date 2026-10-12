@@ -93,6 +93,17 @@ platform::Status UpdateService::download(const platform::UpdateInfo& info,
         return platform::Status::failure(read_status.error());
     }
 
+    // A transfer that stopped early is not a download either: a back-end can report a
+    // clean end while the body is short, and a partial installer must never reach the
+    // launcher. The hash check below is the authority; this is the cheap guard that
+    // also catches a release that publishes no digest at all.
+    if (total > 0 && received != total) {
+        std::filesystem::remove(target, error);
+        return platform::Status::failure(platform::ErrorCode::io_failure,
+            "the installer download is incomplete: received " + std::to_string(received)
+                + " of " + std::to_string(total) + " bytes");
+    }
+
     // The hash is checked before the file can be considered an installer. The .NET
     // build verified the marker in the release body; a mismatch here is a corrupt or
     // tampered download and the file must not survive.

@@ -167,6 +167,13 @@ roots, the settings presenter and the Qt HTTP client.
 - **VT-UI-221.** **About** MUST offer the version chip, the description, the privacy note, three
   links (Licences, Privacy policy, Report an issue), and the update block: check button, status
   line, notes, install button and progress bar (the last three hidden until an update is found).
+- **VT-UI-222.** The **Gamepad** card of the Hotkeys page MUST carry the same read-only record and
+  cancel readouts and capture buttons as the hotkey rows, plus one «Очистить» button per row
+  (`recordGamepadClear`, `cancelGamepadClear`, text `UiKey::k141`). Clearing MUST write the empty
+  readout, which the presenter stores as an absent binding (JSON `null`); the button MUST be
+  enabled only while its readout is non-empty and no capture is in flight for that row, and MUST
+  NOT depend on `capture_gamepad` (dropping a binding needs no backend). The hotkey rows MUST NOT
+  gain such a button: an empty hotkey is not a valid state (VT-PLT-409).
 
 ---
 
@@ -220,6 +227,14 @@ roots, the settings presenter and the Qt HTTP client.
   recording and the record button works as "Stop".
 - **VT-UI-314.** Temperature and best-of rows MUST be visible only for Whisper, because Parakeet
   and GigaAM ignore those parameters (VT-ASR-111).
+- **VT-UI-315.** Every report a `WindowServices` callback receives (update check, update install
+  progress, model transfer, microphone probe) arrives on a service worker thread, and the window
+  MUST marshal the whole handler onto the interface thread (`QMetaObject::invokeMethod` with
+  `Qt::QueuedConnection`) before it touches a widget; until the event loop runs, no widget state
+  may have changed. Handling such a report on the worker thread painted widgets from two threads
+  and killed the process while an installer was downloading
+  («QWidget::repaint: Recursive repaint detected», reproduced 2026-10-12); the model-download
+  handler has followed the same rule since 2026-10-07.
 
 ### Status, recording and the footer
 
@@ -456,6 +471,10 @@ consequences are:
   response, so a Hugging Face 302 is not reported as a failed download (commit `98e4732`).
 - **VT-UI-1104.** Streaming MUST copy in 128 KiB chunks, MUST pause the event loop while waiting
   and MUST return `cancelled` on cancellation and `io_failure` when the sink stops the transfer.
+- **VT-UI-1107.** A transfer Qt aborts mid-body (`QNetworkReply::OperationCanceledError`) MUST be
+  reported as `cancelled`, never as a completed stream: the bytes written so far are a prefix of
+  the file, and treating the abort as success is what let a truncated installer look downloaded
+  (reproduced 2026-10-12).
 - **VT-UI-1105.** Network errors MUST be classified: timeout, cancelled, unavailable
   (host not found, connection refused, remote closed, unknown, TLS handshake), otherwise
   `io_failure`; a non-2xx status is not a transport error.
@@ -468,7 +487,7 @@ consequences are:
 
 | Suite | What it pins |
 |---|---|
-| `ui-settings-test` (31 slots) | edit → file → restart round-trips; theme tiles and reset; engine/threshold/best-of reaching the services; microphone persistence across device-less and different-device launches; per-page navigation binding in both languages; footer and control fit at 980×640 and 820×560; hotkey capture; model list exclusivity and per-engine keys; noise reduction placement; downloaded models offer delete; log scroll retention; in-place language switch; every key non-empty; About update controls; hide-on-focus-loss; status pill theme; tray show restores the window; tray menu padding; overlay and tray language; model page language; exact tail of the string table; percentage + cancel; navigation icons; every navigation entry opens its own page; record button disabled without a backend |
+| `ui-settings-test` (39 slots) | edit → file → restart round-trips; theme tiles and reset; engine/threshold/best-of reaching the services; microphone persistence across device-less and different-device launches; per-page navigation binding in both languages; footer and control fit at 980×640 and 820×560; hotkey capture; model list exclusivity and per-engine keys; noise reduction placement; downloaded models offer delete; log scroll retention; in-place language switch; every key non-empty; About update controls; hide-on-focus-loss; status pill theme; tray show restores the window; tray menu padding; overlay and tray language; model page language; exact tail of the string table; percentage + cancel; navigation icons; every navigation entry opens its own page; record button disabled without a backend; gamepad readouts read-only with the clear buttons following the binding (VT-UI-222); update reports delivered from a worker thread applied on the interface thread (VT-UI-315) |
 | `ui-status-overlay-test` (8 slots) | idempotent create; frameless/topmost/no-input pill; frozen 350 ms pulse; processing accent and stopped pulse; an error hides the overlay; hide/idle; geometry (centred, 26 px above the bottom); worker-thread `post_state()` and terminal `destroy()` |
 | `ui-snapshot` (tool) | renders all 8 pages to PNG offscreen for visual review (not an assertion) |
 

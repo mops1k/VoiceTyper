@@ -179,15 +179,32 @@ with the catalog.
   and the previously downloaded installer MUST be preserved (VT-SYS-083).
 - **VT-COR-505.** The download target MUST be `<updates>/VoiceTyper-<version>-Setup.exe`
   (VT-SYS-063, VT-PLT-909).
-- **VT-COR-506.** The launcher script MUST be exactly (CRLF line endings):
+- **VT-COR-506.** The launcher script MUST be exactly (CRLF line endings), with `<pid>` the
+  process id of the application that requested the update and `<image>` the file name of `<app>`:
 
 ```
 @echo off
-start "" /wait "<installer>" /AutoUpdate
+set waited=0
+:wait
+tasklist /FI "PID eq <pid>" /FI "IMAGENAME eq <image>" 2>nul | find "<pid>" >nul
+if errorlevel 1 goto install
+set /a waited+=1 >nul
+if %waited% geq 120 goto install
+ping -n 2 127.0.0.1 >nul
+goto wait
+:install
+start "" /wait "<installer>" /SILENT /SUPPRESSMSGBOXES /AutoUpdate
 start "" "<app>"
 ```
 
-  and MUST be started as `cmd.exe` with arguments `"/d /c "<runner>""`
+  ⚠ **Deliberate deviation from the .NET launcher** (`UpdateLauncher.cs:33-36`, which was
+  `@echo off` + `start "" /wait "<installer>" /AutoUpdate` + `start "" "<app>"`), decided by
+  Alexander on 2026-10-12: an automatic update has nobody to click, and the .NET script started
+  the installer while the application was still shutting down, so Inno refused with «обнаружена
+  работающая программа» and waited for a click that never came. The script therefore waits for
+  the application process first (bounded by `kUpdateRunnerWaitAttempts = 120` attempts of about a
+  second, so a hung application cannot block the update forever) and starts the installer with
+  `/SILENT /SUPPRESSMSGBOXES`. It MUST be started as `cmd.exe` with arguments `"/d /c "<runner>""`
   (`build_update_runner_script`, `build_update_runner_arguments`,
   `write_update_runner_script`).
 - **VT-COR-507.** The script MUST be written in binary mode (`create_update_runner_script`
@@ -205,6 +222,10 @@ start "" "<app>"
   `status_code` and `failed_for_http_status` maps it to the user-facing message.
 - **VT-COR-513.** `UpdateInfo` MUST carry `version`, optional `installer_url`, optional `sha256`,
   optional `size_bytes`, optional `release_notes` and `is_prerelease`.
+- **VT-COR-514.** A body shorter than the announced `Content-Length` MUST delete the file and MUST
+  fail with `io_failure` «the installer download is incomplete: received X of Y bytes»; a partial
+  installer must never be handed to the launcher, and the guard also covers a release that
+  publishes no digest at all (reproduced 2026-10-12, VT-COR-503).
 
 ---
 
@@ -256,7 +277,7 @@ start "" "<app>"
 |---|---|
 | paths, logger, CPU | `core-support-contract`, `win32-platform-contract` |
 | SHA-256, model addresses, atomic `.part` rename, progress arithmetic | `model-download-contract` (24 checks), `model-store-contract` |
-| release parsing, asset selection, version comparison, SHA extraction, runner bytes | `update-contract`, `update-service-contract` |
+| release parsing, asset selection, version comparison, SHA extraction, runner bytes, truncated-body guard | `update-contract`, `update-service-contract` |
 | provider seam (catalog + download with injected HTTP/FS) | `model-store-contract` |
 
 ---

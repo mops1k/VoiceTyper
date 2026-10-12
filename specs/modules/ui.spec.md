@@ -250,15 +250,24 @@ roots, the settings presenter and the Qt HTTP client.
   allows one capture at a time.
 - **VT-UI-402.** The test MUST run for at most **8 s**, publishing the live peak every 50 ms and
   logging `"microphone level"` every 0.5 s; cancellation MUST be possible at any time.
-- **VT-UI-403.** The verdict MUST be "heard" when `peak > 0.005`, otherwise
-  «ничего не слышно: проверьте, что микрофон подключён и уровень не на нуле»; the diagnostic
-  detail MUST be appended only on failure.
+- **VT-UI-403.** The verdict MUST be «микрофон слышит звук» when `peak > 0.005`; when audio
+  arrived but stayed under that floor the verdict MUST be «ничего не слышно: проверьте, что
+  микрофон подключён и уровень не на нуле»; the diagnostic detail MUST be appended only on
+  failure.
 - **VT-UI-404.** The meter MUST map the peak to a 60 dB scale and render 22 bands; the indicator
   timer MUST tick every 80 ms.
 - **VT-UI-405.** Callbacks MUST hold a `QPointer<MainWindow>` and a probe generation counter; the
   generation MUST NOT be incremented on stop, so the still-running worker's verdict is accepted.
 - **VT-UI-406.** Starting the test MUST send `paste.set_suspended(true)`-equivalent protection
   only for hotkey capture, not for the test (the test is read-only).
+- **VT-UI-407.** A successful `start()` MUST NOT be taken as proof that audio will arrive
+  (the live build of 12.10.2026 got a session that started and delivered `buffers=0`). The test
+  MUST wait up to 2.5 s for the first captured sample and, if the session stays mute, MUST stop
+  it and restart it exactly once. When no session delivered a sample the verdict MUST be
+  «микрофон не отдал звук — проверьте устройство и повторите» and MUST NOT be the quiet verdict
+  of VT-UI-403; the same rule applies to both compositions. The verdict line MUST log `peak`,
+  the time to the first sample (or `none`), the number of sessions and the backend's
+  buffer/byte counters.
 
 ---
 

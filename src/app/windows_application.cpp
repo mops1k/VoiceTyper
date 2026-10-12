@@ -17,6 +17,7 @@
 
 #include "ui/application_font.hpp"
 #include "app/qt_http_client.hpp"
+#include "app/microphone_probe.hpp"
 #include "ui/ui_text.hpp"
 #include "core/support/model_download_service.hpp"
 #include "core/support/update_service.hpp"
@@ -1056,56 +1057,40 @@ int run(int argc, char** argv)
     services.microphone_probe_cancel = [probe_cancel] { probe_cancel->store(true); };
     services.microphone_probe = [&capture_options, &logger, &capture_executor, &ui_executor,
                                     probe_level, probe_cancel](
-                                    std::function<void(bool, double, QString)> report) {
+                                    std::function<void(ui::WindowServices::MicrophoneProbeOutcome, double, QString)> report) {
         probe_cancel->store(false);
         static_cast<void>(capture_executor.post([&capture_options, &logger, &ui_executor,
                                                     probe_level, probe_cancel,
                                                     report = std::move(report)] {
             platform::WindowsAudioCapture probe(capture_options);
-            const auto started = probe.start(domain::CancellationToken{});
-            if (started.is_error()) {
-                const std::string detail = started.error().to_string();
-                static_cast<void>(logger.write(platform::LogLevel::warn, "microphone test failed", detail));
-                static_cast<void>(ui_executor.post([report, detail] {
-                    report(false, 0.0, QString::fromStdString(detail));
-                }));
-                return;
-            }
-            // The level is published every 50 ms, which is what lets the meter move with
-            // the voice. The probe runs for up to half a minute instead of the old 2.5 s
-            // sleep so the indicator stays alive while the user speaks, and the button
-            // stops it early.
-            // Eight seconds: long enough to watch the meter follow the voice and to press
-            // "Остановить", short enough that the block never hangs without a verdict.
-            const auto probe_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(8);
-            int ticks = 0;
-            while (!probe_cancel->load() && std::chrono::steady_clock::now() < probe_deadline) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(50));
-                probe_level->store(probe.live_peak());
-                // One line per half second: the numbers behind the meter, so a silent
-                // indicator can be told from a silent microphone from the log alone.
-                if (++ticks % 10 == 0) {
-                    static_cast<void>(logger.write(platform::LogLevel::info, "microphone level",
-                        "peak=" + std::to_string(probe_level->load())));
-                }
-            }
-            probe_level->store(0.0);
-            const auto stopped = probe.stop();
-            double peak = 0.0;
-            if (stopped.is_ok()) {
-                for (const float sample : stopped.value().samples()) {
-                    peak = std::max(peak, std::abs(static_cast<double>(sample)));
-                }
-            }
-            const std::string backend = probe.backend_description();
-            // 0.5 % of full scale is the floor the .NET build never checked: below it
-            // the microphone is silent, muted or not connected.
-            const bool heard = peak > 0.005;
+            // The policy lives in app/microphone_probe.hpp: a successful start() is not a
+            // promise of audio (the live build got buffers=0 on the first press), so the
+            // probe waits for the first sample and restarts the session once if it stays
+            // mute. On Linux the same rule runs over the libpulse backend.
+            const auto outcome = run_microphone_probe(probe, *probe_cancel,
+                [probe_level](double peak) { probe_level->store(peak); });
+            const bool heard = outcome.verdict == MicrophoneProbeVerdict::heard;
+            // The verdict and the numbers behind it go to the journal, so a silent meter can
+            // be told from a session that never delivered anything.
             static_cast<void>(logger.write(heard ? platform::LogLevel::info : platform::LogLevel::warn,
-                "microphone test", "peak=" + std::to_string(peak) + " backend=" + backend));
-            const QString detail = QString::fromStdString(backend);
-            static_cast<void>(ui_executor.post([report, heard, peak, detail] {
-                report(heard, peak, detail);
+                outcome.start_error.empty() ? "microphone test" : "microphone test failed",
+                "peak=" + std::to_string(outcome.peak)
+                    + (outcome.first_buffer_ms >= 0
+                            ? " first_buffer_ms=" + std::to_string(outcome.first_buffer_ms)
+                            : std::string(" first_buffer_ms=none"))
+                    + " sessions=" + std::to_string(outcome.sessions)
+                    + (outcome.start_error.empty() ? std::string()
+                                                   : " error=" + outcome.start_error)
+                    + " backend=" + outcome.backend));
+            const QString detail = QString::fromStdString(
+                outcome.start_error.empty() ? outcome.backend : outcome.start_error);
+            const auto ui_outcome = outcome.verdict == MicrophoneProbeVerdict::heard
+                ? ui::WindowServices::MicrophoneProbeOutcome::heard
+                : outcome.verdict == MicrophoneProbeVerdict::silent
+                    ? ui::WindowServices::MicrophoneProbeOutcome::silent
+                    : ui::WindowServices::MicrophoneProbeOutcome::no_audio;
+            static_cast<void>(ui_executor.post([report, ui_outcome, peak = outcome.peak, detail] {
+                report(ui_outcome, peak, detail);
             }));
         }));
     };

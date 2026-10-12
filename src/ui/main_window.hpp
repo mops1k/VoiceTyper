@@ -113,9 +113,19 @@ struct WindowServices {
     /// disabled and says why.
     std::function<int()> microphone_level_get;
     std::function<bool(int percent)> microphone_level_set;
-    /// A short capture for the "test the microphone" button: whether sound arrived,
-    /// its peak, and a detail line for the log. The callback runs on the UI thread.
-    std::function<void(std::function<void(bool heard, double peak, QString detail)>)> microphone_probe;
+    /// What a microphone probe concluded. Three states, not two: "the device delivered
+    /// no audio at all" is not the same answer as "it delivered audio but stayed quiet"
+    /// - accusing the user's microphone of being silent when the capture never produced a
+    /// sample is what the live build did on 12.10.2026.
+    enum class MicrophoneProbeOutcome : std::uint8_t {
+        heard = 0,
+        silent = 1,
+        no_audio = 2,
+    };
+    /// A short capture for the "test the microphone" button: what it concluded, the peak,
+    /// and a detail line for the log. The callback runs on the UI thread.
+    std::function<void(std::function<void(MicrophoneProbeOutcome outcome, double peak, QString detail)>)>
+        microphone_probe;
     /// The live peak (0..1) of the capture the running probe started, or unset on a
     /// platform whose probe cannot report while it runs. The meter polls it while the
     /// test is on.

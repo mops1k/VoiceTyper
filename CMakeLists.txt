@@ -590,6 +590,23 @@ if(VOICETYPER_BUILD_TESTS)
         PASS_REGULAR_EXPRESSION "noise-suppression-contract: OK"
     )
 
+    # The microphone-probe policy (app/microphone_probe.hpp): a successful start() is not a
+    # promise of audio, so the rule "wait for the first sample, restart the session once if
+    # it stays mute, never call silence a quiet microphone" is pinned with a fake capture.
+    add_executable(voicetyper-microphone-probe-contract EXCLUDE_FROM_ALL
+        tests/contract/microphone_probe_contract.cpp
+    )
+    target_link_libraries(voicetyper-microphone-probe-contract
+        PRIVATE
+            voicetyper_audio
+            voicetyper_domain
+    )
+    voicetyper_set_warnings(voicetyper-microphone-probe-contract)
+    add_test(NAME microphone-probe-contract COMMAND voicetyper-microphone-probe-contract)
+    set_tests_properties(microphone-probe-contract PROPERTIES
+        PASS_REGULAR_EXPRESSION "microphone-probe-contract: OK"
+    )
+
     add_executable(voicetyper-model-download-contract EXCLUDE_FROM_ALL
         tests/contract/model_download_contract.cpp
     )
@@ -1496,6 +1513,7 @@ add_custom_target(voicetyper-tests
         voicetyper-whisper-native-contract
 
     DEPENDS voicetyper-noise-suppression-contract
+    DEPENDS voicetyper-microphone-probe-contract
     DEPENDS voicetyper-model-download-contract)
 
 # The Windows-only suites cannot be listed in the target above: this project builds

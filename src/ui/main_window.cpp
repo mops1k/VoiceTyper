@@ -3998,7 +3998,7 @@ void MainWindow::bind_microphone_controls()
         show_state(UiKey::k148, UiKey::k25);
         level_meter_set_testing(microphone_level_meter_, true);
         show_verdict(ui_text(UiKey::k59, language_));
-        services_.microphone_probe([self, generation](bool heard, double peak, QString detail) {
+        services_.microphone_probe([self, generation](WindowServices::MicrophoneProbeOutcome outcome, double peak, QString detail) {
             if (self == nullptr || generation != self->microphone_probe_generation_) {
                 return;
             }
@@ -4013,7 +4013,15 @@ void MainWindow::bind_microphone_controls()
             self->microphone_test_state_->setText(ui_text(UiKey::k147, self->language_));
             self->microphone_test_->setProperty("uiKey", static_cast<int>(UiKey::k149));
             self->microphone_test_->setText(ui_text(UiKey::k149, self->language_));
-            QString verdict = ui_text(heard ? UiKey::k61 : UiKey::k62, self->language_);
+            const bool heard = outcome == WindowServices::MicrophoneProbeOutcome::heard;
+            // Three verdicts: heard, delivered-but-quiet, and "the device produced no audio
+            // at all" - the last one used to be shown as "ничего не слышно", which blamed the
+            // user's microphone for a capture session that never delivered a sample
+            // (reported from the running build, 12.10.2026).
+            const UiKey verdict_key = outcome == WindowServices::MicrophoneProbeOutcome::heard
+                ? UiKey::k61
+                : outcome == WindowServices::MicrophoneProbeOutcome::silent ? UiKey::k62 : UiKey::k190;
+            QString verdict = ui_text(verdict_key, self->language_);
             // The backend text is for the journal, not for the card: on success the user
             // needs the plain sentence, and the reason matters only when the probe failed.
             if (!detail.isEmpty() && !heard) {

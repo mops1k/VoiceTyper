@@ -1,6 +1,6 @@
 #include "asr/engine_parameters.hpp"
 
-#include "domain/audio_wav.hpp"
+#include "audio/audio_wav.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -158,7 +158,7 @@ Result<WavAudio> build_warmup_wav()
 {
     const std::vector<float> silence(kWarmupSamples, 0.0f);
     std::string bytes;
-    const auto written = domain::write_wav_pcm16(silence, bytes);
+    const auto written = audio::write_wav_pcm16(silence, bytes);
     if (written.is_error()) {
         return Result<WavAudio>::failure(written.code(), written.message());
     }

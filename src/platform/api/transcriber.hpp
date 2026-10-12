@@ -36,11 +36,11 @@
 // worker thread, never from the UI thread. The instance itself is owned by the
 // caller and used from one thread at a time (the engine manager serializes).
 
-#include "domain/audio_format.hpp"
+#include "audio/audio_format.hpp"
 #include "domain/cancellation.hpp"
 #include "domain/error.hpp"
 #include "domain/settings.hpp"
-#include "domain/speech_segments.hpp"
+#include "audio/speech_segments.hpp"
 
 #include <cstddef>
 #include <filesystem>
@@ -48,14 +48,14 @@
 
 namespace voicetyper::platform {
 
-using domain::AudioFormat;
+using audio::AudioFormat;
 using domain::CancellationToken;
 using domain::ErrorCode;
 using domain::RecognitionLanguage;
 using domain::Result;
 using domain::Status;
 using domain::TranscriptionEngine;
-using domain::WavAudio;
+using audio::WavAudio;
 
 /// One transcription request.
 struct TranscriptionRequest {
@@ -77,7 +77,7 @@ struct TranscriptionRequest {
     /// A detector's answer for this audio, when the caller already ran one: an
     /// engine that needs speech spans uses it instead of detecting again, so one
     /// dictation never pays for two detection passes. Empty means "detect yourself".
-    domain::SpeechMap speech_map;
+    audio::SpeechMap speech_map;
 };
 
 /// Declares which request fields an engine actually applies.

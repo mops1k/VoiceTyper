@@ -1,7 +1,7 @@
 #include "asr/engine_parameters.hpp"
 
 #include "asr/whisper_native.hpp"
-#include "domain/audio_wav.hpp"
+#include "audio/audio_wav.hpp"
 
 #include <cmath>
 #include <iostream>
@@ -127,7 +127,7 @@ void check_warmup_wav()
     check(wav.is_ok(), "the warm-up WAV is built");
     check(wav.value().bytes == kWarmupWavBytes, "the warm-up WAV is exactly 9644 bytes");
     check(wav.value().has_samples(), "the warm-up WAV carries its samples, not only metadata");
-    const auto reread = domain::read_wav_pcm16(wav.value().file_view());
+    const auto reread = audio::read_wav_pcm16(wav.value().file_view());
     check(reread.is_ok() && reread.value().size() == kWarmupSamples,
         "the warm-up WAV decodes back to 4800 silent samples");
     for (const auto sample : reread.value()) {

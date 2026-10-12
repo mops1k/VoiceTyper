@@ -20,6 +20,8 @@
 
 namespace {
 
+using namespace voicetyper::audio;
+
 using voicetyper::domain::apply_terms;
 using voicetyper::domain::TermsDictionaryPort;
 using voicetyper::domain::kDefaultTermsDictionary;
@@ -458,7 +460,7 @@ void check_prompt_is_bounded()
 /// A port that answers with a fixed transcript. The decorator is tested through
 /// a port and not through an engine on purpose: the replacement must be
 /// independent of which engine produced the text.
-class FixedTranscriptPort final : public voicetyper::domain::TranscriptionPort {
+class FixedTranscriptPort final : public voicetyper::audio::TranscriptionPort {
 public:
     explicit FixedTranscriptPort(std::string text)
         : text_(std::move(text))
@@ -466,8 +468,8 @@ public:
     }
 
     [[nodiscard]] voicetyper::domain::Result<std::string> transcribe(
-        const voicetyper::domain::SampleBuffer&,
-        const voicetyper::domain::SessionOptions&,
+        const voicetyper::audio::SampleBuffer&,
+        const voicetyper::audio::SessionOptions&,
         const voicetyper::domain::CancellationToken&) override
     {
         return text_;
@@ -482,7 +484,7 @@ void check_port_applies_the_dictionary()
     FixedTranscriptPort whisper_like("Добавь комит в ветку.");
     TermsDictionaryPort decorated(whisper_like, [] { return std::string("комит=commit"); });
     const auto result = decorated.transcribe(
-        voicetyper::domain::SampleBuffer{}, voicetyper::domain::SessionOptions{},
+        voicetyper::audio::SampleBuffer{}, voicetyper::audio::SessionOptions{},
         voicetyper::domain::CancellationToken{});
     check(result.is_ok(), "port: a successful transcription stays successful");
     check_text(result.is_ok() ? result.value() : std::string(), "Добавь commit в ветку.",
@@ -493,7 +495,7 @@ void check_port_applies_the_dictionary()
     FixedTranscriptPort gigaam_like("Отправь апи на сервер.");
     TermsDictionaryPort other(gigaam_like, [] { return std::string("апи=API"); });
     const auto other_result = other.transcribe(
-        voicetyper::domain::SampleBuffer{}, voicetyper::domain::SessionOptions{},
+        voicetyper::audio::SampleBuffer{}, voicetyper::audio::SessionOptions{},
         voicetyper::domain::CancellationToken{});
     check_text(other_result.is_ok() ? other_result.value() : std::string(), "Отправь API на сервер.",
         "port: the same decorator works for a different engine");
@@ -502,7 +504,7 @@ void check_port_applies_the_dictionary()
     FixedTranscriptPort plain("Добавь комит в ветку.");
     TermsDictionaryPort untouched(plain, [] { return std::string(); });
     const auto plain_result = untouched.transcribe(
-        voicetyper::domain::SampleBuffer{}, voicetyper::domain::SessionOptions{},
+        voicetyper::audio::SampleBuffer{}, voicetyper::audio::SessionOptions{},
         voicetyper::domain::CancellationToken{});
     check_text(plain_result.is_ok() ? plain_result.value() : std::string(), "Добавь комит в ветку.",
         "port: without a dictionary the transcript is returned as it was");
@@ -511,23 +513,23 @@ void check_port_applies_the_dictionary()
     std::string live = "комит=commit";
     FixedTranscriptPort changing("комит");
     TermsDictionaryPort live_port(changing, [&live] { return live; });
-    const auto first = live_port.transcribe(voicetyper::domain::SampleBuffer{},
-        voicetyper::domain::SessionOptions{}, voicetyper::domain::CancellationToken{});
+    const auto first = live_port.transcribe(voicetyper::audio::SampleBuffer{},
+        voicetyper::audio::SessionOptions{}, voicetyper::domain::CancellationToken{});
     check_text(first.is_ok() ? first.value() : std::string(), "commit",
         "port: first call uses the current dictionary");
     live = "комит=коммит";
-    const auto second = live_port.transcribe(voicetyper::domain::SampleBuffer{},
-        voicetyper::domain::SessionOptions{}, voicetyper::domain::CancellationToken{});
+    const auto second = live_port.transcribe(voicetyper::audio::SampleBuffer{},
+        voicetyper::audio::SessionOptions{}, voicetyper::domain::CancellationToken{});
     check_text(second.is_ok() ? second.value() : std::string(), "коммит",
         "port: a changed dictionary applies to the next call");
 }
 
 /// A failure must travel through the decorator unchanged: no text, no rewrite.
-class FailingPort final : public voicetyper::domain::TranscriptionPort {
+class FailingPort final : public voicetyper::audio::TranscriptionPort {
 public:
     [[nodiscard]] voicetyper::domain::Result<std::string> transcribe(
-        const voicetyper::domain::SampleBuffer&,
-        const voicetyper::domain::SessionOptions&,
+        const voicetyper::audio::SampleBuffer&,
+        const voicetyper::audio::SessionOptions&,
         const voicetyper::domain::CancellationToken&) override
     {
         return voicetyper::domain::Result<std::string>::failure(
@@ -544,7 +546,7 @@ void check_port_corrects_plain_terms()
     FixedTranscriptPort engine_like("Добавь комит в ветку и сделай пуш.");
     TermsDictionaryPort decorated(engine_like, [] { return std::string("COMMIT, PUSH"); });
     const auto result = decorated.transcribe(
-        voicetyper::domain::SampleBuffer{}, voicetyper::domain::SessionOptions{},
+        voicetyper::audio::SampleBuffer{}, voicetyper::audio::SessionOptions{},
         voicetyper::domain::CancellationToken{});
     check(result.is_ok(), "port plain: a successful transcription stays successful");
     check_text(result.is_ok() ? result.value() : std::string(),
@@ -557,7 +559,7 @@ void check_port_passes_failures_through()
     FailingPort failing;
     TermsDictionaryPort decorated(failing, [] { return std::string("комит=commit"); });
     const auto result = decorated.transcribe(
-        voicetyper::domain::SampleBuffer{}, voicetyper::domain::SessionOptions{},
+        voicetyper::audio::SampleBuffer{}, voicetyper::audio::SessionOptions{},
         voicetyper::domain::CancellationToken{});
     check(result.is_error(), "port: a failure is still a failure");
     check(result.is_error() && result.error().code() == voicetyper::domain::ErrorCode::engine_unavailable,

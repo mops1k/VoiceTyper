@@ -582,7 +582,7 @@ Windows because an external scanner can transiently hold a handle.
 
 ## 12. Phase B audio contracts
 
-`src/domain/audio_wav.*` is a bounded portable audio slice. `AudioBuffer` returns
+`src/audio/audio_wav.*` is a bounded portable audio slice. `AudioBuffer` returns
 `resource_exhausted` on capacity/D7 byte-bound overflow; WAV reading follows the
 C# cursor `8 + size + (size & 1)`, checks audioFormat/bits/channels/sampleRate
 in that order, and rejects stereo/non-PCM/44.1k fixtures. The writer emits
@@ -598,7 +598,7 @@ physical audio are deliberately not claimed by this slice.
 
 ## 13. Phase B VAD contracts
 
-`src/domain/vad.*` contains the portable final-only VAD policy. It keeps the C#
+`src/audio/vad.*` contains the portable final-only VAD policy. It keeps the C#
 segmenter seam, reset hook, relative/absolute segment-time normalization,
 threshold/minimum-speech/no-speech/energy-floor/hold constants and final stop
 reasons. `CallbackSpeechSegmenter` is the cached-context adapter used by a later

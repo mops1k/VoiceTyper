@@ -1,9 +1,9 @@
 #include "asr/gigaam_transcriber.hpp"
 
 #include "asr/engine_parameters.hpp"
-#include "domain/audio_format.hpp"
-#include "domain/audio_wav.hpp"
-#include "domain/speech_segments.hpp"
+#include "audio/audio_format.hpp"
+#include "audio/audio_wav.hpp"
+#include "audio/speech_segments.hpp"
 
 #include <algorithm>
 #include <utility>
@@ -14,13 +14,13 @@ namespace {
 
 /// Canonical WAV -> float samples. Same decoder as the other engines, so a bad
 /// file fails identically everywhere.
-domain::Result<std::vector<float>> samples_of(const domain::WavAudio& wav)
+domain::Result<std::vector<float>> samples_of(const audio::WavAudio& wav)
 {
     if (!wav.has_samples()) {
         return domain::Result<std::vector<float>>::failure(
             domain::ErrorCode::invalid_argument, "the WAV carries no samples");
     }
-    return domain::read_wav_pcm16(wav.file_view());
+    return audio::read_wav_pcm16(wav.file_view());
 }
 
 domain::Result<std::vector<float>> slices(
@@ -39,7 +39,7 @@ domain::Result<std::vector<float>> slices(
 GigaamTranscriber::GigaamTranscriber(
     std::filesystem::path model_path,
     std::unique_ptr<TranscribeEngine> engine,
-    domain::SpeechSegmenter* segmenter)
+    audio::SpeechSegmenter* segmenter)
     : model_path_(std::move(model_path))
     , engine_(std::move(engine))
     , segmenter_(segmenter)
@@ -109,7 +109,7 @@ domain::Status GigaamTranscriber::deep_warmup(const domain::CancellationToken& c
 }
 
 domain::Result<std::string> GigaamTranscriber::transcribe(
-    const domain::WavAudio& wav,
+    const audio::WavAudio& wav,
     const platform::TranscriptionRequest& request,
     const domain::CancellationToken& cancellation)
 {
@@ -138,7 +138,7 @@ domain::Result<std::string> GigaamTranscriber::transcribe(
     }
 
     const double window = engine_->max_audio_seconds();
-    const double duration = static_cast<double>(audio.size()) / static_cast<double>(domain::kTargetSampleRate);
+    const double duration = static_cast<double>(audio.size()) / static_cast<double>(audio::kTargetSampleRate);
 
     // Within the model window (or with no declared window) the clip is decoded in
     // one pass: no chunking, no seam, no risk of a different result.
@@ -152,7 +152,7 @@ domain::Result<std::string> GigaamTranscriber::transcribe(
     // decorator runs Silero before the engine, and re-running it here would make
     // one dictation pay for two detection passes (measured: 355 ms for 3 s of
     // audio, 1369 ms for 30 s).
-    std::vector<domain::SpeechSegment> segments;
+    std::vector<audio::SpeechSegment> segments;
     std::vector<float> probabilities;
     double frame_seconds = 0.0;
     if (!request.speech_map.empty()) {
@@ -179,8 +179,8 @@ domain::Result<std::string> GigaamTranscriber::transcribe(
     // The chunk budget keeps a margin below the declared window so the cut itself
     // never lands on the limit.
     const double budget = std::max(1.0, window - 1.0);
-    const auto chunks = domain::plan_speech_chunks(
-        segments, probabilities, frame_seconds, audio.size(), domain::kTargetSampleRate, budget);
+    const auto chunks = audio::plan_speech_chunks(
+        segments, probabilities, frame_seconds, audio.size(), audio::kTargetSampleRate, budget);
     if (chunks.empty()) {
         return domain::Result<std::string>::failure(
             domain::ErrorCode::out_of_range,
@@ -213,13 +213,13 @@ domain::Result<std::string> GigaamTranscriber::transcribe(
     if (parts.size() == 1) {
         return parts.front();
     }
-    return domain::join_transcripts(parts);
+    return audio::join_transcripts(parts);
 }
 
 domain::Result<std::unique_ptr<platform::Transcriber>> make_gigaam_engine(
     const std::filesystem::path& dll_path,
     const std::filesystem::path& model_path,
-    domain::SpeechSegmenter* segmenter)
+    audio::SpeechSegmenter* segmenter)
 {
     const domain::CancellationToken none;
     auto engine = open_transcribe_engine(dll_path, 0, none);

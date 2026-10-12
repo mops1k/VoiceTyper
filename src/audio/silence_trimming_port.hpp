@@ -1,14 +1,17 @@
 #pragma once
 
-#include "domain/audio_wav.hpp"
-#include "domain/recording_state_machine.hpp"
-#include "domain/speech_segments.hpp"
-#include "domain/vad.hpp"
+#include "audio/audio_wav.hpp"
+#include "audio/transcription_port.hpp"
+#include "audio/speech_segments.hpp"
+#include "audio/vad.hpp"
 
 #include <algorithm>
 #include <cstddef>
 
-namespace voicetyper::domain {
+namespace voicetyper::audio {
+
+using domain::CancellationToken;
+using domain::Result;
 
 /// Drops the silence around a dictation and compresses long pauses before the
 /// engine sees the audio.
@@ -106,4 +109,4 @@ private:
     Report report_;
 };
 
-} // namespace voicetyper::domain
+} // namespace voicetyper::audio

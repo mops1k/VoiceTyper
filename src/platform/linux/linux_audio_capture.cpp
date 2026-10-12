@@ -143,7 +143,7 @@ void LinuxAudioCapture::capture_main()
 
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        device_format_ = AudioFormat(spec.rate, spec.channels, domain::SampleFormat::pcm_s16);
+        device_format_ = AudioFormat(spec.rate, spec.channels, audio::SampleFormat::pcm_s16);
         device_id_ = options_.device_id;
         backend_ = std::string("pulse ") + std::to_string(spec.rate) + " Hz "
             + std::to_string(spec.channels) + " ch";
@@ -180,7 +180,7 @@ void LinuxAudioCapture::capture_main()
         // D7: the session is bounded. Once the bound is hit the audio is dropped
         // and stop() reports resource_exhausted instead of returning a silently
         // truncated recording.
-        if (session_.size() + converted.size() > domain::kMaxRecordingBytes) {
+        if (session_.size() + converted.size() > audio::kMaxRecordingBytes) {
             overflowed_ = true;
             continue;
         }
@@ -199,12 +199,12 @@ std::vector<float> LinuxAudioCapture::to_16k_mono_locked(std::size_t from, std::
         session_.begin() + static_cast<std::ptrdiff_t>(to));
     const auto channels = device_format_.channel_count();
     if (channels <= 1) {
-        return domain::resample_to_16k(slice, device_format_.sample_rate());
+        return audio::resample_to_16k(slice, device_format_.sample_rate());
     }
     if (channels == 2) {
-        return domain::resample_to_16k(domain::downmix_to_mono(slice), device_format_.sample_rate());
+        return audio::resample_to_16k(audio::downmix_to_mono(slice), device_format_.sample_rate());
     }
-    // More than two channels is rare for a capture source; domain::downmix_to_mono
+    // More than two channels is rare for a capture source; audio::downmix_to_mono
     // is specified as a stereo average, so the N-channel average is done here
     // with the same rule.
     std::vector<float> mono(slice.size() / channels);
@@ -215,7 +215,7 @@ std::vector<float> LinuxAudioCapture::to_16k_mono_locked(std::size_t from, std::
         }
         mono[frame] = sum / static_cast<float>(channels);
     }
-    return domain::resample_to_16k(mono, device_format_.sample_rate());
+    return audio::resample_to_16k(mono, device_format_.sample_rate());
 }
 
 Result<SampleBuffer> LinuxAudioCapture::stop()

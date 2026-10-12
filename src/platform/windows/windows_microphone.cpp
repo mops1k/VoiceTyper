@@ -325,7 +325,7 @@ NameResult read_friendly_name(IMMDevice* device)
 /// Best-effort mix format of an endpoint. The contract allows an invalid
 /// (rate 0) format when the backend could not determine one, so a refused probe
 /// is not an error; it only leaves native_format unset.
-domain::AudioFormat probe_mix_format(IMMDevice* device)
+audio::AudioFormat probe_mix_format(IMMDevice* device)
 {
     ComPtr<IAudioClient> client;
     if (FAILED(device->Activate(
@@ -337,14 +337,14 @@ domain::AudioFormat probe_mix_format(IMMDevice* device)
         ::CoTaskMemFree(mix);
         return {};
     }
-    const domain::AudioFormat format(
+    const audio::AudioFormat format(
         static_cast<std::uint32_t>(mix->nSamplesPerSec),
         static_cast<std::uint16_t>(mix->nChannels),
-        mix->wFormatTag == WAVE_FORMAT_IEEE_FLOAT ? domain::SampleFormat::ieee_float32
-                                                  : domain::SampleFormat::pcm_s16);
+        mix->wFormatTag == WAVE_FORMAT_IEEE_FLOAT ? audio::SampleFormat::ieee_float32
+                                                  : audio::SampleFormat::pcm_s16);
     const bool usable = format.validate().is_ok();
     ::CoTaskMemFree(mix);
-    return usable ? format : domain::AudioFormat();
+    return usable ? format : audio::AudioFormat();
 }
 
 } // namespace

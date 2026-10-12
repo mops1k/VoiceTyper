@@ -16,7 +16,7 @@ This file is the entry point. Module-level requirements live in
 
 | Module spec | Covers | Source tree |
 |---|---|---|
-| [domain.spec.md](modules/domain.spec.md) | settings schema, recording state machine, VAD/segmentation, terms dictionary, text output, errors | `src/domain/` |
+| [domain.spec.md](modules/domain.spec.md) | settings schema, recording state machine, VAD/segmentation, terms dictionary, text output, errors | `src/domain/`, `src/audio/` |
 | [platform.spec.md](modules/platform.spec.md) | frozen backend interfaces (ports) and their Win32/portable implementations | `src/platform/` |
 | [asr.spec.md](modules/asr.spec.md) | recognition engines, engine host lifecycle, Silero VAD, native libraries | `src/asr/`, `native/` |
 | [core-support.spec.md](modules/core-support.spec.md) | paths, logger, CPU topology, update manifest/service/launcher, model download, SHA-256 | `src/core/support/`, `src/domain/app_paths.hpp`, `src/domain/file_logger.hpp` |
@@ -136,8 +136,8 @@ Dependencies point inward; the portable layer MUST NOT include Qt or an OS SDK.
 +-------v--------+          +----------v---------+      +----------v---------+
 | src/domain     |          | src/asr            |      | src/core/support   |
 | settings, FSM, |          | EngineHost,        |      | update, download,  |
-| VAD, terms,    |          | registries,        |      | sha256, paths,     |
-| audio, text    |          | silero segmenter   |      | logger, cpu        |
+| terms, text,   |          | registries,        |      | sha256, paths,     |
+| errors         |          | silero segmenter   |      | logger, cpu        |
 +-------+--------+          +----------+---------+      +--------------------+
         |                              |
         |                   +----------v---------+
@@ -156,13 +156,27 @@ adapter of the `platform::HttpClient` port (`qt_http_client.*`) and the portable
 view model (`settings_presenter.*`, target `voicetyper_presenter`, no Qt). A fork
 must keep widget code in `src/ui/` and everything else in `src/app/`.
 
+The audio layer is `src/audio/` (targets `voicetyper_audio` and `voicetyper_vad`):
+PCM/WAV formats, resampling, downmix, noise suppression, the VAD and the speech
+segments, plus the transcription contract itself - `SessionOptions`,
+`TranscriptionPort` and the `SilenceTrimmingPort` decorator. It is portable: it
+includes no Qt and no OS header, and depends only on the vocabulary headers
+(`domain/error.hpp`, `domain/settings.hpp`, `domain/cancellation.hpp`). `src/domain`
+(the recording machine, the terms dictionary) and
+`src/platform/api/transcriber.hpp` use its types; the OS capture backends
+(`wasapi_capture`, `windows_audio_capture`, `linux_audio_capture`,
+`pulse_support`) stay in `src/platform/`, because they are backends of the
+`platform::AudioCapture`/`Microphone` ports (VT-SYS-030), and the model-based
+Silero segmenter stays in `src/asr/` (`silero_segmenter.*`), because it needs the
+native model runtime.
+
 - **VT-SYS-030 — Ports are the only crossing point.** Code above `src/platform/`
   MUST depend on `src/platform/api/*.hpp` (abstract interfaces) and MUST NOT call
   Win32 APIs directly. Every backend implements a port behind its own CMake target
   ([CMakeLists.txt:79-85](../CMakeLists.txt#L79-L85) declares `voicetyper_platform` as header-only and deliberately links nothing).
-- **VT-SYS-031 — Portable layer stays portable.** `src/domain/`, `src/platform/api/`
-  and `src/platform/portable/` MUST compile without Qt and without `<windows.h>`; this is
-  enforced at configure time by `voicetyper_check_portable_headers`
+- **VT-SYS-031 — Portable layer stays portable.** `src/domain/`, `src/audio/`,
+  `src/platform/api/` and `src/platform/portable/` MUST compile without Qt and without
+  `<windows.h>`; this is enforced at configure time by `voicetyper_check_portable_headers`
   ([CMakeLists.txt:44-45](../CMakeLists.txt#L44-L45), `cmake/PortableHeaders.cmake`) and re-checked by the `portable-headers` CTest.
 - **VT-SYS-031a — Linux backends follow the same layering.** `src/platform/linux/` MUST be
   split into a Qt-free target (`voicetyper_platform_linux`), a Qt-dependent part
@@ -178,12 +192,12 @@ must keep widget code in `src/ui/` and everything else in `src/app/`.
 
 ### 2.2 Key runtime components and their responsibilities
 
-**Placeholder directories.** `src/audio/` contains only a `.gitkeep`
-(`"Audio subsystem placeholder for a later migration phase."`). It holds no code:
-audio DSP lives in `src/domain/audio_wav.*`. `src/ui/` stopped being a placeholder
-on 2026-10-12: it is now the Qt widget layer (VT-UI-1xx), and `src/app/` keeps the
-entry point, the composition roots and the portable settings presenter. A
-specification MUST NOT attribute behavior to `src/audio/`.
+**Layer directories.** There are no placeholder directories left: `src/audio/`
+became a real layer on 2026-10-12 (VT-SYS-031) and its `.gitkeep` is gone - the
+portable audio DSP, the VAD, the speech segments and the transcription contract
+live there. `src/ui/` became the Qt widget layer on the same day (VT-UI-1xx), and
+`src/app/` keeps the entry point, the composition roots and the portable settings
+presenter.
 
 | Component | Responsibility | Requirement block |
 |---|---|---|
@@ -465,6 +479,7 @@ The frozen ports are:
 |---|---|
 | Port | An abstract interface in `src/platform/api/*.hpp` that a backend implements. |
 | Composition root | `src/app/windows_application.cpp`: the one place where real backends are assembled. |
+| Audio layer | `src/audio/`: portable PCM/WAV, resampling, downmix, noise suppression, VAD, speech segments, and the transcription contract (`SessionOptions`, `TranscriptionPort`). |
 | Widget layer | `src/ui/`: the Qt 6 Widgets settings window, tray, status overlay, string tables and bundled typefaces (target `voicetyper_ui`). |
 | Final-only | A transcript is emitted once, after recording stops; no streaming preview. |
 | Epoch | A generation counter that invalidates superseded loads/results (`asr::EngineHost`). |

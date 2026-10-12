@@ -48,7 +48,7 @@
 #include "domain/app_paths.hpp"
 #include "domain/file_logger.hpp"
 #include "domain/recording_state_machine.hpp"
-#include "domain/silence_trimming_port.hpp"
+#include "audio/silence_trimming_port.hpp"
 #include "domain/terms_dictionary.hpp"
 #include "domain/terms_dictionary_port.hpp"
 #include "domain/version.hpp"
@@ -245,7 +245,7 @@ public:
         return status;
     }
 
-    domain::Result<domain::SampleBuffer> stop() override
+    domain::Result<audio::SampleBuffer> stop() override
     {
         if (guard_ != nullptr) {
             guard_->disarm();
@@ -284,7 +284,7 @@ public:
         return inner_.cancel();
     }
 
-    domain::Result<domain::SampleBuffer> drain() override { return inner_.drain(); }
+    domain::Result<audio::SampleBuffer> drain() override { return inner_.drain(); }
 
 private:
     domain::RecordingPort& inner_;
@@ -599,7 +599,7 @@ int run(int argc, char** argv)
     // trimming below. The energy heuristic stays as an EXPLICITLY logged fallback
     // when the model file is missing - the same rule as the engines: a substitution
     // is reported, never silent.
-    domain::EnergySpeechSegmenter energy_segmenter;
+    audio::EnergySpeechSegmenter energy_segmenter;
     std::unique_ptr<asr::SileroSegmenter> silero_segmenter;
     {
         const auto vad_model = models_directory(paths) / "ggml-silero-v6.2.0.bin";
@@ -614,9 +614,9 @@ int run(int argc, char** argv)
                     + "), falling back to the energy detector"));
         }
     }
-    domain::SpeechSegmenter& segmenter = silero_segmenter != nullptr
-        ? static_cast<domain::SpeechSegmenter&>(*silero_segmenter)
-        : static_cast<domain::SpeechSegmenter&>(energy_segmenter);
+    audio::SpeechSegmenter& segmenter = silero_segmenter != nullptr
+        ? static_cast<audio::SpeechSegmenter&>(*silero_segmenter)
+        : static_cast<audio::SpeechSegmenter&>(energy_segmenter);
     asr::NativeEngineRegistryOptions registry_options;
     registry_options.whisper_available = true;
     registry_options.whisper_factory = [](const std::filesystem::path& model) {
@@ -729,7 +729,7 @@ int run(int argc, char** argv)
     // engine receives audio without the silence around the dictation and without
     // the long pauses inside it. The dictionary decorator stays outside it: it
     // rewrites the text that comes back.
-    domain::SilenceTrimmingPort silence_port(engine_host, segmenter);
+    audio::SilenceTrimmingPort silence_port(engine_host, segmenter);
     domain::TermsDictionaryPort dictionary_port(
         silence_port, [&presenter] { return presenter.settings().terms_dictionary; });
     domain::RecordingStateMachine machine(
@@ -817,7 +817,7 @@ int run(int argc, char** argv)
 
     machine.set_options_provider([&presenter] {
         const auto& current = presenter.settings();
-        domain::SessionOptions options;
+        audio::SessionOptions options;
         // The setting the Models page calls "noise reduction".
         options.noise_suppression = presenter.settings().noise_reduction_enabled;
         options.language = current.language;

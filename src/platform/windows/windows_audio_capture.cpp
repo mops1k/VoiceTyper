@@ -19,13 +19,13 @@
 namespace voicetyper::platform {
 namespace {
 
-/// PCM16 -> float, matching the /32768 scaling of domain::read_wav_pcm16 so a
+/// PCM16 -> float, matching the /32768 scaling of audio::read_wav_pcm16 so a
 /// capture and a WAV round-trip of the same bytes produce identical samples.
 constexpr float kPcm16Scale = 1.0f / 32768.0f;
 
 /// D7: one recording is bounded at 512 MiB of float samples, the same bound
-/// domain::SampleBuffer enforces.
-constexpr std::size_t kMaxSessionSamples = domain::kMaxRecordingBytes / sizeof(float);
+/// audio::SampleBuffer enforces.
+constexpr std::size_t kMaxSessionSamples = audio::kMaxRecordingBytes / sizeof(float);
 
 /// An empty id and the legacy "0" both mean "the system default endpoint"
 /// (RawWasapiCapture.ResolveDevice). Repeated here instead of calling
@@ -58,9 +58,9 @@ void append_float32(std::vector<float>& out, const std::byte* data, std::size_t 
     }
 }
 
-domain::SampleBuffer make_sample_buffer(const std::vector<float>& samples)
+audio::SampleBuffer make_sample_buffer(const std::vector<float>& samples)
 {
-    domain::SampleBuffer buffer(samples.size());
+    audio::SampleBuffer buffer(samples.size());
     (void)buffer.append(samples);
     return buffer;
 }
@@ -99,7 +99,7 @@ bool WindowsAudioCapture::is_recording() const noexcept
     return recording_;
 }
 
-domain::AudioFormat WindowsAudioCapture::device_format() const noexcept
+audio::AudioFormat WindowsAudioCapture::device_format() const noexcept
 {
     std::lock_guard<std::mutex> lock(mutex_);
     return device_format_;
@@ -180,7 +180,7 @@ void WindowsAudioCapture::append_packet(const WasapiPacket& packet)
     if (packet.data == nullptr || packet.bytes == 0) {
         return;
     }
-    const domain::AudioFormat format = packet.format;
+    const audio::AudioFormat format = packet.format;
     if (format.validate().is_error()) {
         return;
     }
@@ -197,7 +197,7 @@ void WindowsAudioCapture::append_packet(const WasapiPacket& packet)
         overflowed_ = true;
         return;
     }
-    if (format.sample_format() == domain::SampleFormat::ieee_float32) {
+    if (format.sample_format() == audio::SampleFormat::ieee_float32) {
         append_float32(session_, packet.data, count);
     } else {
         append_pcm16(session_, packet.data, count);
@@ -213,13 +213,13 @@ std::vector<float> WindowsAudioCapture::to_16k_mono_locked(std::size_t from, std
         session_.begin() + static_cast<std::ptrdiff_t>(to));
     const auto channels = device_format_.channel_count();
     if (channels <= 1) {
-        return domain::resample_to_16k(slice, device_format_.sample_rate());
+        return audio::resample_to_16k(slice, device_format_.sample_rate());
     }
     if (channels == 2) {
-        return domain::resample_to_16k(domain::downmix_to_mono(slice), device_format_.sample_rate());
+        return audio::resample_to_16k(audio::downmix_to_mono(slice), device_format_.sample_rate());
     }
     // More than two channels is rare for capture endpoints (a multi-mic array
-    // can expose 4 or 6). domain::downmix_to_mono is specified as a stereo
+    // can expose 4 or 6). audio::downmix_to_mono is specified as a stereo
     // average, so the N-channel average is done here with the same rule.
     std::vector<float> mono(slice.size() / channels);
     for (std::size_t frame = 0; frame < mono.size(); ++frame) {
@@ -229,7 +229,7 @@ std::vector<float> WindowsAudioCapture::to_16k_mono_locked(std::size_t from, std
         }
         mono[frame] = sum / static_cast<float>(channels);
     }
-    return domain::resample_to_16k(mono, device_format_.sample_rate());
+    return audio::resample_to_16k(mono, device_format_.sample_rate());
 }
 
 Status WindowsAudioCapture::start(const domain::CancellationToken& cancellation)
@@ -247,7 +247,7 @@ Status WindowsAudioCapture::start(const domain::CancellationToken& cancellation)
         diagnostics_.clear();
         device_id_.clear();
         backend_.clear();
-        device_format_ = domain::AudioFormat();
+        device_format_ = audio::AudioFormat();
         end_reason_ = WasapiEndReason::completed;
         // Opened before the device is: a packet can arrive before start()
         // returns, and dropping it would lose the first few milliseconds of
@@ -276,15 +276,15 @@ Status WindowsAudioCapture::start(const domain::CancellationToken& cancellation)
                 WasapiPacket packet;
                 packet.data = static_cast<const std::byte*>(data);
                 packet.bytes = static_cast<std::size_t>(bytes);
-                packet.format = domain::AudioFormat(static_cast<std::uint32_t>(rate),
-                    static_cast<std::uint16_t>(channels), domain::SampleFormat::pcm_s16);
+                packet.format = audio::AudioFormat(static_cast<std::uint32_t>(rate),
+                    static_cast<std::uint16_t>(channels), audio::SampleFormat::pcm_s16);
                 append_packet(packet);
             });
         if (native_started.is_ok()) {
             std::lock_guard<std::mutex> lock(mutex_);
             mc_session_ = std::move(session);
-            device_format_ = domain::AudioFormat(
-                options_.sample_rate, options_.channel_count, domain::SampleFormat::pcm_s16);
+            device_format_ = audio::AudioFormat(
+                options_.sample_rate, options_.channel_count, audio::SampleFormat::pcm_s16);
             backend_ = "mc_wasapi.dll native " + std::to_string(options_.sample_rate) + "Hz "
                 + std::to_string(options_.channel_count) + "ch PCM16";
             device_id_ = options_.device_id;
@@ -348,14 +348,14 @@ Status WindowsAudioCapture::start(const domain::CancellationToken& cancellation)
     return Status::success();
 }
 
-Result<domain::SampleBuffer> WindowsAudioCapture::stop()
+Result<audio::SampleBuffer> WindowsAudioCapture::stop()
 {
     std::unique_ptr<WasapiCapture> capture;
     std::unique_ptr<McWasapiSession> native_session;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         if (!recording_) {
-            return Result<domain::SampleBuffer>::failure(
+            return Result<audio::SampleBuffer>::failure(
                 domain::ErrorCode::invalid_state, "no recording session is running");
         }
         recording_ = false;
@@ -407,7 +407,7 @@ Result<domain::SampleBuffer> WindowsAudioCapture::stop()
         session_.clear();
         session_.shrink_to_fit();
         drained_ = 0;
-        return Result<domain::SampleBuffer>(domain::Error(
+        return Result<audio::SampleBuffer>(domain::Error(
             domain::ErrorCode::resource_exhausted,
             "the capture exceeded the 512 MiB recording bound",
             "dropped " + std::to_string(dropped) + " buffered samples"));
@@ -418,7 +418,7 @@ Result<domain::SampleBuffer> WindowsAudioCapture::stop()
     session_.clear();
     session_.shrink_to_fit();
     drained_ = 0;
-    return Result<domain::SampleBuffer>(make_sample_buffer(converted));
+    return Result<audio::SampleBuffer>(make_sample_buffer(converted));
 }
 
 Status WindowsAudioCapture::cancel()
@@ -462,13 +462,13 @@ Status WindowsAudioCapture::cancel()
     return Status::success();
 }
 
-Result<domain::SampleBuffer> WindowsAudioCapture::drain()
+Result<audio::SampleBuffer> WindowsAudioCapture::drain()
 {
     std::lock_guard<std::mutex> lock(mutex_);
     const std::vector<float> converted = to_16k_mono_locked(drained_, session_.size());
     // The watermark moves; the samples stay. stop() still sees the whole session.
     drained_ = session_.size();
-    return Result<domain::SampleBuffer>(make_sample_buffer(converted));
+    return Result<audio::SampleBuffer>(make_sample_buffer(converted));
 }
 
 } // namespace voicetyper::platform

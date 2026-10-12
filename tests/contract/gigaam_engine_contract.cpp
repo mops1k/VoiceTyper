@@ -19,10 +19,10 @@
 
 #include "asr/gigaam_transcriber.hpp"
 
-#include "domain/audio_format.hpp"
-#include "domain/audio_wav.hpp"
+#include "audio/audio_format.hpp"
+#include "audio/audio_wav.hpp"
 #include "domain/cancellation.hpp"
-#include "domain/vad.hpp"
+#include "audio/vad.hpp"
 
 #include <cstring>
 #include <iostream>
@@ -31,10 +31,12 @@
 
 namespace {
 
+using namespace voicetyper::audio;
+
 using voicetyper::asr::GigaamTranscriber;
 using voicetyper::asr::TranscribeEngine;
 using voicetyper::domain::ErrorCode;
-using voicetyper::domain::WavAudio;
+using voicetyper::audio::WavAudio;
 
 constexpr std::size_t kRate = 16000;
 
@@ -52,7 +54,7 @@ WavAudio wav_of(std::size_t samples)
 {
     const std::vector<float> audio(samples, 0.1f);
     std::string bytes;
-    const auto status = voicetyper::domain::write_wav_pcm16(audio, bytes);
+    const auto status = voicetyper::audio::write_wav_pcm16(audio, bytes);
     if (status.is_error()) {
         ++failures;
         std::cerr << "FAIL could not build a WAV fixture\n";
@@ -117,7 +119,7 @@ struct Built {
     FakeEngine* engine = nullptr; // owned by the transcriber
 };
 
-Built make_transcriber(double window, voicetyper::domain::SpeechSegmenter* segmenter)
+Built make_transcriber(double window, voicetyper::audio::SpeechSegmenter* segmenter)
 {
     auto engine = std::make_unique<FakeEngine>();
     engine->window = window;
@@ -129,10 +131,10 @@ Built make_transcriber(double window, voicetyper::domain::SpeechSegmenter* segme
     return built;
 }
 
-std::unique_ptr<voicetyper::domain::CallbackSpeechSegmenter> segmenter_of(
-    const std::vector<voicetyper::domain::SpeechSegment>& segments)
+std::unique_ptr<voicetyper::audio::CallbackSpeechSegmenter> segmenter_of(
+    const std::vector<voicetyper::audio::SpeechSegment>& segments)
 {
-    return std::make_unique<voicetyper::domain::CallbackSpeechSegmenter>(
+    return std::make_unique<voicetyper::audio::CallbackSpeechSegmenter>(
         [segments](const std::vector<float>&) { return segments; });
 }
 

@@ -13,7 +13,7 @@
 //     because drain() only moves a watermark; the same holds here.
 //   * docs/migration/cpp/compatibility-contracts.md §5: the buffer handed up is
 //     16 kHz mono float, so the conversion is done by the portable audio layer
-//     (domain::downmix_to_mono / domain::resample_to_16k) and not by this file.
+//     (audio::downmix_to_mono / audio::resample_to_16k) and not by this file.
 //
 // Why the conversion lives here and not in the capture backend: the backend is
 // device I/O (src/platform/windows/wasapi_capture.hpp documents the split), and
@@ -32,8 +32,8 @@
 // buffer under a short mutex; no call ever holds that mutex while the device
 // is being stopped, which is what keeps stop() deadlock-free.
 
-#include "domain/audio_format.hpp"
-#include "domain/audio_wav.hpp"
+#include "audio/audio_format.hpp"
+#include "audio/audio_wav.hpp"
 #include "domain/cancellation.hpp"
 #include "domain/error.hpp"
 #include "domain/recording_state_machine.hpp"
@@ -89,7 +89,7 @@ public:
     /// Stops the device, drops the sink, and only then snapshots the whole
     /// session as 16 kHz mono float. Idempotent in effect: with no live session
     /// it returns invalid_state and touches nothing.
-    [[nodiscard]] Result<domain::SampleBuffer> stop() override;
+    [[nodiscard]] Result<audio::SampleBuffer> stop() override;
 
     /// The peak of the last ~0.2 s, 0..1: the settings window reads it while the
     /// microphone test runs, so the level meter follows the voice instead of showing a
@@ -117,12 +117,12 @@ public:
     /// Returns the audio captured since the previous drain, resampled per chunk.
     /// Read-only: it moves a watermark and never clears, so a later stop() still
     /// returns the WHOLE session (the .NET DrainNewBytes/Stop pair).
-    [[nodiscard]] Result<domain::SampleBuffer> drain() override;
+    [[nodiscard]] Result<audio::SampleBuffer> drain() override;
 
     [[nodiscard]] bool is_recording() const noexcept;
     /// The device format of the running (or last stopped) session. Rate 0 before
     /// the first start().
-    [[nodiscard]] domain::AudioFormat device_format() const noexcept;
+    [[nodiscard]] audio::AudioFormat device_format() const noexcept;
     /// Endpoint id actually opened, empty when no session ever succeeded.
     [[nodiscard]] std::string device_id() const;
     /// Human-readable backend, e.g. "WASAPI exclusive/poll 100ms".
@@ -178,7 +178,7 @@ private:
     /// channel layout. Only the watermark moves on drain.
     std::vector<float> session_;
     std::size_t drained_ = 0;
-    domain::AudioFormat device_format_;
+    audio::AudioFormat device_format_;
     std::string device_id_;
     std::string backend_;
     std::string diagnostics_;

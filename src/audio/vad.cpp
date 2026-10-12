@@ -1,10 +1,10 @@
-#include "domain/vad.hpp"
+#include "audio/vad.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <utility>
 
-namespace voicetyper::domain {
+namespace voicetyper::audio {
 
 namespace {
 
@@ -201,4 +201,4 @@ VadStopDecision SilenceAutoStopDetector::process(const std::vector<float>& sampl
     return {};
 }
 
-} // namespace voicetyper::domain
+} // namespace voicetyper::audio

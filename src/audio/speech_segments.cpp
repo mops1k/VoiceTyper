@@ -1,10 +1,10 @@
-#include "domain/speech_segments.hpp"
+#include "audio/speech_segments.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
 
-namespace voicetyper::domain {
+namespace voicetyper::audio {
 namespace {
 
 /// Clamps to the recording, drops empty spans, sorts by start and merges
@@ -400,4 +400,4 @@ std::string join_transcripts(const std::vector<std::string>& parts)
     return joined;
 }
 
-} // namespace voicetyper::domain
+} // namespace voicetyper::audio

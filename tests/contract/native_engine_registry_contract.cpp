@@ -36,7 +36,7 @@ public:
         return domain::Status::success();
     }
     domain::Result<std::string> transcribe(
-        const domain::WavAudio&,
+        const audio::WavAudio&,
         const platform::TranscriptionRequest&,
         const domain::CancellationToken&) override
     {

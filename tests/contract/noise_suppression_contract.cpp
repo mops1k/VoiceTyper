@@ -8,7 +8,7 @@
 // loud speech and the frame handling - because the point of the port is that a Russian phrase
 // stops losing its endings in a noisy room, exactly as in the .NET build.
 
-#include "domain/audio_wav.hpp"
+#include "audio/audio_wav.hpp"
 
 #include <cmath>
 #include <cstdio>
@@ -58,7 +58,7 @@ constexpr std::size_t kFrame = 256;
 void the_high_pass_removes_the_constant_offset()
 {
     std::vector<float> samples(4096, 0.25f);
-    voicetyper::domain::suppress_noise(samples, 16000);
+    voicetyper::audio::suppress_noise(samples, 16000);
     // The first samples carry the filter's transient, so the settled tail is what shows that
     // the constant offset is gone.
     double worst = 0.0;
@@ -71,7 +71,7 @@ void the_high_pass_removes_the_constant_offset()
 void silence_stays_silent_and_finite()
 {
     std::vector<float> samples(4096, 0.0f);
-    voicetyper::domain::suppress_noise(samples, 16000);
+    voicetyper::audio::suppress_noise(samples, 16000);
     bool finite = true;
     double worst = 0.0;
     for (const float value : samples) {
@@ -95,7 +95,7 @@ void quiet_noise_is_damped_more_than_speech()
     const double noise_before = rms(samples, kFrame * 20, kFrame * 20);
     const double speech_before = rms(samples, noise.size() + kFrame * 20, kFrame * 20);
 
-    voicetyper::domain::suppress_noise(samples, 16000);
+    voicetyper::audio::suppress_noise(samples, 16000);
 
     const double noise_after = rms(samples, kFrame * 20, kFrame * 20);
     const double speech_after = rms(samples, noise.size() + kFrame * 20, kFrame * 20);
@@ -109,7 +109,7 @@ void the_result_is_stable_whatever_the_length()
     // not break it, and the sample rate argument must not change the result (the constants are
     // defined for the 16 kHz pipeline).
     std::vector<float> samples = sine(1000, 0.05, 0.1);
-    voicetyper::domain::suppress_noise(samples, 16000);
+    voicetyper::audio::suppress_noise(samples, 16000);
     bool finite = true;
     for (const float value : samples) {
         finite = finite && std::isfinite(value);
@@ -117,7 +117,7 @@ void the_result_is_stable_whatever_the_length()
     check(finite, "неполный последний кадр не ломает фильтр");
 
     std::vector<float> other = sine(1000, 0.05, 0.1);
-    voicetyper::domain::suppress_noise(other, 48000);
+    voicetyper::audio::suppress_noise(other, 48000);
     check(samples == other, "частота дискретизации не меняет результат (константы для 16 кГц)");
 }
 

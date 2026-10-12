@@ -16,8 +16,8 @@
 // which is the synchronous API of the sound server and therefore does not need a
 // main loop of its own. The stream is opened at the device's usual format
 // (48 kHz stereo PCM16, the same the Windows backend asks for) and converted to
-// 16 kHz mono float by the portable DSP (domain::downmix_to_mono /
-// domain::resample_to_16k), so the conversion is identical on both platforms and
+// 16 kHz mono float by the portable DSP (audio::downmix_to_mono /
+// audio::resample_to_16k), so the conversion is identical on both platforms and
 // stays contract-tested without a microphone.
 //
 // Bounded queue (D7): the session buffer is capped at kMaxRecordingBytes of
@@ -30,8 +30,8 @@
 // ever held while the device is being stopped, which is what keeps stop()
 // deadlock-free.
 
-#include "domain/audio_format.hpp"
-#include "domain/audio_wav.hpp"
+#include "audio/audio_format.hpp"
+#include "audio/audio_wav.hpp"
 #include "domain/cancellation.hpp"
 #include "domain/error.hpp"
 #include "domain/recording_state_machine.hpp"
@@ -46,11 +46,12 @@
 
 namespace voicetyper::platform::linuxos {
 
-using domain::AudioFormat;
+using audio::AudioFormat;
 using domain::CancellationToken;
 using domain::ErrorCode;
 using domain::Result;
-using domain::SampleBuffer;
+using audio::SampleBuffer;
+using audio::kMaxRecordingBytes;
 using domain::Status;
 
 class LinuxAudioCapture final : public domain::RecordingPort {

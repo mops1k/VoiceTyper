@@ -1,7 +1,10 @@
 # VoiceTyper — Domain Module Specification
 
-**Covers:** `src/domain/` (portable core: settings, recording state machine, VAD,
-speech segmentation, terms dictionary, text output, audio, errors, paths, logger, CPU).
+**Covers:** `src/domain/` (portable core: settings, recording state machine, terms
+dictionary, text output, errors, paths, logger, CPU) and `src/audio/` (portable
+PCM/WAV, resampling, downmix, noise suppression, VAD, speech segmentation, and the
+transcription contract `SessionOptions`/`TranscriptionPort` the requirements below
+reference).
 **Baseline:** `main` @ `3cc4c5a9a602afb96c2f478a562005f5eb850068` (v2.2.1).
 **Requirement keywords:** RFC 2119. Parent document: [index.spec.md](../index.spec.md).
 **Prefix:** `VT-DOM-*`.
@@ -187,7 +190,8 @@ evidence: `recording-state-machine-contract`.
   float samples; the machine MUST NOT resample. `stop()` MUST return the whole session buffered
   so far. `cancel()` MUST be idempotent. `drain()` MUST be usable without stopping and an empty
   result MUST NOT be an error.
-- **VT-DOM-304.** `TranscriptionPort` MUST expose one blocking call per session — no partial or
+- **VT-DOM-304.** `TranscriptionPort` (`src/audio/transcription_port.hpp`) MUST expose one
+  blocking call per session — no partial or
   streaming entry point. An empty string MUST be a **successful** result; a whitespace-only
   transcript MUST mean "nothing to deliver".
 - **VT-DOM-305.** `TextOutputPort::output(text, auto_paste, cancellation)` MUST return `true`
@@ -300,7 +304,7 @@ Idle ─────────────────────────
 
 ### 4.3 What the engine actually sees
 
-Constants ([src/domain/speech_segments.hpp:51-61](../../src/domain/speech_segments.hpp#L51-L61)):
+Constants ([src/audio/speech_segments.hpp:51-61](../../src/audio/speech_segments.hpp#L51-L61)):
 
 | Constant | Value |
 |---|---|
@@ -353,7 +357,7 @@ Constants ([src/domain/speech_segments.hpp:51-61](../../src/domain/speech_segmen
 ### 4.5 Known gaps
 
 - **G-4.** `lowest_probability_sample` converts frames with a hard-coded `16000.0`
-  ([src/domain/speech_segments.cpp:92](../../src/domain/speech_segments.cpp#L92)) and ignores the `sample_rate`
+  ([src/audio/speech_segments.cpp:92](../../src/audio/speech_segments.cpp#L92)) and ignores the `sample_rate`
   argument of `plan_speech_chunks`; a non-16 kHz call would plan chunks wrongly.
 - **G-5.** Two trimming paths disagree on the default margin: the RMS path
   `audio_wav::trim_silence` defaults to 0.25 s while the segment path uses 0.5 s. The normative
@@ -472,8 +476,8 @@ Contracts: [src/domain/text_output.hpp](../../src/domain/text_output.hpp),
 
 ## 7. Audio (`VT-DOM-7xx`)
 
-Contracts: [src/domain/audio_format.hpp](../../src/domain/audio_format.hpp),
-[src/domain/audio_wav.hpp](../../src/domain/audio_wav.hpp); tests: `audio-dsp-contract`, `noise-suppression-contract`.
+Contracts: [src/audio/audio_format.hpp](../../src/audio/audio_format.hpp),
+[src/audio/audio_wav.hpp](../../src/audio/audio_wav.hpp); tests: `audio-dsp-contract`, `noise-suppression-contract`.
 
 - **VT-DOM-701.** The recognition format MUST be PCM16, mono, 16 kHz
   (`kWhisperSampleRate = 16000`). Device audio MUST be downmixed (channel average, an odd last

@@ -6,8 +6,8 @@
 // Prints "silero-vad-contract: OK" on success; CTest asserts that marker.
 
 #include "asr/silero_segmenter.hpp"
-#include "domain/audio_wav.hpp"
-#include "domain/speech_segments.hpp"
+#include "audio/audio_wav.hpp"
+#include "audio/speech_segments.hpp"
 
 #include <chrono>
 #include <cmath>
@@ -109,7 +109,7 @@ void check_silence_and_frame_data(const std::string& model)
 /// be a positive interval in seconds.
 void check_real_speech_is_found(const std::string& model, const std::string& fixture)
 {
-    const auto audio = voicetyper::domain::read_wav_file(fixture);
+    const auto audio = voicetyper::audio::read_wav_file(fixture);
     if (audio.is_error()) {
         std::cout << "silero-vad-contract: SKIP fixture unreadable (" << fixture << ")\n";
         return;
@@ -153,16 +153,16 @@ int main()
         // without trimming and the two transcripts compared.
         const std::string trimmed_out = environment("VOICETYPER_VAD_TRIMMED_OUT");
         if (!fixture.empty() && !trimmed_out.empty()) {
-            const auto audio = voicetyper::domain::read_wav_file(fixture);
+            const auto audio = voicetyper::audio::read_wav_file(fixture);
             auto segmenter = SileroSegmenter::open(model);
             if (audio.is_ok() && segmenter.is_ok()) {
                 const auto detected = segmenter.value()->detect_speech_no_reset(audio.value());
-                const auto grown = voicetyper::domain::extend_segments_with_energy(
+                const auto grown = voicetyper::audio::extend_segments_with_energy(
                     audio.value(), detected, 16000);
-                const auto trimmed = voicetyper::domain::trim_silence_to_segments(
+                const auto trimmed = voicetyper::audio::trim_silence_to_segments(
                     audio.value(), grown, 16000);
                 std::string bytes;
-                const auto written = voicetyper::domain::write_wav_pcm16(trimmed.samples, bytes);
+                const auto written = voicetyper::audio::write_wav_pcm16(trimmed.samples, bytes);
                 if (written.is_ok()) {
                     std::ofstream out(trimmed_out, std::ios::binary);
                     out.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));

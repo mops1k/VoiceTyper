@@ -113,7 +113,7 @@ target_link_libraries(voicetyper_core_support PUBLIC voicetyper_domain)
 voicetyper_set_warnings(voicetyper_core_support)
 
 add_library(voicetyper_audio STATIC
-    src/domain/audio_wav.cpp
+    src/audio/audio_wav.cpp
 )
 
 add_library(voicetyper_model_download STATIC
@@ -129,8 +129,8 @@ target_link_libraries(voicetyper_audio PUBLIC voicetyper_domain)
 voicetyper_set_warnings(voicetyper_audio)
 
 add_library(voicetyper_vad STATIC
-    src/domain/vad.cpp
-    src/domain/speech_segments.cpp
+    src/audio/vad.cpp
+    src/audio/speech_segments.cpp
 )
 target_link_libraries(voicetyper_vad PUBLIC voicetyper_domain)
 voicetyper_set_warnings(voicetyper_vad)

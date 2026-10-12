@@ -26,8 +26,8 @@
 // grants is a property of that endpoint (the .NET notes record that shared mode
 // is refused on the Intel Smart Sound array), not of this backend.
 
-#include "domain/audio_format.hpp"
-#include "domain/audio_wav.hpp"
+#include "audio/audio_format.hpp"
+#include "audio/audio_wav.hpp"
 #include "domain/cancellation.hpp"
 #include "domain/error.hpp"
 #include "domain/recording_state_machine.hpp"
@@ -42,11 +42,13 @@
 
 namespace {
 
-using voicetyper::domain::AudioFormat;
+using namespace voicetyper::audio;
+
+using voicetyper::audio::AudioFormat;
 using voicetyper::domain::CancellationSource;
 using voicetyper::domain::Error;
 using voicetyper::domain::ErrorCode;
-using voicetyper::domain::SampleBuffer;
+using voicetyper::audio::SampleBuffer;
 using voicetyper::domain::Status;
 using voicetyper::platform::WasapiStrategy;
 using voicetyper::platform::wasapi_strategy_name;
@@ -92,7 +94,7 @@ bool is_no_endpoint_failure(ErrorCode code)
 
 double seconds_of(const SampleBuffer& buffer)
 {
-    return static_cast<double>(buffer.size()) / static_cast<double>(voicetyper::domain::kTargetSampleRate);
+    return static_cast<double>(buffer.size()) / static_cast<double>(voicetyper::audio::kTargetSampleRate);
 }
 
 struct SessionOutcome {

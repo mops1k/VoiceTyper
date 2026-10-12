@@ -107,9 +107,9 @@ struct EngineStateSnapshot {
     std::string last_error;
 };
 
-/// Adapts the platform Transcriber to domain::TranscriptionPort and owns its
+/// Adapts the platform Transcriber to audio::TranscriptionPort and owns its
 /// lifetime across a hotkey-driven dictation.
-class EngineHost final : public domain::TranscriptionPort {
+class EngineHost final : public audio::TranscriptionPort {
 public:
     explicit EngineHost(platform::EngineRegistry& registry);
     ~EngineHost() override;
@@ -129,12 +129,12 @@ public:
     /// Blocks until a background load finished, or the timeout expires.
     bool wait_until_settled(std::chrono::milliseconds timeout);
 
-    /// domain::TranscriptionPort. Returns model_not_ready without touching the
+    /// audio::TranscriptionPort. Returns model_not_ready without touching the
     /// engine when it is not warm, engine_unavailable when the machine cannot
     /// run the selected engine, and cancelled when the token fired.
     [[nodiscard]] domain::Result<std::string> transcribe(
-        const domain::SampleBuffer& audio,
-        const domain::SessionOptions& options,
+        const audio::SampleBuffer& audio,
+        const audio::SessionOptions& options,
         const domain::CancellationToken& cancellation) override;
 
     /// Stops accepting work, asks the background load to stop and joins it. The

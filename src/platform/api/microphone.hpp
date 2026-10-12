@@ -27,7 +27,7 @@
 // Ownership: the returned device list is owned by the caller; ids and names are
 // copied strings.
 
-#include "domain/audio_format.hpp"
+#include "audio/audio_format.hpp"
 #include "domain/error.hpp"
 
 #include <cstdint>
@@ -36,7 +36,7 @@
 
 namespace voicetyper::platform {
 
-using domain::AudioFormat;
+using audio::AudioFormat;
 using domain::ErrorCode;
 using domain::Result;
 using domain::Status;

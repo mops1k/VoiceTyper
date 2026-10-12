@@ -19,8 +19,8 @@
 //   Deliberately NOT exercised automatically: a long dictation, device hotplug
 //   and a denied-device scenario. Those belong to the physical Arch Linux gate.
 
-#include "domain/audio_format.hpp"
-#include "domain/audio_wav.hpp"
+#include "audio/audio_format.hpp"
+#include "audio/audio_wav.hpp"
 #include "domain/cancellation.hpp"
 #include "domain/error.hpp"
 #include "platform/api/microphone.hpp"

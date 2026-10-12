@@ -1,6 +1,6 @@
 #pragma once
 
-#include "domain/vad.hpp"
+#include "audio/vad.hpp"
 
 #include <filesystem>
 #include <memory>
@@ -14,7 +14,7 @@ namespace voicetyper::asr {
 /// whisper library the product links, and the documented model is exactly
 /// `ggml-silero-v6.2.0.bin`, which the models page already installs.
 ///
-/// Contract of the seam it implements (domain::SpeechSegmenter): segments are
+/// Contract of the seam it implements (audio::SpeechSegmenter): segments are
 /// absolute seconds from the start of the buffer the implementation was fed, and
 /// reset() is called between recording sessions. On top of that it reports the
 /// per-frame speech probabilities, which is what lets the GigaAM chunk planner
@@ -22,7 +22,7 @@ namespace voicetyper::asr {
 ///
 /// `whisper.h` is included only in the .cpp, exactly like whisper_native.cpp: the
 /// ABI stays in one translation unit and the seam stays portable.
-class SileroSegmenter final : public domain::SpeechSegmenter {
+class SileroSegmenter final : public audio::SpeechSegmenter {
 public:
     /// Opens the model file. A missing file is an explicit not_found error, never
     /// a silent switch to another detector.
@@ -35,7 +35,7 @@ public:
     SileroSegmenter(SileroSegmenter&&) = delete;
     SileroSegmenter& operator=(SileroSegmenter&&) = delete;
 
-    [[nodiscard]] std::vector<domain::SpeechSegment> detect_speech_no_reset(
+    [[nodiscard]] std::vector<audio::SpeechSegment> detect_speech_no_reset(
         const std::vector<float>& samples) override;
     void reset() override;
 

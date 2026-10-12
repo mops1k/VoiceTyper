@@ -21,6 +21,7 @@
 namespace {
 
 using namespace voicetyper::domain;
+using namespace voicetyper::audio;
 
 int failures = 0;
 

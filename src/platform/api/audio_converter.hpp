@@ -30,7 +30,7 @@
 // Thread affinity: pure and reentrant. Callable from any thread, including a
 // worker thread while the UI thread stays responsive. No shared mutable state.
 
-#include "domain/audio_format.hpp"
+#include "audio/audio_format.hpp"
 #include "domain/error.hpp"
 
 #include <cstdint>
@@ -38,13 +38,13 @@
 
 namespace voicetyper::platform {
 
-using domain::AudioBuffer;
-using domain::AudioFormat;
+using audio::AudioBuffer;
+using audio::AudioFormat;
 using domain::ErrorCode;
 using domain::Result;
-using domain::SampleFormat;
+using audio::SampleFormat;
 using domain::Status;
-using domain::WavAudio;
+using audio::WavAudio;
 
 /// Options for a single conversion pass.
 struct AudioConvertOptions {

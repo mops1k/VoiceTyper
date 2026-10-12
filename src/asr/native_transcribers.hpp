@@ -41,7 +41,7 @@ public:
     domain::Status warmup() override;
     domain::Status deep_warmup(const domain::CancellationToken& cancellation) override;
     [[nodiscard]] domain::Result<std::string> transcribe(
-        const domain::WavAudio& wav,
+        const audio::WavAudio& wav,
         const platform::TranscriptionRequest& request,
         const domain::CancellationToken& cancellation) override;
 
@@ -71,7 +71,7 @@ public:
     domain::Status warmup() override;
     domain::Status deep_warmup(const domain::CancellationToken& cancellation) override;
     [[nodiscard]] domain::Result<std::string> transcribe(
-        const domain::WavAudio& wav,
+        const audio::WavAudio& wav,
         const platform::TranscriptionRequest& request,
         const domain::CancellationToken& cancellation) override;
 

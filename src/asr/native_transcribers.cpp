@@ -1,7 +1,7 @@
 #include "asr/native_transcribers.hpp"
 
 #include "asr/engine_parameters.hpp"
-#include "domain/audio_wav.hpp"
+#include "audio/audio_wav.hpp"
 
 #include <utility>
 
@@ -10,13 +10,13 @@ namespace {
 
 /// Canonical WAV -> float samples. One decoder for both engines, so a bad file
 /// fails the same way regardless of which engine is selected.
-domain::Result<std::vector<float>> samples_of(const domain::WavAudio& wav)
+domain::Result<std::vector<float>> samples_of(const audio::WavAudio& wav)
 {
     if (!wav.has_samples()) {
         return domain::Result<std::vector<float>>::failure(
             domain::ErrorCode::invalid_argument, "the WAV carries no samples");
     }
-    return domain::read_wav_pcm16(wav.file_view());
+    return audio::read_wav_pcm16(wav.file_view());
 }
 
 } // namespace
@@ -72,7 +72,7 @@ domain::Status WhisperTranscriber::deep_warmup(const domain::CancellationToken& 
 }
 
 domain::Result<std::string> WhisperTranscriber::transcribe(
-    const domain::WavAudio& wav,
+    const audio::WavAudio& wav,
     const platform::TranscriptionRequest& request,
     const domain::CancellationToken& cancellation)
 {
@@ -168,7 +168,7 @@ domain::Status ParakeetTranscriber::deep_warmup(const domain::CancellationToken&
 }
 
 domain::Result<std::string> ParakeetTranscriber::transcribe(
-    const domain::WavAudio& wav,
+    const audio::WavAudio& wav,
     const platform::TranscriptionRequest& request,
     const domain::CancellationToken& cancellation)
 {

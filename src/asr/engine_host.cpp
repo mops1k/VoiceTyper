@@ -1,7 +1,7 @@
 #include "asr/engine_host.hpp"
 
 #include "asr/engine_parameters.hpp"
-#include "domain/audio_wav.hpp"
+#include "audio/audio_wav.hpp"
 
 #include <algorithm>
 #include <vector>
@@ -309,8 +309,8 @@ bool EngineHost::wait_until_settled(std::chrono::milliseconds timeout)
 }
 
 domain::Result<std::string> EngineHost::transcribe(
-    const domain::SampleBuffer& audio,
-    const domain::SessionOptions& options,
+    const audio::SampleBuffer& audio,
+    const audio::SessionOptions& options,
     const domain::CancellationToken& cancellation)
 {
     const auto cancelled = check_cancelled(cancellation);
@@ -356,9 +356,9 @@ domain::Result<std::string> EngineHost::transcribe(
     // A copy is made because the buffer belongs to the caller.
     std::vector<float> samples = audio.samples();
     if (options.noise_suppression) {
-        domain::suppress_noise(samples, domain::kTargetSampleRate);
+        audio::suppress_noise(samples, audio::kTargetSampleRate);
     }
-    const auto written = domain::write_wav_pcm16(samples, wav_bytes);
+    const auto written = audio::write_wav_pcm16(samples, wav_bytes);
     if (written.is_error()) {
         return domain::Result<std::string>::failure(written.code(), written.message());
     }
@@ -376,7 +376,7 @@ domain::Result<std::string> EngineHost::transcribe(
     request.speech_map = options.speech_map;
 
     in_flight_.fetch_add(1, std::memory_order_acq_rel);
-    auto result = engine->transcribe(domain::WavAudio(std::move(wav_data)), request, cancellation);
+    auto result = engine->transcribe(audio::WavAudio(std::move(wav_data)), request, cancellation);
     in_flight_.fetch_sub(1, std::memory_order_acq_rel);
 
     if (cancellation.is_cancellation_requested()) {

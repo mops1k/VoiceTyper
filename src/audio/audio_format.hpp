@@ -19,7 +19,10 @@
 #include <utility>
 #include <vector>
 
-namespace voicetyper::domain {
+namespace voicetyper::audio {
+
+using domain::ErrorCode;
+using domain::Status;
 
 /// Sample encoding of a raw (headerless) PCM buffer.
 enum class SampleFormat : std::uint8_t {
@@ -247,4 +250,4 @@ struct WavAudio {
     [[nodiscard]] bool has_samples() const noexcept { return !data.empty() && payload_bytes() > 0; }
 };
 
-} // namespace voicetyper::domain
+} // namespace voicetyper::audio

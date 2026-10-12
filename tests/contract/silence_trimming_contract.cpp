@@ -5,7 +5,7 @@
 //
 // Prints "silence-trimming-contract: OK" on success; CTest asserts that marker.
 
-#include "domain/silence_trimming_port.hpp"
+#include "audio/silence_trimming_port.hpp"
 
 #include <chrono>
 #include <iostream>
@@ -15,14 +15,16 @@
 
 namespace {
 
+using namespace voicetyper::audio;
+
 using voicetyper::domain::CancellationToken;
 using voicetyper::domain::Result;
-using voicetyper::domain::SampleBuffer;
-using voicetyper::domain::SessionOptions;
-using voicetyper::domain::SilenceTrimmingPort;
-using voicetyper::domain::SpeechSegment;
-using voicetyper::domain::SpeechSegmenter;
-using voicetyper::domain::TranscriptionPort;
+using voicetyper::audio::SampleBuffer;
+using voicetyper::audio::SessionOptions;
+using voicetyper::audio::SilenceTrimmingPort;
+using voicetyper::audio::SpeechSegment;
+using voicetyper::audio::SpeechSegmenter;
+using voicetyper::audio::TranscriptionPort;
 
 constexpr std::size_t kRate = 16000;
 
@@ -72,7 +74,7 @@ public:
     }
 
     std::vector<float> received;
-    voicetyper::domain::SpeechMap received_map;
+    voicetyper::audio::SpeechMap received_map;
 };
 
 class FailingPort final : public TranscriptionPort {

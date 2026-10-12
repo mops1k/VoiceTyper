@@ -340,7 +340,7 @@ constexpr GUID kSubtypeIeeeFloat = {
 constexpr std::uint32_t kStereoChannelMask = 0x3;
 
 struct FormatDescription {
-    domain::AudioFormat format;
+    audio::AudioFormat format;
     /// True when the endpoint will hand out PCM16 rather than IEEE float32.
     bool pcm16 = false;
     bool valid = false;
@@ -393,10 +393,10 @@ FormatDescription describe_format(const WAVEFORMATEX& wave)
         }
     }
 
-    result.format = domain::AudioFormat(
+    result.format = audio::AudioFormat(
         rate,
         channels,
-        result.pcm16 ? domain::SampleFormat::pcm_s16 : domain::SampleFormat::ieee_float32);
+        result.pcm16 ? audio::SampleFormat::pcm_s16 : audio::SampleFormat::ieee_float32);
     result.valid = true;
     return result;
 }
@@ -544,7 +544,7 @@ public:
 
     [[nodiscard]] bool is_capturing() const noexcept override { return capturing_; }
 
-    [[nodiscard]] domain::AudioFormat device_format() const noexcept override { return device_format_; }
+    [[nodiscard]] audio::AudioFormat device_format() const noexcept override { return device_format_; }
 
     [[nodiscard]] WasapiEndReason end_reason() const noexcept override
     {
@@ -576,7 +576,7 @@ private:
     ComPtr<IAudioCaptureClient> capture_client_;
 
     WasapiPacketSink sink_;
-    domain::AudioFormat device_format_;
+    audio::AudioFormat device_format_;
     WasapiCaptureReport report_;
     std::vector<std::byte> silence_;
 

@@ -10,7 +10,7 @@
 // domain/platform targets, so a GUI-off build stays Qt-free and a header that
 // accidentally pulled in Qt or an OS SDK would fail to compile here.
 
-#include "domain/audio_format.hpp"
+#include "audio/audio_format.hpp"
 #include "domain/cancellation.hpp"
 #include "domain/error.hpp"
 #include "domain/gamepad_binding.hpp"
@@ -45,9 +45,12 @@
 #include <type_traits>
 
 namespace domain = voicetyper::domain;
+namespace audio = voicetyper::audio;
 namespace platform = voicetyper::platform;
 
 namespace {
+
+using namespace voicetyper::audio;
 
 int g_failures = 0;
 
@@ -101,11 +104,11 @@ static_assert(static_cast<std::uint8_t>(domain::HotkeyModifiers::shift) == 4);
 static_assert(static_cast<std::uint8_t>(domain::HotkeyModifiers::win) == 8);
 
 // Audio: PCM16 / mono / 16 kHz is the transcription format (contracts §5).
-static_assert(domain::kWhisperSampleRate == 16000);
-static_assert(domain::kWhisperChannelCount == 1);
-static_assert(domain::kWhisperBitsPerSample == 16);
+static_assert(audio::kWhisperSampleRate == 16000);
+static_assert(audio::kWhisperChannelCount == 1);
+static_assert(audio::kWhisperBitsPerSample == 16);
 static_assert(platform::target_transcription_format().is_whisper_input());
-static_assert(domain::kWavHeaderBytes == 44);
+static_assert(audio::kWavHeaderBytes == 44);
 
 // Gamepad grammar tokens (contracts §6). The grammar itself is a domain
 // concern; src/platform/api/gamepad.hpp is the platform half.
@@ -208,12 +211,12 @@ void check_gamepad_contract()
 
 void check_audio_contract()
 {
-    const auto device_format = domain::AudioFormat(48000, 2, domain::SampleFormat::pcm_s16);
+    const auto device_format = audio::AudioFormat(48000, 2, audio::SampleFormat::pcm_s16);
     check(device_format.validate().is_ok(), "48 kHz stereo PCM16 is valid");
     check(device_format.bytes_per_frame() == 4, "stereo PCM16 frame is 4 bytes");
     check(device_format.frame_count(1024) == 256, "frame count divides");
     check(device_format.validate_buffer(1023).code() == domain::ErrorCode::corrupt_data, "partial frame rejected");
-    check(domain::AudioFormat{}.validate().is_error(), "default format is invalid");
+    check(audio::AudioFormat{}.validate().is_error(), "default format is invalid");
 }
 
 void check_updater_contract()

@@ -87,7 +87,7 @@ domain::Result<std::unique_ptr<SileroSegmenter>> SileroSegmenter::open(
         std::unique_ptr<SileroSegmenter>(new SileroSegmenter(std::move(impl))));
 }
 
-std::vector<domain::SpeechSegment> SileroSegmenter::detect_speech_no_reset(
+std::vector<audio::SpeechSegment> SileroSegmenter::detect_speech_no_reset(
     const std::vector<float>& samples)
 {
     std::lock_guard<std::mutex> lock(impl_->mutex);
@@ -111,7 +111,7 @@ std::vector<domain::SpeechSegment> SileroSegmenter::detect_speech_no_reset(
         return {};
     }
     const int n_segments = whisper_vad_segments_n_segments(segments);
-    std::vector<domain::SpeechSegment> result;
+    std::vector<audio::SpeechSegment> result;
     if (n_segments > 0) {
         result.reserve(static_cast<std::size_t>(n_segments));
     }
@@ -122,7 +122,7 @@ std::vector<domain::SpeechSegment> SileroSegmenter::detect_speech_no_reset(
         const double end =
             static_cast<double>(whisper_vad_segments_get_segment_t1(segments, index)) / 100.0;
         if (end > start) {
-            result.push_back(domain::SpeechSegment{start, end});
+            result.push_back(audio::SpeechSegment{start, end});
         }
     }
     whisper_vad_free_segments(segments);

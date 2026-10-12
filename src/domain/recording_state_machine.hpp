@@ -37,13 +37,14 @@
 // type and makes no capture/ASR claim: it is pure control flow over abstract
 // ports, exercised by tests/contract/recording_state_machine_contract.cpp.
 
-#include "domain/audio_wav.hpp"
+#include "audio/audio_wav.hpp"
+#include "audio/speech_segments.hpp"
+#include "audio/transcription_port.hpp"
+#include "audio/vad.hpp"
 #include "domain/text_output.hpp"
 #include "domain/cancellation.hpp"
 #include "domain/error.hpp"
 #include "domain/settings.hpp"
-#include "domain/speech_segments.hpp"
-#include "domain/vad.hpp"
 
 #include <chrono>
 #include <condition_variable>
@@ -57,6 +58,18 @@
 #include <vector>
 
 namespace voicetyper::domain {
+
+// The transcription contract (SessionOptions, TranscriptionPort) and the candidate
+// count live in the audio layer: the port's signature carries audio types, so it
+// cannot sit below it. The aliases below keep this machine's own code and its
+// long-standing callers (audio::SessionOptions, audio::TranscriptionPort)
+// working while the definition stays in exactly one place - src/audio.
+using audio::kFinalBestOf;
+using audio::SessionOptions;
+using audio::TranscriptionPort;
+using audio::SampleBuffer;
+using audio::SilenceAutoStopDetector;
+using audio::SpeechSegmenter;
 
 /// Observable state of a dictation session. Parity with the .NET
 /// `RecordingState` enum; the values appear only in diagnostics.
@@ -76,33 +89,8 @@ enum class RecordingState : std::uint8_t {
     return "unknown";
 }
 
-/// The .NET machine always asks for 3 greedy candidates for the final result.
-inline constexpr int kFinalBestOf = 3;
-
-/// The persisted setting starts at the machine's own value, so the first dictation
-/// after an update behaves exactly as before. settings.hpp cannot include this
-/// header (it includes settings.hpp), so the two defaults are repeated and pinned
-/// here instead of drifting apart silently.
-static_assert(kFinalBestOf == kDefaultBestOf,
-    "AppSettings::best_of must default to the recording machine's candidate count");
-
-/// Per-session recognition/output parameters, read on every session so a settings
-/// change applies without recreating the machine (the .NET optionsProvider).
-struct SessionOptions {
-    RecognitionLanguage language = RecognitionLanguage::ru;
-    std::string prompt;
-    double temperature = 0.0;
-    bool condition_on_previous_text = false;
-    /// Passed through to the text output port (clipboard first, paste optional).
-    bool auto_paste = true;
-    int best_of = kFinalBestOf;
-    /// Background noise suppression, ported from the .NET build. Off by default, exactly
-    /// like the setting it comes from.
-    bool noise_suppression = false;
-    /// What a detector already found for THIS audio, when a caller ran one (the
-    /// trimming decorator does). Empty means "the engine detects for itself".
-    SpeechMap speech_map;
-};
+// The final-candidate constant, SessionOptions and the TranscriptionPort contract
+// moved to src/audio/transcription_port.hpp (see the aliases above).
 
 // ---------------------------------------------------------------------------
 // Ports
@@ -141,32 +129,8 @@ protected:
     RecordingPort() = default;
 };
 
-/// Transcription port: one full final transcript per call.
-///
-/// An empty string is a *successful* result, and a whitespace-only transcript
-/// means "nothing to deliver" (the machine then does not call the output port).
-/// There is deliberately no partial/streaming entry point.
-class TranscriptionPort {
-public:
-    virtual ~TranscriptionPort() = default;
-
-    TranscriptionPort(const TranscriptionPort&) = delete;
-    TranscriptionPort& operator=(const TranscriptionPort&) = delete;
-    TranscriptionPort(TranscriptionPort&&) = delete;
-    TranscriptionPort& operator=(TranscriptionPort&&) = delete;
-
-    /// Transcribes the whole session audio. Blocking, called from a worker
-    /// thread and never from the thread that pressed the hotkey. It must observe
-    /// `cancellation` and return ErrorCode::cancelled when it fires. Failure
-    /// codes: engine_unavailable, model_not_ready, cancelled, io_failure.
-    [[nodiscard]] virtual Result<std::string> transcribe(
-        const SampleBuffer& audio,
-        const SessionOptions& options,
-        const CancellationToken& cancellation) = 0;
-
-protected:
-    TranscriptionPort() = default;
-};
+// TranscriptionPort itself is declared in src/audio/transcription_port.hpp and
+// aliased above; this header used to own it.
 
 /// Text delivery port (clipboard plus optional auto-paste).
 // The TextOutputPort interface now lives in domain/text_output.hpp next to its

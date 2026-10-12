@@ -1,4 +1,4 @@
-#include "domain/audio_wav.hpp"
+#include "audio/audio_wav.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -8,7 +8,11 @@
 #include <system_error>
 #include <utility>
 
-namespace voicetyper::domain {
+namespace voicetyper::audio {
+
+using domain::ErrorCode;
+using domain::Result;
+using domain::Status;
 namespace {
 
 std::uint16_t read_u16(std::string_view bytes, std::size_t offset)
@@ -338,4 +342,4 @@ std::vector<float> trim_silence(
     return result;
 }
 
-} // namespace voicetyper::domain
+} // namespace voicetyper::audio

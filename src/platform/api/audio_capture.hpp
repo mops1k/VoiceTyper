@@ -39,7 +39,7 @@
 //     running; it flushes and then joins. The implementation is responsible for
 //     making the ordering idempotent.
 
-#include "domain/audio_format.hpp"
+#include "audio/audio_format.hpp"
 #include "domain/cancellation.hpp"
 #include "domain/error.hpp"
 
@@ -50,8 +50,8 @@
 
 namespace voicetyper::platform {
 
-using domain::AudioBuffer;
-using domain::AudioFormat;
+using audio::AudioBuffer;
+using audio::AudioFormat;
 using domain::CancellationToken;
 using domain::ErrorCode;
 using domain::Result;
@@ -98,7 +98,7 @@ struct CaptureStartOptions {
 
     /// Requested device format. Backends may negotiate a different format; the
     /// result of start() must be read from device_format().
-    AudioFormat requested_format{48000, 2, domain::SampleFormat::pcm_s16};
+    AudioFormat requested_format{48000, 2, audio::SampleFormat::pcm_s16};
 
     /// Optional cancellation for the whole capture session.
     CancellationToken cancellation;

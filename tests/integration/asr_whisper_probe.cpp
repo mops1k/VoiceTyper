@@ -15,7 +15,7 @@
 // registered as a build target, not as a CTest case, because its output is
 // diagnostic text rather than a pass/fail contract.
 
-#include "domain/audio_wav.hpp"
+#include "audio/audio_wav.hpp"
 
 #include <whisper.h>
 
@@ -105,7 +105,7 @@ int main()
         return 0;
     }
 
-    const auto samples = voicetyper::domain::read_wav_file(fixture);
+    const auto samples = voicetyper::audio::read_wav_file(fixture);
     if (samples.is_error()) {
         std::cerr << "asr-whisper-probe: FAIL fixture is not a 16 kHz mono PCM16 WAV: "
                   << samples.error().message() << '\n';

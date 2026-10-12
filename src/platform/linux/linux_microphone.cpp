@@ -52,8 +52,8 @@ void source_info_callback(pa_context*, const pa_source_info* info, int eol, void
         : device.id;
     device.is_default = !request->default_name.empty() && request->default_name == device.id;
     if (info->sample_spec.rate > 0 && info->sample_spec.channels > 0) {
-        device.native_format = domain::AudioFormat(static_cast<std::uint32_t>(info->sample_spec.rate),
-            static_cast<std::uint16_t>(info->sample_spec.channels), domain::SampleFormat::pcm_s16);
+        device.native_format = audio::AudioFormat(static_cast<std::uint32_t>(info->sample_spec.rate),
+            static_cast<std::uint16_t>(info->sample_spec.channels), audio::SampleFormat::pcm_s16);
     }
     request->devices.push_back(std::move(device));
 }

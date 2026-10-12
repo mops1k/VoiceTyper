@@ -99,7 +99,7 @@ public:
     }
 
     domain::Result<std::string> transcribe(
-        const domain::WavAudio& wav,
+        const audio::WavAudio& wav,
         const platform::TranscriptionRequest& request,
         const domain::CancellationToken& cancellation) override
     {
@@ -217,9 +217,9 @@ public:
     int tags = 0;
 };
 
-domain::SampleBuffer short_audio()
+audio::SampleBuffer short_audio()
 {
-    domain::SampleBuffer buffer(16000);
+    audio::SampleBuffer buffer(16000);
     const std::vector<float> samples(4000, 0.25f);
     static_cast<void>(buffer.append(samples));
     return buffer;
@@ -232,7 +232,7 @@ void check_transcribe_before_load()
     check(!host.is_ready_for_recording(), "a host without a selection is not ready");
     check(host.state().readiness == EngineReadiness::idle, "the initial readiness is idle");
 
-    const auto result = host.transcribe(short_audio(), domain::SessionOptions{}, {});
+    const auto result = host.transcribe(short_audio(), audio::SessionOptions{}, {});
     check(result.is_error() && result.code() == domain::ErrorCode::model_not_ready,
         "transcribe before a model is loaded is model_not_ready");
     check(registry.create_calls.load() == 0, "transcribe never creates an engine lazily");
@@ -253,7 +253,7 @@ void check_load_and_transcribe()
     const auto probe = registry.probe(0);
     check(probe != nullptr && probe->warmups.load() == 1, "warmup ran exactly once");
 
-    const auto result = host.transcribe(short_audio(), domain::SessionOptions{}, {});
+    const auto result = host.transcribe(short_audio(), audio::SessionOptions{}, {});
     check(result.is_ok() && result.value() == "текст engine1", "a ready engine returns its transcript");
     check(probe->last_wav_bytes.load() == 44 + 4000 * 2,
         "the engine received a canonical WAV of the captured audio");
@@ -273,7 +273,7 @@ void check_unavailable_engine_never_falls_back()
     check(host.state().reason == platform::EngineAvailabilityReason::native_library_missing,
         "the reason names the missing library");
     check(registry.create_calls.load() == 0, "no engine is created for an unavailable machine");
-    const auto result = host.transcribe(short_audio(), domain::SessionOptions{}, {});
+    const auto result = host.transcribe(short_audio(), audio::SessionOptions{}, {});
     check(result.is_error() && result.code() == domain::ErrorCode::engine_unavailable,
         "transcribe reports engine_unavailable");
     static_cast<void>(host.shutdown(std::chrono::seconds(2)));
@@ -301,7 +301,7 @@ void check_missing_model()
     host.select(domain::TranscriptionEngine::whisper, "/models/gone.bin");
     check(host.wait_until_settled(std::chrono::seconds(5)), "the missing-model selection settles");
     check(host.state().readiness == EngineReadiness::model_missing, "a missing model is model_missing");
-    const auto result = host.transcribe(short_audio(), domain::SessionOptions{}, {});
+    const auto result = host.transcribe(short_audio(), audio::SessionOptions{}, {});
     check(result.is_error() && result.code() == domain::ErrorCode::engine_unavailable,
         "a missing model is reported as engine_unavailable, never as a different engine");
     static_cast<void>(host.shutdown(std::chrono::seconds(2)));
@@ -341,7 +341,7 @@ void check_cancellation()
 
     domain::CancellationSource pre;
     pre.request_cancellation();
-    const auto before = host.transcribe(short_audio(), domain::SessionOptions{}, pre.token());
+    const auto before = host.transcribe(short_audio(), audio::SessionOptions{}, pre.token());
     check(before.is_error() && before.code() == domain::ErrorCode::cancelled,
         "a pre-cancelled token stops before the engine is touched");
     check(probe->transcribe_calls.load() == 0, "a pre-cancelled call never enters the engine");
@@ -350,7 +350,7 @@ void check_cancellation()
     domain::CancellationSource during;
     std::string outcome;
     std::thread worker([&] {
-        const auto result = host.transcribe(short_audio(), domain::SessionOptions{}, during.token());
+        const auto result = host.transcribe(short_audio(), audio::SessionOptions{}, during.token());
         outcome = result.is_error() ? std::string(result.error().message()) : result.value();
     });
     std::this_thread::sleep_for(std::chrono::milliseconds(30));
@@ -376,7 +376,7 @@ void check_observation_never_blocks()
     probe->block_transcribe = true;
     const auto started = std::chrono::steady_clock::now();
     std::thread worker([&] {
-        static_cast<void>(host.transcribe(short_audio(), domain::SessionOptions{}, {}));
+        static_cast<void>(host.transcribe(short_audio(), audio::SessionOptions{}, {}));
     });
     std::this_thread::sleep_for(std::chrono::milliseconds(20));
     const bool ready_now = host.is_ready_for_recording();
@@ -399,7 +399,7 @@ void check_shutdown_with_busy_engine()
 
     probe->block_transcribe = true;
     std::thread worker([&] {
-        static_cast<void>(host.transcribe(short_audio(), domain::SessionOptions{}, {}));
+        static_cast<void>(host.transcribe(short_audio(), audio::SessionOptions{}, {}));
     });
     std::this_thread::sleep_for(std::chrono::milliseconds(20));
 

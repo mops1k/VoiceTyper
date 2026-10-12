@@ -12,7 +12,7 @@
 #include "asr/gigaam_transcriber.hpp"
 #include "asr/native_engine_registry.hpp"
 #include "asr/native_transcribers.hpp"
-#include "domain/audio_wav.hpp"
+#include "audio/audio_wav.hpp"
 #include "domain/terms_dictionary.hpp"
 
 #include <chrono>
@@ -60,7 +60,7 @@ int main()
         return 0;
     }
 
-    const auto raw = voicetyper::domain::read_wav_file(fixture);
+    const auto raw = voicetyper::audio::read_wav_file(fixture);
     if (raw.is_error()) {
         std::cerr << "asr-native-smoke: FAIL fixture is not a 16 kHz mono PCM16 WAV: "
                   << raw.error().message() << '\n';
@@ -91,7 +91,7 @@ int main()
     // registry -> TranscribeEngine -> library probe -> warmup -> transcribe.
     // A segmenter is bound so a dictation longer than the model window is cut at
     // a pause (the energy heuristic here; Silero replaces it behind the same seam).
-    voicetyper::domain::EnergySpeechSegmenter segmenter;
+    voicetyper::audio::EnergySpeechSegmenter segmenter;
     options.gigaam_library = voicetyper::asr::transcribe_library_beside_executable();
     options.gigaam_factory = [&segmenter](const std::filesystem::path& dll, const std::filesystem::path& path) {
         return voicetyper::asr::make_gigaam_engine(dll, path, &segmenter);
@@ -159,7 +159,7 @@ int main()
     }
 
     std::string wav_bytes;
-    const auto written = voicetyper::domain::write_wav_pcm16(raw.value(), wav_bytes);
+    const auto written = voicetyper::audio::write_wav_pcm16(raw.value(), wav_bytes);
     if (written.is_error()) {
         std::cerr << "asr-native-smoke: FAIL could not encode the fixture\n";
         return 1;
@@ -183,7 +183,7 @@ int main()
 
     const auto transcribe_started = std::chrono::steady_clock::now();
     const auto transcript = engine.value()->transcribe(
-        voicetyper::domain::WavAudio(std::move(wav_data)), request, none);
+        voicetyper::audio::WavAudio(std::move(wav_data)), request, none);
     const auto transcribe_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now() - transcribe_started).count();
     if (transcript.is_error()) {

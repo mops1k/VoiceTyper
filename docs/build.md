@@ -139,7 +139,8 @@ version comes from the tag.
 
 ```
 src/domain/      settings, hotkey grammar, recording state machine, models, errors
-src/core/        recognition, audio, VAD, update service, SHA-256, support
+src/audio/       portable audio layer: PCM/WAV, resample, noise, VAD, speech segments, transcription contract
+src/core/        update service, model download, SHA-256, support
 src/platform/    platform boundaries: ports and their Windows implementations
 src/ui/          Qt widget layer: settings window, pages, tray, status overlay, texts, fonts
 src/app/         application layer: entry point, composition roots, settings presenter, HTTP client
@@ -158,12 +159,19 @@ namespaces, so a fork sees where a piece belongs before reading any code:
 |---|---|---|---|---|
 | Widget layer | `src/ui/` | `voicetyper::ui` | `voicetyper_ui` (static, AUTOMOC) | settings window and its pages, tray, status overlay, string table, toggle switch, bundled typefaces |
 | Application layer | `src/app/` | `voicetyper::app` | `voicetyper_presenter` (portable) and the `voicetyper-qt-shell` executable | entry point, Windows/Linux composition roots, debounced settings presenter, Qt adapter of `platform::HttpClient` |
+| Audio layer | `src/audio/` | `voicetyper::audio` | `voicetyper_audio`, `voicetyper_vad` | PCM/WAV formats, resampling, downmix, noise suppression, VAD, speech segments, and the transcription contract (`SessionOptions`, `TranscriptionPort`, `SilenceTrimmingPort`) |
 
-The split, in three rules:
+The split, in four rules:
 
 * widget code lives in `src/ui/` only — no QWidget subclass is defined in `src/app/`;
 * the widget layer may use the application layer's `SettingsPresenter` (its view model)
-  and the portable layers (`src/domain/`, `src/platform/api/`), but never an OS SDK
-  directly — anything native goes behind a `src/platform/api/*.hpp` port;
-* the executable is built from `src/app/` and links `voicetyper_ui`, so the composition
-  roots own the lifetime of every widget.
+  and the portable layers (`src/domain/`, `src/audio/`, `src/platform/api/`), but never
+  an OS SDK directly — anything native goes behind a `src/platform/api/*.hpp` port;
+* audio algorithms live in `src/audio/` only: the OS capture backends stay in
+  `src/platform/` (they implement `platform::AudioCapture`/`Microphone`), and the
+  model-based Silero segmenter stays in `src/asr/` because it needs the native model
+  runtime. The transcription contract lives in `src/audio/transcription_port.hpp`, so
+  the recording machine (`src/domain/`) depends on the audio layer and never the other
+  way round;
+* the executable is built from `src/app/` and links `voicetyper_ui` and the audio
+  targets, so the composition roots own the lifetime of every widget.

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "domain/recording_state_machine.hpp"
+#include "audio/audio_wav.hpp"
 #include "domain/terms_dictionary.hpp"
 
 #include <functional>
@@ -8,6 +9,8 @@
 #include <utility>
 
 namespace voicetyper::domain {
+
+using audio::SampleBuffer;
 
 /// Applies the terms dictionary to whatever an engine returned.
 ///

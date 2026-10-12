@@ -9,7 +9,7 @@
 #include <functional>
 #include <vector>
 
-namespace voicetyper::domain {
+namespace voicetyper::audio {
 
 struct SpeechSegment {
     double start_seconds = 0.0;
@@ -137,4 +137,4 @@ private:
     int consecutive_inactive_chunks_ = 0;
 };
 
-} // namespace voicetyper::domain
+} // namespace voicetyper::audio

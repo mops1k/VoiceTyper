@@ -1,4 +1,4 @@
-#include "domain/vad.hpp"
+#include "audio/vad.hpp"
 
 #include <cmath>
 #include <iostream>
@@ -25,6 +25,7 @@ std::vector<float> chunk(float value, std::size_t count = 4000)
 void check_no_speech()
 {
     using namespace voicetyper::domain;
+    using namespace voicetyper::audio;
     int resets = 0;
     CallbackSpeechSegmenter segmenter([&resets](const std::vector<float>&) {
         (void)resets;
@@ -45,6 +46,7 @@ void check_no_speech()
 void check_trailing_silence()
 {
     using namespace voicetyper::domain;
+    using namespace voicetyper::audio;
     int call = 0;
     CallbackSpeechSegmenter segmenter([&call](const std::vector<float>&) {
         if (call++ == 0) {
@@ -66,6 +68,7 @@ void check_trailing_silence()
 void check_relative_absolute_and_quiet()
 {
     using namespace voicetyper::domain;
+    using namespace voicetyper::audio;
     int call = 0;
     CallbackSpeechSegmenter segmenter([&call](const std::vector<float>&) {
         if (call++ == 0) {
@@ -104,7 +107,7 @@ std::vector<float> tone(double seconds, double amplitude, double frequency = 220
 
 void check_energy_segmenter()
 {
-    using voicetyper::domain::EnergySpeechSegmenter;
+    using voicetyper::audio::EnergySpeechSegmenter;
     EnergySpeechSegmenter segmenter;
 
     check(segmenter.detect_speech_no_reset({}).empty(), "no samples produce no segments");

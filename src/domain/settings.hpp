@@ -230,7 +230,7 @@ inline constexpr int kSilenceThresholdMsMax = 10000;
 inline constexpr int kBestOfMin = 1;
 inline constexpr int kBestOfMax = 8;
 /// Default `bestOf`: the same 3 greedy candidates the .NET state machine always
-/// asked for (domain::kFinalBestOf in recording_state_machine.hpp, which is where
+/// asked for (audio::kFinalBestOf in recording_state_machine.hpp, which is where
 /// a static_assert keeps the two in step). The number is repeated here because
 /// that header includes this one and cannot be included back.
 inline constexpr int kDefaultBestOf = 3;

@@ -33,13 +33,15 @@
 //   * joining partial transcripts adds at most one space between two parts and
 //     never invents punctuation.
 
-#include "domain/vad.hpp"
+#include "audio/vad.hpp"
 
 #include <cstddef>
 #include <string>
 #include <vector>
 
-namespace voicetyper::domain {
+namespace voicetyper::audio {
+
+using domain::Result;
 
 /// Trim constants of VoiceTyper.Core/Audio/SilenceTrimmer.cs as ported in
 /// src/domain/audio_wav.cpp. Declared once so both detectors share them.
@@ -176,4 +178,4 @@ struct SpeechChunk {
 /// hyphen, or the right one starts with punctuation.
 [[nodiscard]] std::string join_transcripts(const std::vector<std::string>& parts);
 
-} // namespace voicetyper::domain
+} // namespace voicetyper::audio

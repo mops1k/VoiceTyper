@@ -1,4 +1,4 @@
-#include "domain/audio_wav.hpp"
+#include "audio/audio_wav.hpp"
 
 #include <cmath>
 #include <filesystem>
@@ -28,6 +28,7 @@ std::string fixture(const std::string& name)
 void check_buffer()
 {
     using namespace voicetyper::domain;
+    using namespace voicetyper::audio;
     SampleBuffer buffer(4);
     const std::vector<float> samples{0.1f, 0.2f, 0.3f};
     check(buffer.append(samples).is_ok(), "buffer accepts samples");
@@ -42,6 +43,7 @@ void check_buffer()
 void check_wav_reader()
 {
     using namespace voicetyper::domain;
+    using namespace voicetyper::audio;
     const auto speech = read_wav_file(fixture("wav-silence-speech-silence.wav"));
     check(speech.is_ok(), "16 kHz mono speech fixture loads");
     check(speech.value().size() == 32000, "speech fixture frame count");
@@ -63,6 +65,7 @@ void check_wav_reader()
 void check_writer_and_resampler()
 {
     using namespace voicetyper::domain;
+    using namespace voicetyper::audio;
     std::vector<float> source;
     for (int i = 0; i < 4410; ++i) {
         source.push_back(std::sin(2.0f * 3.14159265f * 440.0f * static_cast<float>(i) / 44100.0f));
@@ -92,6 +95,7 @@ void check_writer_and_resampler()
 void check_trim()
 {
     using namespace voicetyper::domain;
+    using namespace voicetyper::audio;
     const auto speech = read_wav_file(fixture("wav-silence-speech-silence.wav"));
     const auto quiet = read_wav_file(fixture("wav-silence-quietspeech-silence.wav"));
     const auto long_pause = read_wav_file(fixture("wav-long-internal-pause.wav"));

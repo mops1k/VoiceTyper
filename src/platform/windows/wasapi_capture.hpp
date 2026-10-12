@@ -18,7 +18,7 @@
 //
 // Division of responsibility: this file is *device I/O only*. It negotiates a
 // device format and hands whole packets of interleaved PCM to a sink. It never
-// converts, downmixes or resamples - that is domain::resample_to_16k /
+// converts, downmixes or resamples - that is audio::resample_to_16k /
 // downmix_to_mono (see src/domain/audio_wav.hpp) and the WindowsAudioCapture
 // adapter, exactly as src/platform/api/audio_capture.hpp requires.
 //
@@ -43,7 +43,7 @@
 // capture, and no exception may leave it (a throwing sink is caught at the
 // boundary and treated as a capture failure).
 
-#include "domain/audio_format.hpp"
+#include "audio/audio_format.hpp"
 #include "domain/cancellation.hpp"
 #include "domain/error.hpp"
 
@@ -57,7 +57,7 @@
 
 namespace voicetyper::platform {
 
-using domain::AudioFormat;
+using audio::AudioFormat;
 using domain::CancellationToken;
 using domain::ErrorCode;
 using domain::Result;

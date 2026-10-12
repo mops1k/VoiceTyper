@@ -71,8 +71,9 @@ engines, Silero segmenter) and the native libraries under `native/`.
 Contract: [src/asr/engine_host.hpp](../../src/asr/engine_host.hpp); test `asr-lifecycle-contract`
 (11 scenarios).
 
-- **VT-ASR-200.** `EngineHost` MUST implement `domain::TranscriptionPort` and own exactly one
-  loaded engine plus a readiness state.
+- **VT-ASR-200.** `EngineHost` MUST implement `audio::TranscriptionPort`
+  (`src/audio/transcription_port.hpp`, aliased as `domain::TranscriptionPort`) and own
+  exactly one loaded engine plus a readiness state.
 - **VT-ASR-201.** `EngineReadiness` MUST be `idle | unavailable | model_missing | loading |
   ready | warming | failed | shutting_down`, a separate axis from
   `platform::EngineAvailability`.

@@ -4,7 +4,7 @@
 //
 // Prints "speech-segments-contract: OK" on success; CTest asserts that marker.
 
-#include "domain/speech_segments.hpp"
+#include "audio/speech_segments.hpp"
 
 #include <cmath>
 #include <iostream>
@@ -13,11 +13,13 @@
 
 namespace {
 
-using voicetyper::domain::SpeechChunk;
-using voicetyper::domain::SpeechSegment;
-using voicetyper::domain::join_transcripts;
-using voicetyper::domain::plan_speech_chunks;
-using voicetyper::domain::trim_silence_to_segments;
+using namespace voicetyper::audio;
+
+using voicetyper::audio::SpeechChunk;
+using voicetyper::audio::SpeechSegment;
+using voicetyper::audio::join_transcripts;
+using voicetyper::audio::plan_speech_chunks;
+using voicetyper::audio::trim_silence_to_segments;
 
 constexpr std::size_t kRate = 16000;
 /// One VAD frame of 512 samples at 16 kHz, the Silero frame the VAD reports.

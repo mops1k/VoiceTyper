@@ -1,7 +1,7 @@
 # Portable-header check.
 #
-# src/domain and src/platform/api are contract-only layers: they must compile
-# with nothing but the standard C++20 library, so that
+# src/domain, src/audio and src/platform/api are contract-only layers: they must
+# compile with nothing but the standard C++20 library, so that
 #   * a GUI-off build stays Qt-free,
 #   * a Windows backend and a Linux backend can both be written behind the same
 #     interfaces, and
@@ -98,9 +98,13 @@ function(voicetyper_check_portable_headers source_dir)
     if(NOT IS_DIRECTORY "${source_dir}/src/domain")
         message(FATAL_ERROR "portable-header check: ${source_dir}/src/domain does not exist")
     endif()
+    if(NOT IS_DIRECTORY "${source_dir}/src/audio")
+        message(FATAL_ERROR "portable-header check: ${source_dir}/src/audio does not exist")
+    endif()
 
     file(GLOB_RECURSE headers
         "${source_dir}/src/domain/*.hpp"
+        "${source_dir}/src/audio/*.hpp"
         "${source_dir}/src/platform/api/*.hpp"
     )
     list(LENGTH headers header_count)
@@ -126,7 +130,7 @@ function(voicetyper_check_portable_headers source_dir)
         message(FATAL_ERROR
             "portable-header check FAILED: ${violation_count} forbidden include(s) in contract headers.\n"
             "  ${readable}\n"
-            "src/domain and src/platform/api must include standard C++20 headers only.\n"
+            "src/domain, src/audio and src/platform/api must include standard C++20 headers only.\n"
             "Move the OS call behind a src/platform/api interface instead.")
     endif()
 

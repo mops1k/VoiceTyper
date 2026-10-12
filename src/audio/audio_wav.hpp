@@ -13,7 +13,10 @@
 #include <string_view>
 #include <vector>
 
-namespace voicetyper::domain {
+namespace voicetyper::audio {
+
+using domain::Result;
+using domain::Status;
 
 inline constexpr std::size_t kTargetSampleRate = 16000;
 inline constexpr std::size_t kDefaultAudioCapacity = 16000 * 60;
@@ -76,4 +79,4 @@ void suppress_noise(std::vector<float>& samples, std::size_t sample_rate = kTarg
     double max_silence_seconds = 0.6,
     double gap_silence_seconds = 0.3);
 
-} // namespace voicetyper::domain
+} // namespace voicetyper::audio

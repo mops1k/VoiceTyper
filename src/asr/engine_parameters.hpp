@@ -10,7 +10,7 @@
 //     of silently pretending to honour it.
 
 #include "asr/whisper_native.hpp"
-#include "domain/audio_format.hpp"
+#include "audio/audio_format.hpp"
 #include "domain/error.hpp"
 #include "domain/settings.hpp"
 #include "platform/api/transcriber.hpp"
@@ -25,7 +25,7 @@ namespace voicetyper::asr {
 using domain::ErrorCode;
 using domain::RecognitionLanguage;
 using domain::Result;
-using domain::WavAudio;
+using audio::WavAudio;
 using platform::TranscriptionRequest;
 
 /// The four frozen decode constants (no_speech_threshold, temperature_inc,

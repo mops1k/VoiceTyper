@@ -21,7 +21,7 @@
 #include "asr/transcribe_engine.hpp"
 #include "domain/error.hpp"
 #include "domain/settings.hpp"
-#include "domain/vad.hpp"
+#include "audio/vad.hpp"
 #include "platform/api/engine_registry.hpp"
 #include "platform/api/transcriber.hpp"
 
@@ -43,7 +43,7 @@ public:
     GigaamTranscriber(
         std::filesystem::path model_path,
         std::unique_ptr<TranscribeEngine> engine,
-        domain::SpeechSegmenter* segmenter);
+        audio::SpeechSegmenter* segmenter);
 
     [[nodiscard]] domain::TranscriptionEngine engine() const noexcept override
     {
@@ -56,7 +56,7 @@ public:
     domain::Status warmup() override;
     domain::Status deep_warmup(const domain::CancellationToken& cancellation) override;
     [[nodiscard]] domain::Result<std::string> transcribe(
-        const domain::WavAudio& wav,
+        const audio::WavAudio& wav,
         const platform::TranscriptionRequest& request,
         const domain::CancellationToken& cancellation) override;
 
@@ -70,7 +70,7 @@ public:
 private:
     std::filesystem::path model_path_;
     std::unique_ptr<TranscribeEngine> engine_;
-    domain::SpeechSegmenter* segmenter_ = nullptr;
+    audio::SpeechSegmenter* segmenter_ = nullptr;
     /// Mutable so the const diagnostics accessor can read the last chunk count
     /// under the same lock that guards inference.
     mutable std::mutex inference_mutex_;
@@ -83,7 +83,7 @@ private:
 [[nodiscard]] domain::Result<std::unique_ptr<platform::Transcriber>> make_gigaam_engine(
     const std::filesystem::path& dll_path,
     const std::filesystem::path& model_path,
-    domain::SpeechSegmenter* segmenter);
+    audio::SpeechSegmenter* segmenter);
 
 /// Availability probe used by NativeEngineRegistry: inspects the library (no
 /// model load) and reports a precise reason.

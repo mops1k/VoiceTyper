@@ -447,10 +447,13 @@ if(VOICETYPER_BUILD_GUI)
             assets/spin-up.png
             assets/spin-down.png
     )
-    # The bundled typeface is addressed as :/fonts/<file> (application_font.cpp), and
+    # The bundled typefaces are addressed as :/fonts/<file> (application_font.cpp), and
     # BASE drops the assets/fonts directory so the resource name and the code agree.
     # They did not agree before: addApplicationFont returned -1 silently and the whole
     # application - Windows and Linux - ran on whatever font the system shipped.
+    # FluentSystemIcons (MIT) carries the navigation glyphs: Segoe MDL2 Assets is the
+    # Windows-only original, so the icon font is shipped as a resource for both
+    # platforms instead (Alexander, 12.10.2026).
     qt_add_resources(voicetyper-qt-shell "voicetyper_fonts"
         PREFIX "/fonts"
         BASE "assets/fonts"
@@ -458,6 +461,7 @@ if(VOICETYPER_BUILD_GUI)
             assets/fonts/Selawik-Regular.ttf
             assets/fonts/Selawik-Semibold.ttf
             assets/fonts/Selawik-Bold.ttf
+            assets/fonts/FluentSystemIcons-Regular.ttf
     )
 if(WIN32)
     # The executable's own icon: the tray icon comes from the Qt resources, but the file
@@ -692,9 +696,11 @@ if(VOICETYPER_BUILD_TESTS)
             qt_add_executable(voicetyper-ui-settings-test EXCLUDE_FROM_ALL
                 tests/ui/ui_settings_test.cpp
             )
-        # The tests build the window with the shipped typeface (see
+        # The tests build the window with the shipped typefaces (see
         # application_font.cpp): an overflow caused by the typeface's metrics has to
-        # fail here rather than on Alexander's screen.
+        # fail here rather than on Alexander's screen, and the navigation glyphs come
+        # from the bundled icon font, so the test has to see it exactly like the
+        # product does.
         qt_add_resources(voicetyper-ui-settings-test "voicetyper_test_assets"
             PREFIX "/fonts"
             BASE "assets/fonts"
@@ -702,6 +708,7 @@ if(VOICETYPER_BUILD_TESTS)
                 assets/fonts/Selawik-Regular.ttf
                 assets/fonts/Selawik-Semibold.ttf
                 assets/fonts/Selawik-Bold.ttf
+                assets/fonts/FluentSystemIcons-Regular.ttf
         )
 
             target_link_libraries(voicetyper-ui-settings-test
@@ -752,6 +759,7 @@ if(VOICETYPER_BUILD_TESTS)
                     assets/fonts/Selawik-Regular.ttf
                     assets/fonts/Selawik-Semibold.ttf
                     assets/fonts/Selawik-Bold.ttf
+                    assets/fonts/FluentSystemIcons-Regular.ttf
             )
             voicetyper_set_warnings(voicetyper-ui-snapshot)
 

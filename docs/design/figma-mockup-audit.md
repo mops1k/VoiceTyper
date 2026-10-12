@@ -30,7 +30,7 @@
 | Заголовок окна | `#titleBar`, `setFixedHeight(32)`; QLabel «VoiceTyper» 13px DemiBold; 2 кнопки 46×31 (свернуть, закрыть), иконки рисуются линиями; закрытие = `hide()` в трей; перетаскивание мышью | :562-605, :597, :1373-1402 |
 | Сайдбар | `#sidebar`; при сборке `setFixedWidth(240)`, `minimumSize(210,1)`; в `resizeEvent` — `qBound(180, width()*30/100, 300)` | :615-622, :1363-1371 |
 | Блок продукта | иконка приложения `windowIcon().pixmap(34,34)` + «VoiceTyper» 17px bold + tagline `ui_text(k47)` «диктовка голосом» 11px, `#brandTagline` | :627-651 |
-| Навигация | `QListWidget #sideNav`, 8 пунктов (`kNavigation` :243-252), font 14px, iconSize 18, `setSizeHint(QSize(0,30))`, иконки рисуются `QPainter` (`paint_drawn_icon` :422-506); два прохода заполнения в `finalize_pages` + страховочный | :653-663, :1260-1273, :1280-1314, :2103-2131 |
+| Навигация | `QListWidget #sideNav`, 8 пунктов (`kNavigation` :243-252), font 14px, iconSize 18, `setSizeHint(QSize(0,30))`, иконки рисуются `QPainter` (`paint_drawn_icon` :422-506; с 12.10.2026 — глифы вшитого FluentSystemIcons, см. обновление в конце документа); два прохода заполнения в `finalize_pages` + страховочный | :653-663, :1260-1273, :1280-1314, :2103-2131 |
 | Шапка страницы | `#pageHeader` (QSS: min/max-height 56px) + `#pageTitle` 20px/600 = имя страницы | :668-677, :2093-2101, QSS :2220-2221 |
 | Контент | `QStackedWidget #settingsPages`; страница в `QScrollArea` без рамки, h-scroll off; layout margins (15,8,15,8) + trailing stretch; политика Preferred/Ignored, `minimumSize(0,1)` | :679-686, :1209-1256, :1240-1243 |
 | Футер | `#footer` в `statusBar()`, `setFixedHeight(44)`; слева `#footerStatus` (k35), затем `engine_state_`, `hotkey_state_`, `QPushButton #recordButton` (minWidth 46, icon 18, `buttonRole="record"`), `QSizeGrip` | :689-726 |
@@ -346,3 +346,14 @@ radius 8); строка настроек: min-height не задан, факти
 пути `:/assets/fonts/…`, а код запрашивал `:/fonts/…`, поэтому `addApplicationFont` молча падал и
 окно использовало системный шрифт (Segoe UI на Windows, Noto/DejaVu на Linux) — из-за разных
 метрик падал `ui-settings-test` на Windows. Контракт: VT-UI-1005/1005a в `specs/modules/ui.spec.md`.
+
+**Обновление 2026-10-12.** Иконки левого меню вернулись к глифам (Александр: на 2.2.1 они были
+правильные, в 3.0.2 — нет). Вшит `assets/fonts/FluentSystemIcons-Regular.ttf` (MIT, Microsoft, тот
+же артефакт, что использовала .NET-ветка), `NavigationIconDelegate` рисует глиф из данных пункта
+(`Qt::UserRole + 1`) этим семейством. Причина: в 2.2.1 иконки брались из `Segoe MDL2 Assets` — есть
+только в Windows (на Linux строки были вовсе без иконок), а замена 2026-10-10 на нарисованную
+геометрию показывала на обеих ОС другой, более грубый набор пиктограмм (шестерёнка вместо дома и
+т.п.). Коды: Main `F481`, Appearance `F593`, Models `F8FE`, Hotkeys `F4B9`, Microphone `E7FA`,
+Startup `F678`, Log `E558`, About `F4A4`. Три пиктограммы отличаются начертанием от MDL2-версии
+(кисть вместо ключа, ракета вместо play, книга вместо коробки) — точные контуры Segoe MDL2
+переиздавать нельзя. Контракт: VT-UI-1004/1005b в `specs/modules/ui.spec.md`.

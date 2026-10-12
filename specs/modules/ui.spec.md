@@ -377,14 +377,21 @@ consequences are:
   `#C5C5C5`, border `#3D3D3D`, accent `#4CC2FF`; light window/control `#FFFFFF`, hover/selection
   `#E8EFF6`, text `#333333`, muted `#6A6A6A`, border `#EFEFEF`, accent `#0067C0`, header
   `#EFF4F9`.
-- **VT-UI-1004.** Icons MUST be drawn geometrically rather than taken from a font, and the
-  navigation icons MUST have exactly one painting path: `NavigationIconDelegate`
-  (`src/app/main_window.cpp`) draws the glyph with `paint_drawn_icon` from the page key in
-  `Qt::UserRole + 2`; the item MUST NOT carry a `QPixmap` icon, and no font-glyph path MAY run
-  on a theme change. The row reserves the glyph with `padding-left: 42px` and the glyph is
-  19 px wide, 15 px from the left edge. The former `refresh_nav_icons()` font path (Segoe MDL2
-  Assets, Windows-only) was removed on 2026-10-10 — it made Windows and Linux render different
-  icons and drew a second icon over the delegate's glyph; gap G-7 is closed.
+- **VT-UI-1004.** The navigation icons MUST have exactly one painting path: `NavigationIconDelegate`
+  (`src/app/main_window.cpp`) paints the glyph of the row with the bundled icon family
+  (`icon_font_family()`, FluentSystemIcons, VT-UI-1005b) as text over the row the base delegate
+  already drew. The code point comes from the item data `Qt::UserRole + 1` (the page key stays in
+  `Qt::UserRole + 2`); the item MUST NOT carry a `QPixmap`/`QIcon`, and no second glyph path MAY run
+  on a theme change. The row reserves the glyph with `padding-left: 42px`, the glyph is 19 px wide,
+  15 px from the left edge of the row, 16 px tall. Icons outside the navigation (model buttons, the
+  title bar, the theme tiles, the record button) MUST stay geometric via `paint_drawn_icon`.
+  History: the .NET window took the navigation glyphs from Segoe MDL2 Assets, which exists on
+  Windows only — the 2.2.x port therefore showed glyph icons on Windows and no icons at all on
+  Linux, and the 2026-10-10 change (`e086cb5`) replaced the font with drawn primitives, which
+  showed a different, coarser icon set on both platforms (reported by Alexander, 12.10.2026). The
+  bundled glyph font restores the reference icon set and is identical on Windows and Linux; gap
+  G-7 (a second icon drawn over the delegate's glyph) stays closed because the glyph is painted by
+  the delegate alone.
 - **VT-UI-1004a.** A theme change MUST repaint the navigation list (the delegate reads the
   current text colour) and MUST NOT write icons into the model.
 - **VT-UI-1005.** The bundled Selawik family (Regular/Semibold/Bold, SIL OFL 1.1,
@@ -397,6 +404,15 @@ consequences are:
   and the window silently used the system font — Segoe UI on Windows, Noto/DejaVu on Linux,
   which overflowed the settings scroll viewports in CI). Segoe UI itself MUST NOT be bundled:
   its licence does not allow redistribution and it does not exist on Linux.
+- **VT-UI-1005b.** The navigation-glyph family MUST be the bundled FluentSystemIcons
+  (`assets/fonts/FluentSystemIcons-Regular.ttf`, MIT, Microsoft, with
+  `assets/fonts/LICENSE-FluentSystemIcons.txt`), registered from `:/fonts/FluentSystemIcons-Regular.ttf`
+  by `install_application_font()` before any widget is created; the resource path and
+  `icon_font_family()` MUST stay in step with `CMakeLists.txt`, and a registration failure MUST be
+  reported on the log instead of silently degrading to the UI family. Every navigation code point
+  MUST belong to that family (the test asserts it with `QFontMetricsF::inFont`): the MDL2 codes of
+  the .NET build do not exist in it and render as replacement boxes. `Segoe MDL2 Assets` and
+  `Segoe Fluent Icons` MUST NOT be named: they are Windows-only and cannot be redistributed.
 - **VT-UI-1005a.** The window MUST NOT select a typeface by host: neither the stylesheet nor a
   `QFont` MAY name `Segoe UI`, `Segoe UI Variable` or `Inter`. The monospaced family of the log
   and diagnostics panes (`"Cascadia Code", Consolas, monospace`) is the one documented exception,
@@ -450,10 +466,11 @@ consequences are:
 - **G-4.** No `closeEvent` is defined; Alt+F4 behavior relies on Qt defaults and is untested.
 - **G-5.** The result of `presenter.flush()` is discarded, so a failed settings write is invisible.
 - **G-6.** `AppSettings::validate()` is never called from the UI path.
-- **G-7 (closed 2026-10-10).** Two competing icon implementations existed for the navigation
-  (`refresh_navigation_icons` drawn geometry vs `refresh_nav_icons` font glyphs/clear). The font
-  path was removed; `the_navigation_entries_carry_icons` now asserts the delegate and a non-empty
-  page key instead of a model icon (VT-UI-1004).
+- **G-7 (closed 2026-10-10, reworked 2026-10-12).** Two competing icon implementations existed for
+  the navigation (`refresh_navigation_icons` drawn geometry vs `refresh_nav_icons` font glyphs/clear).
+  The second path was removed; since 2026-10-12 the single delegate path paints the bundled
+  FluentSystemIcons glyph from the item data, and `the_navigation_entries_carry_icons` asserts a
+  non-empty glyph, the absence of a model icon and that the glyph is really painted (VT-UI-1004).
 - **G-8.** The "no silent cross-host redirect" rule for the release API is not implemented.
 - **G-9.** `section_title_for()` and `UiKey::k34`, `k41`, `k104` are dead: their UI is not rendered.
 - **G-10.** Comments in `main_window.hpp:301-302` and inside `needs_service_apply()` still claim a

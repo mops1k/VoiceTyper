@@ -104,3 +104,46 @@ handy-computer/gigaam-v3-e2e-rnnt-gguf) выпущена SberDevices/SaluteDevic
 Веса НЕ включены в поставку VoiceTyper: пользователь загружает файл
 `gigaam-v3-e2e-rnnt-<квант>.gguf` через раздел «Модели» с HuggingFace. После
 загрузки распознавание выполняется полностью локально, без сети (PRIV-01).
+
+## Встроенные шрифты
+
+### Fluent System Icons (MIT)
+
+Иконки левого меню (`assets/fonts/FluentSystemIcons-Regular.ttf`, код в
+`src/app/main_window.cpp` и `src/app/application_font.cpp`), вшиты в исполняемый файл
+ресурсом `:/fonts/FluentSystemIcons-Regular.ttf` (VT-UI-1005b).
+Источник: https://github.com/microsoft/fluentui-system-icons.
+Текст лицензии: `assets/fonts/LICENSE-FluentSystemIcons.txt`.
+
+```
+MIT License
+
+Copyright (c) 2020 Microsoft Corporation
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+### Selawik (SIL OFL 1.1)
+
+Шрифт интерфейса (`assets/fonts/Selawik-Regular.ttf`, `Selawik-Semibold.ttf`,
+`Selawik-Bold.ttf`), метрически совместим с Segoe UI, вшит ресурсом
+`:/fonts/Selawik-*.ttf` (VT-UI-1005).
+Источник: https://github.com/microsoft/Selawik. Copyright 2015, Microsoft
+Corporation, with Reserved Font Name Selawik.
+Текст лицензии: `assets/fonts/LICENSE-Selawik.txt`.

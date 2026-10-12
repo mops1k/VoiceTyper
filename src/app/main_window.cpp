@@ -1,3 +1,4 @@
+#include "app/application_font.hpp"
 #include "app/main_window.hpp"
 #include "app/ui_text.hpp"
 
@@ -507,8 +508,17 @@ inline constexpr int kNavigationIconSizePx = 19;
 /// that keeps the label clear of it.
 inline constexpr int kNavigationIconLeftPaddingPx = 15;
 inline constexpr int kNavigationGlyphSizePx = 16;
+/// Item data of a navigation row: the glyph code point (kNavigationGlyphRole) and the
+/// .NET page key, which is what the screenshot runs and the reviewers name
+/// (kNavigationKeyRole). Qt::UserRole stays the stable Russian label.
+inline constexpr int kNavigationGlyphRole = Qt::UserRole + 1;
+inline constexpr int kNavigationKeyRole = Qt::UserRole + 2;
 
-/// MDL2 Assets glyphs of the .NET build.
+/// `NavEntry::glyph` is a private-use code point of the bundled FluentSystemIcons
+/// family (assets/fonts/FluentSystemIcons-Regular.ttf, MIT); the delegate paints it.
+/// The .NET build took the same glyphs from Segoe MDL2 Assets, which exists only on
+/// Windows, so the codes and the family were replaced on 12.10.2026 to keep the
+/// navigation identical on Windows and Linux.
 struct NavEntry {
     const char* glyph;
     /// The Russian label, kept for the settings-file page name and the tests.
@@ -533,15 +543,18 @@ const char* section_title_for(const char* key)
     return "";
 }
 
+/// The FluentSystemIcons glyph of every entry (see NavEntry::glyph): a house, a paint
+/// brush, a book, a keyboard, a microphone, a rocket, a document and an information
+/// circle - the icon set of the .NET window, in its cross-platform redrawing.
 constexpr NavEntry kNavigation[] = {
-    {"\uE80F", "Общие", UiKey::k23, "Main"},
-    {"\uE90F", "Внешний вид", UiKey::k5, "Appearance"},
-    {"\uE7B8", "Модели", UiKey::k18, "Models"},
-    {"\uE765", "Хоткеи", UiKey::k42, "Hotkeys"},
-    {"\uE720", "Микрофон", UiKey::k17, "Microphone"},
-    {"\uE768", "Запуск", UiKey::k13, "Startup"},
-    {"\uE7C3", "Журнал", UiKey::k9, "Log"},
-    {"\uE946", "О программе", UiKey::k22, "About"},
+    {"\uF481", "Общие", UiKey::k23, "Main"},
+    {"\uF593", "Внешний вид", UiKey::k5, "Appearance"},
+    {"\uF8FE", "Модели", UiKey::k18, "Models"},
+    {"\uF4B9", "Хоткеи", UiKey::k42, "Hotkeys"},
+    {"\uE7FA", "Микрофон", UiKey::k17, "Microphone"},
+    {"\uF678", "Запуск", UiKey::k13, "Startup"},
+    {"\uE558", "Журнал", UiKey::k9, "Log"},
+    {"\uF4A4", "О программе", UiKey::k22, "About"},
 };
 /// A model row of the Models page, in both interface languages. The .NET page kept these
 /// in Models.cs and Strings.resx; the port keeps them here because they are presentation
@@ -1263,14 +1276,16 @@ QWidget* microphone_test_block(AppLanguage language, QWidget* parent, QPushButto
     return block;
 }
 
-/// Icons are drawn, not taken from a glyph font.
+/// Icons that are painted from primitives.
 ///
-/// The .NET build used Segoe MDL2 Assets, and the port copied its code points - but those
-/// glyphs do not render on this machine (the same finding is recorded on the title bar
-/// buttons below). Geometry cannot depend on a font, so the navigation icons, the model
-/// buttons and the record button are painted from primitives.
-enum class DrawnIcon { general, appearance, models, hotkeys, microphone, startup, launch, log, about,
-    download, remove, record, stop, cancel, wave, check, sun, moon, monitor, reset };
+/// The .NET build used Segoe MDL2 Assets; the port copied its code points, but those
+/// glyphs do not render on this machine and exist only on Windows. Everything the
+/// window shows outside the navigation is therefore drawn as geometry - the navigation
+/// itself takes its glyphs from the bundled FluentSystemIcons family instead
+/// (NavigationIconDelegate), which is the same artwork the .NET window used and works
+/// on Windows and Linux alike.
+enum class DrawnIcon { launch, microphone, download, remove, record, stop, cancel, wave, check, sun, moon,
+    monitor, reset };
 
 void paint_drawn_icon(QPainter& painter, DrawnIcon icon, const QRectF& box, const QColor& colour)
 {
@@ -1282,57 +1297,14 @@ void paint_drawn_icon(QPainter& painter, DrawnIcon icon, const QRectF& box, cons
     const qreal h = box.height();
     const auto point = [&](qreal fx, qreal fy) { return QPointF(x + w * fx, y + h * fy); };
     switch (icon) {
-    case DrawnIcon::general: // a gear: circle, hub and four teeth
-        painter.drawEllipse(box.adjusted(w * 0.18, h * 0.18, -w * 0.18, -h * 0.18));
-        painter.drawEllipse(box.adjusted(w * 0.42, h * 0.42, -w * 0.42, -h * 0.42));
-        painter.drawLine(point(0.5, 0.0), point(0.5, 0.16));
-        painter.drawLine(point(0.5, 0.84), point(0.5, 1.0));
-        painter.drawLine(point(0.0, 0.5), point(0.16, 0.5));
-        painter.drawLine(point(0.84, 0.5), point(1.0, 0.5));
+    case DrawnIcon::launch: // a play triangle (the mockup's `launch` glyph)
+        painter.drawPolygon(QPolygonF{point(0.33, 0.21), point(0.79, 0.5), point(0.33, 0.79)});
         break;
-    case DrawnIcon::appearance: // a palette: circle with three dots
-        painter.drawEllipse(box.adjusted(w * 0.08, h * 0.08, -w * 0.08, -h * 0.08));
-        painter.setBrush(colour);
-        painter.drawEllipse(point(0.32, 0.36), w * 0.07, w * 0.07);
-        painter.drawEllipse(point(0.60, 0.34), w * 0.07, w * 0.07);
-        painter.drawEllipse(point(0.44, 0.62), w * 0.07, w * 0.07);
-        break;
-    case DrawnIcon::models: // a stack of layers
-        painter.drawPolygon(QPolygonF{point(0.5, 0.05), point(0.95, 0.30), point(0.5, 0.55), point(0.05, 0.30)});
-        painter.drawPolyline(QPolygonF{point(0.05, 0.55), point(0.5, 0.80), point(0.95, 0.55)});
-        break;
-    case DrawnIcon::hotkeys: // a keyboard: a rounded box with key dots
-        painter.drawRoundedRect(box.adjusted(0, h * 0.22, 0, -h * 0.22), 2.0, 2.0);
-        painter.setBrush(colour);
-        painter.drawEllipse(point(0.22, 0.5), w * 0.05, w * 0.05);
-        painter.drawEllipse(point(0.5, 0.5), w * 0.05, w * 0.05);
-        painter.drawEllipse(point(0.78, 0.5), w * 0.05, w * 0.05);
-        break;
-    case DrawnIcon::microphone: // a capsule with a stand
+    case DrawnIcon::microphone: // a capsule with a stand (the footer record button)
         painter.drawRoundedRect(QRectF(point(0.32, 0.05), point(0.68, 0.52)), w * 0.18, w * 0.18);
         painter.drawArc(QRectF(point(0.18, 0.28), point(0.82, 0.72)), 200 * 16, 140 * 16);
         painter.drawLine(point(0.5, 0.72), point(0.5, 0.92));
         painter.drawLine(point(0.30, 0.95), point(0.70, 0.95));
-        break;
-    case DrawnIcon::startup: // a power symbol
-        painter.drawArc(box.adjusted(w * 0.08, h * 0.10, -w * 0.08, -h * 0.02), 60 * 16, 60 * 16);
-        painter.drawArc(box.adjusted(w * 0.08, h * 0.10, -w * 0.08, -h * 0.02), 240 * 16, 60 * 16);
-        painter.drawLine(point(0.5, 0.02), point(0.5, 0.42));
-        break;
-    case DrawnIcon::launch: // a play triangle (the mockup's `launch` glyph)
-        painter.drawPolygon(QPolygonF{point(0.33, 0.21), point(0.79, 0.5), point(0.33, 0.79)});
-        break;
-    case DrawnIcon::log: // lines of text
-        for (int line = 0; line < 4; ++line) {
-            const qreal fy = 0.12 + 0.25 * line;
-            painter.drawLine(point(0.08, fy), point(line == 3 ? 0.55 : 0.92, fy));
-        }
-        break;
-    case DrawnIcon::about: // an information circle
-        painter.drawEllipse(box.adjusted(w * 0.05, h * 0.05, -w * 0.05, -h * 0.05));
-        painter.setBrush(colour);
-        painter.drawEllipse(point(0.5, 0.26), w * 0.055, w * 0.055);
-        painter.drawLine(point(0.5, 0.42), point(0.5, 0.74));
         break;
     case DrawnIcon::download: // an arrow into a tray
         painter.drawLine(point(0.5, 0.05), point(0.5, 0.62));
@@ -1420,16 +1392,21 @@ void paint_drawn_icon(QPainter& painter, DrawnIcon icon, const QRectF& box, cons
     }
 }
 
-/// The navigation key names the same icon the .NET template used per entry.
-/// Draws the navigation glyph after the item's own background and text.
+/// Draws the navigation glyph of the row after the item's own background and text.
 ///
-/// Why a delegate and not item->setIcon() alone: on Wayland (KDE Plasma 6,
-/// measured 2026-10-08) the item view painted the row background and the label but
-/// never the icon, while the very same QIcon drew fine on a QPushButton - and the
-/// offscreen platform painted it too. Drawing the glyph in the delegate makes the
-/// navigation independent of that style/backend difference.
-DrawnIcon navigation_drawn_icon(std::string_view key);
-
+/// The glyph is a code point of the bundled FluentSystemIcons family, taken from the
+/// item (Qt::UserRole + 1), and it is painted as text with that family. Two reasons for
+/// exactly this shape:
+///
+/// * Why a delegate and not item->setIcon(): on Wayland (KDE Plasma 6, measured
+///   2026-10-08) the item view painted the row background and the label but never an
+///   icon that came from a pixmap, whatever its device pixel ratio; direct painting in
+///   the delegate is independent of that style/backend difference.
+/// * Why a font glyph and not geometry: the drawn primitives that replaced the glyph
+///   font in 3.0.x were a different, coarser icon set, so the window stopped showing
+///   the icons of the reference build (Alexander, 12.10.2026). The font is bundled, so
+///   Windows and Linux paint the very same glyphs - the .NET window took them from
+///   Segoe MDL2 Assets, which exists on Windows only.
 class NavigationIconDelegate final : public QStyledItemDelegate {
 public:
     NavigationIconDelegate(QObject* parent, std::function<QColor()> colour)
@@ -1438,41 +1415,35 @@ public:
     {
     }
 
+    // The glyph family is addressed as a resource, so a build that cannot register it
+    // still shows the labels - QFont then falls back to the application family.
+    static QFont glyph_font()
+    {
+        QFont font(icon_font_family());
+        font.setPixelSize(kNavigationGlyphSizePx);
+        return font;
+    }
+
     void paint(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const override
     {
         QStyledItemDelegate::paint(painter, option, index);
-        // The glyph is painted directly, not through QIcon: on Wayland the item
-        // view never painted an icon that came from a pixmap, whatever its device
-        // pixel ratio, while direct painting is what every other drawn glyph in
-        // this window already does.
-        const QString key = index.data(Qt::UserRole + 2).toString();
-        if (key.isEmpty()) {
+        const QString glyph = index.data(kNavigationGlyphRole).toString();
+        if (glyph.isEmpty()) {
             return;
         }
-        const DrawnIcon drawn = navigation_drawn_icon(key.toStdString());
         const int size = kNavigationIconSizePx;
-        const qreal inset = size * 0.16;
-        const int x = option.rect.left() + kNavigationIconLeftPaddingPx;
-        const int y = option.rect.top() + (option.rect.height() - size) / 2;
-        paint_drawn_icon(*painter, drawn,
-            QRectF(x + inset, y + inset, size - 2 * inset, size - 2 * inset), colour_());
+        const QRectF box(option.rect.left() + kNavigationIconLeftPaddingPx,
+            option.rect.top() + (option.rect.height() - size) / 2.0, size, size);
+        painter->save();
+        painter->setFont(glyph_font());
+        painter->setPen(colour_());
+        painter->drawText(box, Qt::AlignCenter, glyph);
+        painter->restore();
     }
 
 private:
     std::function<QColor()> colour_;
 };
-
-DrawnIcon navigation_drawn_icon(std::string_view key)
-{
-    if (key == "Main") return DrawnIcon::general;
-    if (key == "Appearance") return DrawnIcon::appearance;
-    if (key == "Models") return DrawnIcon::models;
-    if (key == "Hotkeys") return DrawnIcon::hotkeys;
-    if (key == "Microphone") return DrawnIcon::microphone;
-    if (key == "Startup") return DrawnIcon::startup;
-    if (key == "Log") return DrawnIcon::log;
-    return DrawnIcon::about;
-}
 
 QIcon drawn_icon(DrawnIcon icon, int size, const QColor& colour)
 {
@@ -2876,7 +2847,7 @@ void MainWindow::build_tabs()
         start_page != nullptr && *start_page != '\0') {
         const QString requested = QString::fromUtf8(start_page);
         for (int index = 0; index < nav_->count(); ++index) {
-            if (nav_->item(index)->data(Qt::UserRole + 2).toString().compare(requested, Qt::CaseInsensitive) == 0) {
+            if (nav_->item(index)->data(kNavigationKeyRole).toString().compare(requested, Qt::CaseInsensitive) == 0) {
                 nav_->setCurrentRow(index);
                 pages_->setCurrentIndex(index);
                 break;
@@ -2987,10 +2958,10 @@ void MainWindow::finalize_pages()
         // in UserRole as the stable identifier the page lookup and the tests use.
         auto* item = new QListWidgetItem(ui_text(entry.text, language_), nav_);
         item->setData(Qt::UserRole, label);
-        item->setData(Qt::UserRole + 1, QString::fromUtf8(entry.glyph));
+        item->setData(kNavigationGlyphRole, QString::fromUtf8(entry.glyph));
         // The .NET page key (Main, Appearance, Models, ...): it is what a screenshot
         // run and the reviewers name, independently of the Russian label.
-        item->setData(Qt::UserRole + 2, QString::fromUtf8(entry.key));
+        item->setData(kNavigationKeyRole, QString::fromUtf8(entry.key));
         // The glyph is NOT stored on the item: NavigationIconDelegate paints it from
         // the key above. A QPixmap icon on the item was drawn by the item view on
         // top of the delegate's glyph on some backends (measured on KDE Plasma 6 /
@@ -3021,25 +2992,22 @@ void MainWindow::finalize_pages()
         pages_->addWidget(scroll);
         // This pass adds entries whose label is the one the page registered - which is the
         // localised label, so in English it never matched kNavigation: the menu was built
-        // here, and addItem(text) creates an item without an icon and without the entry
-        // data. The entry is found by the same localised label and the item is created with
-        // its icon and its data, exactly like the first pass.
-        DrawnIcon drawn = DrawnIcon::about;
+        // here, and addItem(text) creates an item without the glyph or the entry data. The
+        // entry is found by the same localised label and the item is created with its
+        // glyph and its data, exactly like the first pass.
         std::string_view entry_key = "About";
         QString entry_glyph;
         for (const auto& entry : kNavigation) {
             if (page_matches_entry(pair.first, entry, language_)) {
-                drawn = navigation_drawn_icon(entry.key);
                 entry_key = entry.key;
                 entry_glyph = QString::fromUtf8(entry.glyph);
                 break;
             }
         }
         auto* added = new QListWidgetItem(pair.first, nav_);
-        added->setData(Qt::UserRole + 1, entry_glyph);
-        added->setData(Qt::UserRole + 2, QString::fromUtf8(entry_key.data()));
+        added->setData(kNavigationGlyphRole, entry_glyph);
+        added->setData(kNavigationKeyRole, QString::fromUtf8(entry_key.data()));
         added->setSizeHint(QSize(0, 43));
-        static_cast<void>(drawn);
     }
     // Everything is in the menu now: dress the icons once, for every pass.
     refresh_navigation_icons();
@@ -3771,7 +3739,7 @@ void MainWindow::retranslate()
     if (nav_ != nullptr) {
         for (int index = 0; index < nav_->count(); ++index) {
             QListWidgetItem* item = nav_->item(index);
-            const QString key = item->data(Qt::UserRole + 2).toString();
+            const QString key = item->data(kNavigationKeyRole).toString();
             for (const auto& entry : kNavigation) {
                 if (key == QString::fromUtf8(entry.key)) {
                     item->setText(ui_text(entry.text, language_));
@@ -4199,20 +4167,17 @@ void MainWindow::refresh_navigation_icons()
         // Matched by the visible label: the menu is filled by two different passes, and
         // only this one runs whatever path created the item (the item data was missing on
         // the items the second pass added, which is why the icons never appeared).
-        DrawnIcon icon = DrawnIcon::about;
-        const QString item_key = item->data(Qt::UserRole + 2).toString();
+        const QString item_key = item->data(kNavigationKeyRole).toString();
         for (const auto& entry : kNavigation) {
             if (item_key == QString::fromUtf8(entry.key)
                 || item->text() == ui_text(entry.text, language_)) {
-                icon = navigation_drawn_icon(entry.key);
-                item->setData(Qt::UserRole + 1, QString::fromUtf8(entry.glyph));
-                item->setData(Qt::UserRole + 2, QString::fromUtf8(entry.key));
+                item->setData(kNavigationGlyphRole, QString::fromUtf8(entry.glyph));
+                item->setData(kNavigationKeyRole, QString::fromUtf8(entry.key));
                 break;
             }
         }
-        static_cast<void>(icon);
     }
-    // The glyphs are painted by the delegate from the keys above, so a theme change
+    // The glyphs are painted by the delegate from the item data above, so a theme change
     // only has to repaint the list.
     if (nav_->viewport() != nullptr) {
         nav_->viewport()->update();

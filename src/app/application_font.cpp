@@ -1,12 +1,27 @@
 #include "app/application_font.hpp"
 
 #include <QApplication>
+#include <QDebug>
 #include <QFont>
 #include <QFontDatabase>
 #include <QString>
 #include <QStringList>
 
 namespace voicetyper::app {
+namespace {
+
+/// The navigation-glyph family: FluentSystemIcons (MIT, Microsoft), the cross-platform
+/// redrawing of the Segoe MDL2 Assets glyphs the .NET window used. One file, one family
+/// name, shipped as a Qt resource (CMakeLists.txt: voicetyper_fonts).
+constexpr const char* kIconFontResource = ":/fonts/FluentSystemIcons-Regular.ttf";
+constexpr const char* kIconFontFamily = "FluentSystemIcons-Regular";
+
+} // namespace
+
+QString icon_font_family()
+{
+    return QString::fromLatin1(kIconFontFamily);
+}
 
 void install_application_font()
 {
@@ -25,6 +40,15 @@ void install_application_font()
         if (QFontDatabase::addApplicationFont(resource) >= 0) {
             registered = true;
         }
+    }
+    // The icon family is registered independently of the UI faces: the navigation has to
+    // draw its glyphs even when the resource set of a build is incomplete, and a
+    // resource that cannot be added has to be visible in the log rather than silently
+    // leave the rows without icons.
+    const int icon_font = QFontDatabase::addApplicationFont(QString::fromLatin1(kIconFontResource));
+    if (icon_font < 0) {
+        qWarning() << "icon font" << kIconFontResource
+                   << "was not registered: the navigation falls back to the UI family";
     }
     if (!registered) {
         return;

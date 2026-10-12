@@ -17,6 +17,8 @@
 #include <QApplication>
 #include <QFile>
 #include <QFontDatabase>
+#include <QFontMetrics>
+#include <QPixmap>
 #include "app/toggle_switch.hpp"
 #include <QComboBox>
 #include <QListWidget>
@@ -70,6 +72,18 @@ private slots:
         QVERIFY2(QFontDatabase::families().contains(QStringLiteral("Selawik")),
             "Selawik was not registered as an application font");
         QCOMPARE(QApplication::font().family(), QStringLiteral("Selawik"));
+    }
+
+    // Иконки меню берутся из вшитого шрифта иконок: Segoe MDL2 Assets есть только в
+    // Windows (на Linux строки оставались без иконок вообще), поэтому набор вшит
+    // ресурсом и одинаков на обеих ОС. Проверка пути к ресурсу обязательна: при
+    // рассинхроне addApplicationFont молча возвращает -1, и меню рисует подстановку.
+    void the_application_ships_the_bundled_icon_font()
+    {
+        QVERIFY2(QFile(QStringLiteral(":/fonts/FluentSystemIcons-Regular.ttf")).exists(),
+            "вшитый шрифт иконок навигации не попал в ресурсы Qt");
+        QVERIFY2(QFontDatabase::families().contains(voicetyper::app::icon_font_family()),
+            "FluentSystemIcons не зарегистрирован как шрифт приложения");
     }
 
     void edit_is_written_and_reloaded()
@@ -1523,7 +1537,9 @@ private slots:
     }
 
     // Иконки левого меню: глиф из .NET-шаблона хранился в данных пункта, но никогда не
-    // рисовался, поэтому меню было текстовым (Александр, 06.10.2026).
+    // рисовался, поэтому меню было текстовым (Александр, 06.10.2026). С 12.10.2026 глиф
+    // берётся из вшитого FluentSystemIcons: рисованная геометрия 3.0.x показывала другой
+    // набор пиктограмм, чем эталон (Александр, 12.10.2026).
     void the_navigation_entries_carry_icons()
     {
         voicetyper::platform::PortableClock clock;
@@ -1552,18 +1568,59 @@ private slots:
             // stretching over the whole column.
             QVERIFY2(height <= 43, qPrintable(QStringLiteral("пункт %1 растянут: %2px").arg(row).arg(height)));
         }
-        // The glyph is painted by the navigation delegate from the item's page key
-        // (Qt::UserRole + 2), not stored as a model icon: on Wayland the item view
-        // never painted an icon that came from a QPixmap, and a stored pixmap was
-        // drawn unscaled over the delegate's glyph on other backends, which is what
-        // made the icons look distorted (measured 2026-10-08, dpr=2).
+        // The glyph lives in the item data (Qt::UserRole + 1) and is painted by the
+        // navigation delegate with the bundled icon family, never as a model icon: on
+        // Wayland the item view did not paint an icon that came from a QPixmap, and a
+        // stored pixmap was drawn unscaled over the delegate's glyph on other backends
+        // (measured 2026-10-08, dpr=2).
         QVERIFY2(nav->itemDelegate() != nullptr, "у левого меню нет делегата иконок");
+        QFont glyph_font(voicetyper::app::icon_font_family());
+        glyph_font.setPixelSize(16);
+        const QFontMetricsF glyph_metrics(glyph_font);
         for (int row = 0; row < nav->count(); ++row) {
             QListWidgetItem* item = nav->item(row);
             QVERIFY(item != nullptr);
             const QString key = item->data(Qt::UserRole + 2).toString();
             QVERIFY2(!key.isEmpty(),
                 qPrintable(QStringLiteral("у пункта %1 нет ключа страницы для иконки").arg(row)));
+            QVERIFY2(!item->data(Qt::DecorationRole).isValid(),
+                qPrintable(QStringLiteral("у пункта %1 иконка лежит в модели: путь отрисовки "
+                                          "должен быть один - делегат").arg(row)));
+            const QString glyph = item->data(Qt::UserRole + 1).toString();
+            QVERIFY2(!glyph.isEmpty(),
+                qPrintable(QStringLiteral("у пункта %1 нет глифа иконки").arg(row)));
+            // A code point that the bundled family really carries: this is what catches a
+            // code/font mismatch (the MDL2 codes of the .NET build are absent from
+            // FluentSystemIcons and would be drawn as a replacement box).
+            QVERIFY2(glyph_metrics.inFont(glyph.at(0)),
+                qPrintable(QStringLiteral("шрифт иконок не содержит глиф пункта %1 (U+%2)")
+                    .arg(row)
+                    .arg(static_cast<uint>(glyph.at(0).unicode()), 4, 16, QLatin1Char('0'))));
+        }
+        // И, наконец, сам делегат: в боксе иконки каждой строки обязаны быть пиксели
+        // глифа, а не пустой фон. Так ловится делегат, который молча ничего не нарисовал.
+        QCoreApplication::processEvents();
+        const QImage painted = nav->viewport()->grab().toImage();
+        for (int row = 0; row < nav->count(); ++row) {
+            const QRect rect = nav->visualItemRect(nav->item(row));
+            const QColor row_background = painted.pixelColor(rect.right() - 2, rect.top() + 2);
+            // The glyph box is 19 px wide, 15 px from the left edge; the label starts at
+            // the 42 px text padding, so the probe stays clear of both the label and the
+            // accent pill of the selected row.
+            int painted_pixels = 0;
+            for (int y = qMax(rect.top(), 0); y <= rect.bottom() && y < painted.height(); ++y) {
+                for (int x = rect.left() + 10; x <= rect.left() + 40 && x < painted.width(); ++x) {
+                    const QColor colour = painted.pixelColor(x, y);
+                    if (qAbs(colour.red() - row_background.red())
+                            + qAbs(colour.green() - row_background.green())
+                            + qAbs(colour.blue() - row_background.blue()) > 70) {
+                        ++painted_pixels;
+                    }
+                }
+            }
+            QVERIFY2(painted_pixels >= 8,
+                qPrintable(QStringLiteral("в боксе иконки пункта %1 делегат ничего не нарисовал (%2 px)")
+                    .arg(row).arg(painted_pixels)));
         }
         window.hide();
         std::filesystem::remove(path);

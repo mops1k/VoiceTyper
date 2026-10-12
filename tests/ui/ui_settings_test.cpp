@@ -1080,6 +1080,69 @@ private slots:
         std::filesystem::remove(path);
     }
 
+    // The interface language must reach the APPLICATION, not only the window: the lines a
+    // service renders (engine state, hotkey state, the tray menu, the overlay pill) are built
+    // with ui::ui_text(key, ui::current_language()), and that global changes only when the
+    // composition is told about the edit. Reported from the running build (12.10.2026): the
+    // window re-lettered itself while "Движок готов" stayed Russian, and switching back did
+    // not bring the status line back either.
+    void the_interface_language_reaches_the_application()
+    {
+        voicetyper::ui::set_current_language(voicetyper::domain::AppLanguage::ru);
+        voicetyper::platform::PortableClock clock;
+        voicetyper::platform::PortableFileSystem file_system;
+        const auto path = std::filesystem::temp_directory_path() / "voicetyper-ui-language-service-test.json";
+        std::filesystem::remove(path);
+        voicetyper::app::SettingsPresenter presenter(path, file_system, clock);
+        static_cast<void>(presenter.load());
+
+        int applied = 0;
+        voicetyper::ui::WindowServices services;
+        // Exactly the composition's wiring: hearing about the edit is what sets the language
+        // every later string is rendered with, and the engine line is rendered with it.
+        services.settings_applied = [&applied](const voicetyper::domain::AppSettings& settings) {
+            ++applied;
+            voicetyper::ui::set_current_language(settings.app_language);
+        };
+        services.engine_status = [] {
+            return voicetyper::ui::ui_text(voicetyper::ui::UiKey::k87,
+                voicetyper::ui::current_language());
+        };
+
+        voicetyper::ui::MainWindow window(presenter, services);
+        window.resize(980, 640);
+        window.show();
+        QCoreApplication::processEvents();
+
+        auto* engine_label = window.findChild<QLabel*>(QStringLiteral("engineState"));
+        QVERIFY(engine_label != nullptr);
+        QCOMPARE(engine_label->text(), QStringLiteral("Движок готов"));
+
+        auto* combo = window.findChild<QComboBox*>(QStringLiteral("appLanguageCombo"));
+        QVERIFY(combo != nullptr);
+        combo->setCurrentIndex(1); // English
+        // The window hands the edit to the services on its own tick, after the 700 ms
+        // autosave debounce, so the wait has to cross the debounce.
+        QTest::qWait(1200);
+        QCoreApplication::processEvents();
+
+        QCOMPARE(applied, 1);
+        QCOMPARE(static_cast<int>(voicetyper::ui::current_language()),
+            static_cast<int>(voicetyper::domain::AppLanguage::en));
+        QCOMPARE(engine_label->text(), QStringLiteral("Engine ready"));
+
+        // The reverse direction uses the same wiring and must work just as well.
+        combo->setCurrentIndex(0); // Русский
+        QTest::qWait(1200);
+        QCoreApplication::processEvents();
+
+        QCOMPARE(applied, 2);
+        QCOMPARE(engine_label->text(), QStringLiteral("Движок готов"));
+        voicetyper::ui::set_current_language(voicetyper::domain::AppLanguage::ru);
+        window.hide();
+        std::filesystem::remove(path);
+    }
+
     // The string table is index-based, so one entry without a key shifts every later
     // label - which happened while the update strings were added, and nothing failed.
     // This walks the whole table instead of trusting the eye.

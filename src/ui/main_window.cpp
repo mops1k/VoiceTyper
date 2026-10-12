@@ -2040,7 +2040,9 @@ void MainWindow::build_tabs()
     record_button_->setIconSize(QSize(18, 18));
     connect(record_button_, &QPushButton::clicked, this, &MainWindow::on_recording_toggled);
     engine_state_ = new QLabel(footer);
+    engine_state_->setObjectName(QStringLiteral("engineState"));
     hotkey_state_ = new QLabel(footer);
+    hotkey_state_->setObjectName(QStringLiteral("hotkeyState"));
     // index.css: .status-right > span > i - a green dot in front of the engine state.
     engine_dot_ = new QWidget(footer);
     engine_dot_->setObjectName(QStringLiteral("engineDot"));
@@ -3476,6 +3478,14 @@ void MainWindow::bind_settings_to_controls()
         presenter_.update(voicetyper::app::SettingsChange::language, [chosen](domain::AppSettings& settings) {
             settings.app_language = chosen;
         });
+        // The application layer has to hear about this change: every line the services render
+        // (engine state, hotkey state, the tray menu, the overlay pill) is built with
+        // ui::ui_text(key, ui::current_language()), and that language changes only when the
+        // composition applies the edit. Without this line the window re-lettered itself while
+        // "Движок готов" stayed Russian and switching back did not fix it either (reported
+        // from the running build, 12.10.2026). The recognition language below marks the very
+        // same change code for the same reason.
+        pending_service_change_ = voicetyper::app::SettingsChange::language;
         // In place: the window keeps its position, its size and the current page, and the
         // strings change under the user's hands (Alexander asked for exactly that).
         language_ = chosen;

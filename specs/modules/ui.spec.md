@@ -496,6 +496,25 @@ consequences are:
   cap, centred (index.css:95 `.page-content`); a page whose cards are narrow MUST NOT be squeezed
   to its content's hint. The heading in the header band MUST follow the current page name without
   being clipped, and the band's box with it.
+- **VT-UI-1111.** **Recognition** MUST carry, after the terms dictionary and the filler-word block
+  (VT-UI-1108), a card «Модель чистки текста» whose list has exactly four rows — «Не использовать»
+  (`CleanupModel::off`) and the three local cleaner sizes — built with the same anatomy as the model
+  lists of **Models** (`#modelItem`, `#modelName`, `#modelMeta`, `#modelNote`, `#modelBadge`,
+  `#modelCopy`, `#modelNameLine` and the 34×34 `#modelAction` button). The rows MUST carry exactly the
+  four `CleanupModel` values in order; the choice MUST be exclusive (choosing a row clears the others
+  and moves the «АКТИВНА» badge to it) and MUST be stored as `cleanupModel` in `settings.json` by the
+  hidden state holder `cleanupModelCombo`, surviving a restart (plan p_5d68d66503ca). `off` is the
+  switch, so there is deliberately no separate toggle. Every row that is not `off` MUST follow the
+  same download state machine as a recognition row — `cleanup_model_is_downloaded`,
+  `cleanup_model_download`, `cleanup_model_download_cancel` and `cleanup_model_delete`, all keyed by
+  `domain::CleanupModel` — and the `off` row MUST NOT offer a download at all. Every string of the
+  card MUST exist in Russian and in English (rule of 13.10.2026).
+- **VT-UI-1112.** The same card MUST carry a field «Дополнительные требования к модели»
+  (`#cleanupPromptEdit`) for the user's addition to the cleaner's prompt (VT-DOM-1017): a
+  multi-line text field with an example as its placeholder and a hint stating that the addition
+  extends the built-in instruction instead of replacing it. Its value MUST be stored as
+  `cleanupPrompt` in `settings.json` and MUST come back on a restart. Both the label, the example
+  and the hint MUST exist in Russian and in English.
 
 ---
 
@@ -503,7 +522,7 @@ consequences are:
 
 | Suite | What it pins |
 |---|---|
-| `ui-settings-test` (40 slots) | edit → file → restart round-trips; theme tiles and reset; engine/threshold/best-of reaching the services; microphone persistence across device-less and different-device launches; per-page navigation binding in both languages (including «Распознавание», VT-UI-1109); the heading of every page fitting the band and the page column filling its width (VT-UI-1110); footer and control fit at 980×640 and 820×560; hotkey capture; model list exclusivity and per-engine keys; noise reduction placement; downloaded models offer delete; log scroll retention; in-place language switch; every key non-empty; About update controls; hide-on-focus-loss; status pill theme; tray show restores the window; tray menu padding; overlay and tray language; model page language; exact tail of the string table; percentage + cancel; navigation icons; every navigation entry opens its own page; record button disabled without a backend; gamepad readouts read-only with the clear buttons following the binding (VT-UI-222); update reports delivered from a worker thread applied on the interface thread (VT-UI-315); the filler-word card's level and word list round-trip (VT-UI-1108) |
+| `ui-settings-test` (42 slots) | edit → file → restart round-trips; theme tiles and reset; engine/threshold/best-of reaching the services; microphone persistence across device-less and different-device launches; per-page navigation binding in both languages (including «Распознавание», VT-UI-1109); the heading of every page fitting the band and the page column filling its width (VT-UI-1110); footer and control fit at 980×640 and 820×560; hotkey capture; model list exclusivity and per-engine keys; noise reduction placement; downloaded models offer delete; log scroll retention; in-place language switch; every key non-empty; About update controls; hide-on-focus-loss; status pill theme; tray show restores the window; tray menu padding; overlay and tray language; model page language; exact tail of the string table; percentage + cancel; navigation icons; every navigation entry opens its own page; record button disabled without a backend; gamepad readouts read-only with the clear buttons following the binding (VT-UI-222); update reports delivered from a worker thread applied on the interface thread (VT-UI-315); the filler-word card's level and word list round-trip (VT-UI-1108); the cleanup-model card's four rows, its exclusive choice, the delete button of a downloaded model and the round-trip of the chosen size (VT-UI-1111); the prompt-addition field's round-trip and its two-language strings (VT-UI-1112) |
 | `ui-status-overlay-test` (8 slots) | idempotent create; frameless/topmost/no-input pill; frozen 350 ms pulse; processing accent and stopped pulse; an error hides the overlay; hide/idle; geometry (centred, 26 px above the bottom); worker-thread `post_state()` and terminal `destroy()` |
 | `ui-snapshot` (tool) | renders all 8 pages to PNG offscreen for visual review (not an assertion) |
 

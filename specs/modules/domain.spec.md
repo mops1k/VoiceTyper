@@ -54,9 +54,9 @@ engine_unavailable=15, model_not_ready=16, invalid_state=17, internal=18`.
 
 ### 2.1 The persisted root
 
-- **VT-DOM-201.** `AppSettings` MUST persist exactly **25** properties in the declaration
+- **VT-DOM-201.** `AppSettings` MUST persist exactly **27** properties in the declaration
   order that is also the JSON output order; the count is pinned as
-  `kAppSettingsPropertyCount = 25` ([src/domain/settings.hpp:252](../../src/domain/settings.hpp#L252)).
+  `kAppSettingsPropertyCount = 27` ([src/domain/settings.hpp:252](../../src/domain/settings.hpp#L252)).
   Changing the count or the order is a schema change and MUST come with a new golden fixture.
   The five .NET fixtures are .NET-shaped and byte-frozen: a C++-only property is not added to
   them, it is injected by `settings-json-contract` when that test assembles the expected bytes.
@@ -105,12 +105,16 @@ engine_unavailable=15, model_not_ready=16, invalid_state=17, internal=18`.
 | 23 | `microphoneDeviceId` | string \| null | null |
 | 24 | `fillerWordsLevel` | enum string: `off` \| `soft` \| `hard` \| `extreme` | `off` *(C++-only)* |
 | 25 | `fillerWords` | string | `` (empty) *(C++-only)* |
+| 26 | `cleanupModel` | `CleanupModel` {`off`\|`small`\|`medium`\|`large`} | `off` *(C++-only)* |
+| 27 | `cleanupPrompt` | string | `` (empty) *(C++-only)* |
 
-- **VT-DOM-204.** `gigaamModelSize`, `bestOf`, `fillerWordsLevel` and `fillerWords` MUST be
+- **VT-DOM-204.** `gigaamModelSize`, `bestOf`, `fillerWordsLevel`, `fillerWords`,
+  `cleanupModel` and `cleanupPrompt` MUST be
   treated as C++-only extensions: the legacy .NET reader ignores them, so a rollback MUST keep
   working while `transcriptionEngine != "gigaam"`. `fillerWordsLevel` is both the switch and
-  the amount of filler removal (`off` means disabled), so there is deliberately no second
-  boolean property.
+  the amount of filler removal (`off` means disabled) and `cleanupModel` is both the switch and
+  the model choice (`off` is the «Не использовать» row), so there is deliberately no second
+  boolean property for either.
 - **VT-DOM-205.** `AppSettings::defaults()` MUST be the value used whenever the file is
   missing, corrupt, unreadable or rejected; `clone()` MUST deep-copy the optionals and strings.
 - **VT-DOM-206.** `validate()` MUST reject (with `out_of_range`) `silence_threshold_ms`
@@ -628,6 +632,46 @@ q8_0 and GigaAM-v3 q8_0, synthetic and live speech, 14.10.2026).
   deliberate: the dictionary restores the spellings the user wrote first, so a user term can
   never be eaten as a filler.
 
+- **VT-DOM-1011.** The optional local cleaner MUST be best-effort only: any error, timeout or
+  refusal MUST deliver the result of the rules, never an error to the user, and the model MUST
+  NOT run at all while `cleanupModel` is `off`.
+- **VT-DOM-1012.** A model answer MUST be accepted only when `check_cleanup_output` accepts it:
+  every digit run of the source is present, in the same order; the answer is neither blank nor a
+  code fence; it adds no line break to a single-line transcript; it keeps at least a third of the
+  words; and it does not exceed the source by more than 60 characters. It MUST also keep the
+  language of the transcript (VT-DOM-1016) and MUST remain a rewrite of it: an answer whose words
+  are almost all absent from the source (more than 70% of them) is refused, which is what catches
+  a model that answers about the prompt instead of cleaning the text (Alexander, 14.10.2026).
+  The check MUST be a pure
+  offline function (`domain/cleanup_guard.hpp`) with no model, file or clock in it.
+- **VT-DOM-1013.** Punctuation is the cleaner's business, digits are not: `15:30` → `15 30` keeps
+  every run and MUST be accepted, while `15:30` → `15:00` and `15:30` → `15` MUST be refused.
+- **VT-DOM-1014.** The cleaner's runtime MUST be a pinned llama.cpp: `native/llm/LlamaPins.cmake`
+  is the single source of truth for the repository, the commit, the archive URL and SHA-256, and
+  the content hashes of the files that carry the API and the build. The archive hash MUST be
+  verified at download time and every content pin re-hashed after extraction; a mismatch MUST be a
+  fatal build error naming the observed hash. The runtime MUST be one separate shared library with
+  llama.cpp and ggml linked statically inside it and only its own C ABI exported, because the
+  whisper.cpp this product also links carries a different ggml whose symbols MUST NOT be mixed
+  with these. The application MUST reach it through the portable loader only, and a missing
+  library, a foreign ABI or a load failure MUST be reported as an error, never as a crash.
+- **VT-DOM-1015.** Generation MUST be deterministic: greedy decoding, temperature 0, no
+  top-p/top-k sampling, no repetition penalty and no seed, so the same transcript always yields
+  the same answer. The answer budget MUST be bounded by the transcript length and by a hard cap;
+  repeated `load()` of the same path MUST NOT re-read the weights; and calls MUST be serialised,
+  one model and one inference at a time.
+- **VT-DOM-1016.** One `clean()` call MUST have a wall-clock deadline (30 s by default) that is
+  checked between decoding steps, and an empty transcript MUST NOT reach the model at all. The
+  answer MUST be unwrapped from the wrappers an instruct model likes to add (a surrounding quote
+  pair, the `assistant:` prefix, a trailing end-of-turn marker) only when the transcript itself
+  does not already use that wrapper, and MUST then pass VT-DOM-1012 before the user sees it.
+- **VT-DOM-1017.** The user MAY add requirements to the cleaner's prompt (`cleanupPrompt`), and
+  that addition MUST extend the built-in instruction instead of replacing it (Alexander,
+  14.10.2026). An empty or whitespace-only addition MUST add nothing at all; otherwise it MUST be
+  trimmed and capped (400 bytes), so a runaway paste cannot push the instruction out of the
+  model's context. The guard's invariants (VT-DOM-1012) and the language rule (VT-DOM-1016) MUST
+  hold whatever the addition asks for: a bad addition costs quality, never correctness.
+
 ## 11. Requirement-to-evidence map
 
 | Requirement block | Contract test |
@@ -639,6 +683,8 @@ q8_0 and GigaAM-v3 q8_0, synthetic and live speech, 14.10.2026).
 | segmentation and trimming | `speech-segments-contract`, `silence-trimming-contract` |
 | terms dictionary | `terms-dictionary-contract` |
 | filler words | `filler-words-contract`, `filler-words-port-contract`, `ui-settings-test` |
+| local cleaner: port, guard and the order of the chain | `llm-cleanup-contract`, `cleanup-guard-contract` |
+| local cleaner: pinned llama.cpp runtime and the model rows | `llm-runtime-contract`, `model-store-contract` |
 | text output | `text-output-contract` |
 | audio | `audio-dsp-contract`, `noise-suppression-contract` |
 | paths/logger/CPU | `core-support-contract` |

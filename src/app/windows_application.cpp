@@ -16,6 +16,7 @@
 #include <functional>
 
 #include "ui/application_font.hpp"
+#include "app/cleanup_wiring.hpp"
 #include "app/qt_http_client.hpp"
 #include "app/microphone_probe.hpp"
 #include "ui/ui_text.hpp"
@@ -39,6 +40,7 @@
 #include "audio/silence_trimming_port.hpp"
 #include "domain/terms_dictionary.hpp"
 #include "domain/filler_words_port.hpp"
+#include "domain/llm_cleanup_port.hpp"
 #include "domain/terms_dictionary_port.hpp"
 #include "domain/transcript_debug_port.hpp"
 #include "domain/version.hpp"
@@ -734,8 +736,20 @@ int run(int argc, char** argv)
         return domain::FillerWordsPort::Settings{presenter.settings().filler_words_level,
             domain::parse_filler_words(presenter.settings().filler_words)};
     });
+    // The optional local cleaner runs last (plan p_5d68d66503ca): the model rewrites text the
+    // dictionary has already corrected and the filler rules have already cleaned, and every
+    // failure mode - no file, load error, timeout, a refused answer - ends with exactly that
+    // text going on. cleanupModel is off by default, and make_cleanup_runtime() picks the pinned
+    // llama.cpp runtime when the build carries it and the null one otherwise.
+    auto cleanup_runtime = app::make_cleanup_runtime();
+    domain::LlmCleanupPort cleanup_port(filler_port, *cleanup_runtime, [&presenter, &paths] {
+        const auto chosen = presenter.settings().cleanup_model;
+        return domain::LlmCleanupPort::Settings{
+            chosen, app::cleanup_model_path(chosen, models_directory(paths)),
+            presenter.settings().cleanup_prompt};
+    });
     domain::RecordingStateMachine machine(
-        logged_capture, filler_port, output, worker, machine_options, &segmenter);
+        logged_capture, cleanup_port, output, worker, machine_options, &segmenter);
     // The machine reads its per-session parameters and its mode from the live
     // settings, exactly like the .NET machine asking the settings view model.
     // Without this every field the user changes - language, temperature, terms
@@ -1376,6 +1390,115 @@ int run(int argc, char** argv)
         const bool removed = std::filesystem::remove(file, error);
         static_cast<void>(logger.write(removed ? platform::LogLevel::info : platform::LogLevel::error,
             "model deleted", name + (removed ? " (removed)" : " (could not be removed: " + error.message() + ")")));
+        return removed;
+    };
+
+    // The optional local cleaner: three models in three repositories, picked by the user
+    // (plan p_5d68d66503ca). The hooks are keyed by CleanupModel rather than a row index, because
+    // `off` has no file and every size has its own address; a row offers "Скачать" until its file
+    // is on disk.
+    auto cleanup_sources = std::make_shared<std::vector<std::shared_ptr<domain::CancellationSource>>>(
+        static_cast<std::size_t>(domain::CleanupModel::large) + 1);
+    services.cleanup_model_is_downloaded = [&paths](domain::CleanupModel model) {
+        const std::string name(core::support::cleanup_model_file_name(model));
+        if (name.empty()) {
+            return false;
+        }
+        std::error_code error;
+        return std::filesystem::exists(models_directory(paths) / std::filesystem::path(name), error);
+    };
+    services.cleanup_model_download = [&logger, &update_executor, post_to_ui, &paths, cleanup_sources](
+                                          domain::CleanupModel model,
+                                          std::function<void(ui::WindowServices::ModelTransfer)> report) {
+        const std::string name(core::support::cleanup_model_file_name(model));
+        const std::string url(app::cleanup_model_url(model));
+        if (name.empty() || url.empty()) {
+            return;
+        }
+        auto source = std::make_shared<domain::CancellationSource>();
+        (*cleanup_sources)[static_cast<std::size_t>(model)] = source;
+        static_cast<void>(update_executor.post(
+            [&logger, post_to_ui, &paths, name, url, source, report = std::move(report)] {
+                app::QtHttpClient http;
+                core::support::ModelDownloadService service(http, models_directory(paths));
+                const auto status = service.download_url(url, name,
+                    [post_to_ui, report](const core::support::ModelDownloadProgress& progress) {
+                        ui::WindowServices::ModelTransfer transfer;
+                        transfer.percent = progress.total > 0
+                            ? static_cast<int>(progress.fraction() * 100.0)
+                            : -1;
+                        transfer.bytes_per_second = progress.bytes_per_second;
+                        transfer.remaining_seconds = progress.remaining_seconds().value_or(-1.0);
+                        static_cast<void>(post_to_ui([report, transfer] { report(transfer); }));
+                    },
+                    source->token());
+                if (status.is_error()) {
+                    const QString message = QString::fromStdString(status.error().to_string());
+                    const bool cancelled = status.error().code() == domain::ErrorCode::cancelled;
+                    static_cast<void>(logger.write(
+                        cancelled ? platform::LogLevel::info : platform::LogLevel::warn,
+                        cancelled ? "cleanup model download cancelled" : "cleanup model download failed",
+                        name + ": " + status.error().to_string()));
+                    static_cast<void>(post_to_ui([report, message, cancelled] {
+                        ui::WindowServices::ModelTransfer transfer;
+                        transfer.error = message;
+                        transfer.cancelled = cancelled;
+                        report(transfer);
+                    }));
+                    return;
+                }
+                static_cast<void>(logger.write(platform::LogLevel::info, "cleanup model downloaded", name));
+                static_cast<void>(post_to_ui([report] {
+                    ui::WindowServices::ModelTransfer transfer;
+                    transfer.percent = 100;
+                    report(transfer);
+                }));
+            }));
+    };
+    services.cleanup_model_download_cancel = [cleanup_sources](domain::CleanupModel model) {
+        const auto slot = static_cast<std::size_t>(model);
+        if (slot < cleanup_sources->size() && (*cleanup_sources)[slot]) {
+            (*cleanup_sources)[slot]->request_cancellation();
+        }
+    };
+    services.cleanup_model_delete = [&logger, &paths, &presenter,
+                                        cleanup_runtime = cleanup_runtime.get()](
+                                        domain::CleanupModel model) {
+        const std::string name(core::support::cleanup_model_file_name(model));
+        if (name.empty()) {
+            return false;
+        }
+        const std::filesystem::path file = models_directory(paths) / std::filesystem::path(name);
+        // Deleting a file is irreversible, so it is confirmed first, exactly like a recogniser.
+        const auto answer = QMessageBox::question(nullptr, localized(ui::UiKey::k99),
+            localized(ui::UiKey::k100).arg(QString::fromStdString(file.filename().string())),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+        if (answer != QMessageBox::Yes) {
+            return false;
+        }
+        // A loaded model keeps the GGUF mapped, and Windows refuses to delete a file that is in
+        // use: the first live attempt logged "could not be removed: access denied" while the
+        // interface stayed silent (Alexander, 14.10.2026). Let the weights go first, and drop the
+        // choice when it pointed at this model, so no row claims to be active over a missing file.
+        if (cleanup_runtime != nullptr) {
+            cleanup_runtime->unload();
+        }
+        if (presenter.settings().cleanup_model == model) {
+            presenter.update(app::SettingsChange::model, [](domain::AppSettings& settings) {
+                settings.cleanup_model = domain::CleanupModel::off;
+            });
+        }
+        std::error_code error;
+        const bool removed = std::filesystem::remove(file, error);
+        static_cast<void>(logger.write(removed ? platform::LogLevel::info : platform::LogLevel::error,
+            "cleanup model deleted",
+            name + (removed ? " (removed)" : " (could not be removed: " + error.message() + ")")));
+        if (!removed) {
+            QMessageBox::warning(nullptr, localized(ui::UiKey::k99),
+                localized(ui::UiKey::k218)
+                    .arg(QString::fromStdString(name),
+                        QString::fromStdString(error.message())));
+        }
         return removed;
     };
 

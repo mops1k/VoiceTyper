@@ -143,8 +143,10 @@ MainWindow::MainWindow(
     QWidget* parent)
     : QMainWindow(parent)
     , presenter_(presenter)
-    , services_(std::move(services))
+    // Declaration order is presenter_, language_, services_ (main_window.hpp), and the
+    // initialisers follow it so the compiler does not have to warn about the order.
     , language_(presenter.settings().app_language)
+    , services_(std::move(services))
 {
     setWindowTitle(QStringLiteral("VoiceTyper"));
     // MainWindow.axaml:10-14: 980x640, min 760x480, SystemDecorations=None. The
@@ -661,6 +663,26 @@ const ModelRow* model_rows(ModelList list, std::size_t& count) noexcept
 {
     return language == AppLanguage::en ? en : ru;
 }
+
+/// One row of the cleanup-model list (plan p_5d68d66503ca). Its three strings are UiKeys and not
+/// the presentation data the recognition tables above hold, because every one of them is new and
+/// has to exist in both languages (rule of 13.10.2026); `off` is a row like the others — the
+/// settings have no separate switch, so choosing «Не использовать» *is* turning the cleaner off
+/// (agreed with Alexander, 14.10.2026).
+struct CleanupModelRow {
+    domain::CleanupModel model = domain::CleanupModel::off;
+    UiKey name = UiKey::k206;
+    /// Size · speed · quality, one sentence per row so a language change can re-letter it.
+    UiKey meta = UiKey::k207;
+    UiKey note = UiKey::k208;
+};
+
+constexpr CleanupModelRow kCleanupModelRows[] = {
+    {domain::CleanupModel::off, UiKey::k206, UiKey::k207, UiKey::k208},
+    {domain::CleanupModel::small, UiKey::k209, UiKey::k210, UiKey::k211},
+    {domain::CleanupModel::medium, UiKey::k212, UiKey::k213, UiKey::k214},
+    {domain::CleanupModel::large, UiKey::k215, UiKey::k216, UiKey::k217},
+};
 
 
 /// One settings row: the label pinned to the left edge, the control to the right
@@ -2523,6 +2545,154 @@ void MainWindow::build_tabs()
         accuracy_group.rows->addWidget(filler);
 
         rows->addWidget(accuracy_group.card);
+
+        // The cleanup-model card (plan p_5d68d66503ca): the third block of the page, after the
+        // dictionary and the filler words. The cleaner is optional and its weights are big, so
+        // the user decides here whether text is cleaned by rules only or by a local model too.
+        // The rows have the same anatomy as the model lists of «Модели» — the shared #modelItem
+        // / #modelName / #modelMeta / #modelNote / #modelBadge / #modelCopy / #modelNameLine
+        // styles and the 34x34 action button — because it is the same kind of choice: the row
+        // that is in use carries the «АКТИВНА» badge. There is deliberately no separate switch:
+        // «Не использовать» is the first row (agreed with Alexander, 14.10.2026).
+        cleanup_model_ = new QComboBox(content);
+        cleanup_model_->setObjectName(QStringLiteral("cleanupModelCombo"));
+        for (const CleanupModelRow& spec : kCleanupModelRows) {
+            cleanup_model_->addItem(ui_text(spec.name, language_), static_cast<int>(spec.model));
+        }
+        // The rows are the control; the combo stays as the hidden state holder the presenter
+        // reads, exactly like the three size combos of «Модели».
+        cleanup_model_->hide();
+
+        const auto cleanup_group = settings_group(content, UiKey::k204, UiKey::k205, language_);
+        auto* cleanup_card = new QWidget(content);
+        cleanup_card->setObjectName(QStringLiteral("cleanupModelsCard"));
+        cleanup_card->setAttribute(Qt::WA_StyledBackground, true);
+        // #modelItem's progress bar is dressed through this property (the same one the three
+        // recognition lists carry).
+        cleanup_card->setProperty("modelList", true);
+        auto* cleanup_layout = new QVBoxLayout(cleanup_card);
+        cleanup_layout->setContentsMargins(0, 0, 0, 0);
+        cleanup_layout->setSpacing(0);
+        for (int index = 0; index < static_cast<int>(std::size(kCleanupModelRows)); ++index) {
+            const CleanupModelRow& spec = kCleanupModelRows[index];
+            // «Не использовать» has no file: it is a choice, not a model to download.
+            const bool has_file = spec.model != domain::CleanupModel::off;
+            auto* row = new QWidget(cleanup_card);
+            row->setObjectName(QStringLiteral("modelItem"));
+            row->setAttribute(Qt::WA_StyledBackground, true);
+            // The card header carries the hairline above the first row (index.css: .model-item
+            // has a border only between rows).
+            row->setProperty("firstRow", index == 0);
+            row->setProperty("active", false);
+            row->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
+            auto* row_layout = new QHBoxLayout(row);
+            row_layout->setContentsMargins(18, 13, 18, 13);
+            row_layout->setSpacing(14);
+            auto* toggle = new ToggleSwitch(row);
+            toggle->setObjectName(QStringLiteral("cleanupModelToggle%1").arg(index));
+            row_layout->addWidget(toggle, 0, Qt::AlignVCenter);
+            auto* text_box = new QWidget(row);
+            text_box->setObjectName(QStringLiteral("modelCopy"));
+            auto* text_layout = new QVBoxLayout(text_box);
+            text_layout->setContentsMargins(0, 0, 0, 0);
+            text_layout->setSpacing(4);
+            auto* name_line = new QWidget(text_box);
+            name_line->setObjectName(QStringLiteral("modelNameLine"));
+            auto* name_line_layout = new QHBoxLayout(name_line);
+            name_line_layout->setContentsMargins(0, 0, 0, 0);
+            name_line_layout->setSpacing(8);
+            // Every cleanup string carries its key, so the in-place language pass of
+            // retranslate() re-letters the row without a table of its own.
+            auto* name = new QLabel(ui_text(spec.name, language_), name_line);
+            name->setObjectName(QStringLiteral("modelName"));
+            name->setProperty("uiKey", static_cast<int>(spec.name));
+            QFont name_font = name->font();
+            name_font.setWeight(QFont::Bold);
+            name->setFont(name_font);
+            auto* badge = new QLabel(ui_text(UiKey::k170, language_), name_line);
+            badge->setObjectName(QStringLiteral("modelBadge"));
+            badge->setProperty("uiKey", static_cast<int>(UiKey::k170));
+            badge->setProperty("uppercaseText", true);
+            badge->setText(badge->text().toUpper());
+            badge->hide();
+            name_line_layout->addWidget(name, 0, Qt::AlignVCenter);
+            name_line_layout->addWidget(badge, 0, Qt::AlignVCenter);
+            name_line_layout->addStretch(1);
+            auto* meta = new WrappingLabel(ui_text(spec.meta, language_), text_box);
+            meta->setObjectName(QStringLiteral("modelMeta"));
+            meta->setProperty("uiKey", static_cast<int>(spec.meta));
+            meta->setWordWrap(true);
+            auto* note = new WrappingLabel(ui_text(spec.note, language_), text_box);
+            note->setObjectName(QStringLiteral("modelNote"));
+            note->setProperty("uiKey", static_cast<int>(spec.note));
+            note->setWordWrap(true);
+            text_layout->addWidget(name_line);
+            text_layout->addWidget(meta);
+            text_layout->addWidget(note);
+            row_layout->addWidget(text_box, 1);
+            auto* transfer = new QProgressBar(row);
+            transfer->setObjectName(QStringLiteral("cleanupModelProgress%1").arg(index));
+            transfer->setRange(0, 100);
+            transfer->setValue(0);
+            transfer->setFixedWidth(90);
+            transfer->setTextVisible(false);
+            transfer->hide();
+            auto* percent = new QLabel(row);
+            percent->setObjectName(transfer->objectName() + QStringLiteral("Percent"));
+            percent->setProperty("progressPercent", true);
+            percent->hide();
+            auto* action = new QPushButton(row);
+            action->setObjectName(QStringLiteral("cleanupModelButton%1").arg(index));
+            action->setProperty("buttonRole", QStringLiteral("download"));
+            action->setIconSize(QSize(18, 18));
+            // .model-action: a 34x34 square with a 6px radius.
+            action->setFixedSize(34, 34);
+            row_layout->addWidget(transfer, 0, Qt::AlignVCenter);
+            row_layout->addWidget(percent, 0, Qt::AlignVCenter);
+            row_layout->addWidget(action, 0, Qt::AlignVCenter);
+            if (!has_file) {
+                // A download button on «Не использовать» would offer a transfer that cannot
+                // happen; the row stays a plain choice.
+                action->hide();
+            }
+            cleanup_model_toggles_.push_back(toggle);
+            cleanup_model_badges_.push_back(badge);
+            cleanup_model_buttons_.push_back(action);
+            cleanup_model_progress_.push_back(transfer);
+            cleanup_model_busy_.push_back(false);
+            connect(toggle, &QAbstractButton::clicked, this, [this, index] { select_cleanup_model(index); });
+            connect(action, &QPushButton::clicked, this, [this, index] { handle_cleanup_action(index); });
+            cleanup_layout->addWidget(row);
+        }
+
+        // The user's own addition to the cleaner's prompt (Alexander, 14.10.2026). It is *added*
+        // to the built-in instruction and never replaces it: that is what makes a useless or
+        // contradictory addition harmless - the model answers worse, the guard refuses the answer
+        // (VT-DOM-1012: digits, language, length, word loss), and the rules' text gets through.
+        auto* prompt_block = new QWidget(cleanup_card);
+        prompt_block->setObjectName(QStringLiteral("cleanupPromptBlock"));
+        prompt_block->setAttribute(Qt::WA_StyledBackground, true);
+        auto* prompt_layout = new QVBoxLayout(prompt_block);
+        prompt_layout->setContentsMargins(18, 14, 18, 18);
+        prompt_layout->setSpacing(6);
+        auto* prompt_title = new QLabel(ui_text(UiKey::k219, language_), prompt_block);
+        prompt_title->setObjectName(QStringLiteral("cleanupPromptTitle"));
+        prompt_title->setProperty("uiKey", static_cast<int>(UiKey::k219));
+        prompt_layout->addWidget(prompt_title);
+        cleanup_prompt_ = new QPlainTextEdit(prompt_block);
+        cleanup_prompt_->setObjectName(QStringLiteral("cleanupPromptEdit"));
+        cleanup_prompt_->setPlaceholderText(ui_text(UiKey::k220, language_));
+        cleanup_prompt_->setFixedHeight(64);
+        cleanup_prompt_->setTabChangesFocus(true);
+        prompt_layout->addWidget(cleanup_prompt_);
+        auto* prompt_hint = new QLabel(ui_text(UiKey::k221, language_), prompt_block);
+        prompt_hint->setObjectName(QStringLiteral("dictionaryHint"));
+        prompt_hint->setWordWrap(true);
+        prompt_hint->setProperty("uiKey", static_cast<int>(UiKey::k221));
+        prompt_layout->addWidget(prompt_hint);
+        cleanup_layout->addWidget(prompt_block);
+        cleanup_group.rows->addWidget(cleanup_card);
+        rows->addWidget(cleanup_group.card);
         rows->addStretch(1);
         add_page_to_nav(page, ui_text(UiKey::k201, language_));
     }
@@ -3610,7 +3780,9 @@ void MainWindow::bind_settings_to_controls()
     best_of_->setValue(std::clamp(settings.best_of, kBestOfMin, kBestOfMax));
     terms_->setPlainText(to_q(settings.terms_dictionary));
     select(filler_level_, static_cast<int>(settings.filler_words_level));
+    select(cleanup_model_, static_cast<int>(settings.cleanup_model));
     filler_words_->setPlainText(to_q(settings.filler_words));
+    cleanup_prompt_->setPlainText(to_q(settings.cleanup_prompt));
     record_hotkey_->setText(to_q(settings.record_hotkey));
     cancel_hotkey_->setText(to_q(settings.cancel_hotkey));
     // The gamepad bindings are optional: an absent one shows as an empty readout.
@@ -3711,6 +3883,30 @@ void MainWindow::bind_settings_to_controls()
             settings.filler_words = text.toStdString();
         });
     });
+    // The user's addition to the cleaner's prompt. Text-only, so it cannot break the settings
+    // file; and the pipeline guard is what keeps a bad addition from reaching the text.
+    connect(cleanup_prompt_, &QPlainTextEdit::textChanged, this, [this] {
+        const QString text = cleanup_prompt_->toPlainText();
+        presenter_.update(voicetyper::app::SettingsChange::model, [text](domain::AppSettings& settings) {
+            settings.cleanup_prompt = text.toStdString();
+        });
+    });
+    // The cleanup model travels the same way as the filler-word level: the filter reads the
+    // settings on every dictation, so the next one already uses the chosen model (and «Не
+    // использовать» is just the value that keeps the rules only). Same change class again.
+    connect(cleanup_model_, &QComboBox::currentIndexChanged, this, [this](int index) {
+        if (index < 0) {
+            return;
+        }
+        const auto model = static_cast<domain::CleanupModel>(cleanup_model_->itemData(index).toInt());
+        presenter_.update(voicetyper::app::SettingsChange::model, [model](domain::AppSettings& settings) {
+            settings.cleanup_model = model;
+        });
+        refresh_cleanup_list();
+    });
+    // The first pass above only fills the combo; the rows and their badges follow the stored
+    // value here, including the default «Не использовать», which fires no signal at all.
+    refresh_cleanup_list();
     connect(record_hotkey_, &QLineEdit::textChanged, this, [this](const QString& text) {
         presenter_.update(voicetyper::app::SettingsChange::hotkeys, [text](domain::AppSettings& settings) {
             settings.record_hotkey = text.toStdString();
@@ -3975,6 +4171,9 @@ void MainWindow::retranslate()
             QString::fromUtf8(model_field(row.description_ru, row.description_en, language_)));
     }
     refresh_model_list();
+    // The cleanup rows carry their keys (so the pass above re-lettered them) but their button
+    // tooltips are built here, plus the badge of the active row.
+    refresh_cleanup_list();
     refresh_status();
 }
 
@@ -4358,6 +4557,199 @@ void MainWindow::refresh_model_buttons()
     update(ModelList::gigaam);
 }
 
+void MainWindow::select_cleanup_model(int index)
+{
+    // The hidden combo carries the choice to the presenter, exactly as the three size combos
+    // do; refresh_cleanup_list() then clears the other toggles, because the choice is exclusive.
+    if (cleanup_model_ == nullptr || index < 0 || index >= cleanup_model_->count()) {
+        return;
+    }
+    cleanup_model_->setCurrentIndex(index);
+    refresh_cleanup_list();
+}
+
+void MainWindow::refresh_cleanup_list()
+{
+    if (cleanup_model_ == nullptr) {
+        return;
+    }
+    const int selected = cleanup_model_->currentIndex();
+    for (std::size_t index = 0; index < cleanup_model_toggles_.size(); ++index) {
+        const bool active = static_cast<int>(index) == selected;
+        ToggleSwitch* toggle = cleanup_model_toggles_[index];
+        if (toggle->isChecked() != active) {
+            QSignalBlocker blocker(toggle);
+            toggle->setChecked(active);
+        }
+        // The row of the model in use is tinted and carries the «Активна» badge, exactly like
+        // a row of the recognition lists (index.css: .model-item.active and .model-badge).
+        QWidget* row = toggle->parentWidget();
+        if (row != nullptr && row->property("active").toBool() != active) {
+            row->setProperty("active", active);
+            // A dynamic property only reaches the stylesheet after a repolish.
+            row->style()->unpolish(row);
+            row->style()->polish(row);
+        }
+        if (index < cleanup_model_badges_.size()) {
+            cleanup_model_badges_[index]->setVisible(active);
+        }
+    }
+    refresh_cleanup_buttons();
+}
+
+void MainWindow::refresh_cleanup_buttons()
+{
+    // The same three states as the recognition rows: "Скачать" (disabled with the reason when
+    // the service is absent), "Удалить" once the file is there, "Отменить загрузку" while a
+    // transfer runs. «Не использовать» has no file, so its button stays hidden.
+    for (std::size_t index = 0; index < cleanup_model_buttons_.size(); ++index) {
+        if (index >= std::size(kCleanupModelRows)
+            || kCleanupModelRows[index].model == domain::CleanupModel::off) {
+            continue;
+        }
+        const auto model = kCleanupModelRows[index].model;
+        QPushButton* button = cleanup_model_buttons_[index];
+        const bool busy = index < cleanup_model_busy_.size() && cleanup_model_busy_[index];
+        const bool downloaded = !busy && services_.cleanup_model_is_downloaded
+            && services_.cleanup_model_is_downloaded(model);
+        if (busy) {
+            button->setIcon(drawn_icon(DrawnIcon::cancel, 18, QColor(QStringLiteral("#EC5F67"))));
+            button->setProperty("buttonRole", QStringLiteral("remove"));
+            button->setEnabled(services_.cleanup_model_download_cancel != nullptr);
+            button->setToolTip(ui_text(UiKey::k109, language_));
+        } else if (downloaded) {
+            button->setIcon(drawn_icon(DrawnIcon::remove, 18, QColor(QStringLiteral("#EC5F67"))));
+            button->setProperty("buttonRole", QStringLiteral("remove"));
+            button->setEnabled(static_cast<bool>(services_.cleanup_model_delete));
+            button->setToolTip(ui_text(UiKey::k38, language_));
+        } else {
+            button->setIcon(drawn_icon(DrawnIcon::download, 18, QColor(QStringLiteral("#39C395"))));
+            button->setProperty("buttonRole", QStringLiteral("download"));
+            button->setEnabled(static_cast<bool>(services_.cleanup_model_download));
+            button->setToolTip(services_.cleanup_model_download ? ui_text(UiKey::k31, language_)
+                                                               : ui_text(UiKey::k106, language_));
+        }
+        // A dynamic property change only reaches the stylesheet after a repolish.
+        button->style()->unpolish(button);
+        button->style()->polish(button);
+    }
+}
+
+void MainWindow::handle_cleanup_action(int index)
+{
+    if (index < 0 || static_cast<std::size_t>(index) >= cleanup_model_buttons_.size()
+        || static_cast<std::size_t>(index) >= std::size(kCleanupModelRows)) {
+        return;
+    }
+    const auto model = kCleanupModelRows[index].model;
+    if (model == domain::CleanupModel::off) {
+        return;
+    }
+    const auto slot = static_cast<std::size_t>(index);
+    if (slot < cleanup_model_busy_.size() && cleanup_model_busy_[slot]) {
+        // The same button cancels a transfer that is already running.
+        if (services_.cleanup_model_download_cancel) {
+            services_.cleanup_model_download_cancel(model);
+        }
+        return;
+    }
+    if (services_.cleanup_model_is_downloaded && services_.cleanup_model_is_downloaded(model)) {
+        if (services_.cleanup_model_delete && services_.cleanup_model_delete(model)) {
+            refresh_cleanup_buttons();
+        }
+        return;
+    }
+    start_cleanup_download(index);
+}
+
+void MainWindow::start_cleanup_download(int index)
+{
+    if (!services_.cleanup_model_download) {
+        return;
+    }
+    if (index < 0 || static_cast<std::size_t>(index) >= cleanup_model_progress_.size()
+        || static_cast<std::size_t>(index) >= std::size(kCleanupModelRows)) {
+        return;
+    }
+    const auto model = kCleanupModelRows[index].model;
+    if (model == domain::CleanupModel::off) {
+        return;
+    }
+    const auto slot = static_cast<std::size_t>(index);
+    QProgressBar* bar = cleanup_model_progress_[slot];
+    // A percentage, not a cycling animation: the server reports the length, so the bar shows
+    // real progress from the first report on.
+    bar->setRange(0, 100);
+    bar->setValue(0);
+    bar->setFormat(QStringLiteral("%p%"));
+    bar->setTextVisible(false);
+    bar->show();
+    if (bar->parentWidget() != nullptr) {
+        if (QLabel* percent
+            = bar->parentWidget()->findChild<QLabel*>(bar->objectName() + QStringLiteral("Percent"))) {
+            percent->setText(QStringLiteral("0%"));
+            percent->show();
+        }
+    }
+    cleanup_model_busy_[slot] = true;
+    refresh_cleanup_buttons();
+    set_status_message(ui_text(UiKey::k105, language_));
+
+    QPointer<MainWindow> self(this);
+    services_.cleanup_model_download(model,
+        [self, index](WindowServices::ModelTransfer report) {
+        if (self == nullptr) {
+            return;
+        }
+        // The report arrives on a worker thread and everything below touches widgets: the whole
+        // handler is marshalled onto the interface thread, the rule every download handler in
+        // this file follows (the recursive-repaint crash of 07.10.2026).
+        QMetaObject::invokeMethod(self, [self, index, report] {
+        if (self == nullptr) {
+            return;
+        }
+        const auto slot = static_cast<std::size_t>(index);
+        if (slot >= self->cleanup_model_progress_.size() || slot >= self->cleanup_model_busy_.size()) {
+            return;
+        }
+        QProgressBar* bar = self->cleanup_model_progress_[slot];
+        const auto percent_of = [bar]() -> QLabel* {
+            return bar->parentWidget() != nullptr
+                ? bar->parentWidget()->findChild<QLabel*>(bar->objectName() + QStringLiteral("Percent"))
+                : nullptr;
+        };
+        const auto finish = [&] {
+            self->cleanup_model_busy_[slot] = false;
+            bar->hide();
+            if (QLabel* percent = percent_of()) {
+                percent->hide();
+            }
+            self->refresh_cleanup_buttons();
+        };
+        if (!report.error.isEmpty()) {
+            // A cancellation is a normal outcome, not a failure: say so, without the reason.
+            finish();
+            self->set_status_message(report.cancelled
+                    ? ui_text(UiKey::k108, self->language_)
+                    : ui_text(UiKey::k106, self->language_) + QStringLiteral(": ") + report.error);
+            return;
+        }
+        if (report.percent >= 0) {
+            bar->setValue(std::min(100, report.percent));
+            if (QLabel* percent = percent_of()) {
+                percent->setText(QString::number(report.percent) + QStringLiteral("%"));
+            }
+            self->set_status_message(ui_text(UiKey::k107, self->language_)
+                .arg(report.percent));
+        }
+        if (report.percent >= 100) {
+            finish();
+            self->set_status_message(QString());
+        }
+        }, Qt::QueuedConnection);
+    });
+}
+
 void MainWindow::refresh_page_title(int index)
 {
     if (page_title_ == nullptr || nav_ == nullptr || index < 0 || index >= nav_->count()) {
@@ -4671,6 +5063,11 @@ void MainWindow::apply_theme()
         #updateProgress::chunk { background: @{accent}; border-radius: 4px; }
         #modelItem { background: transparent; border-top: 1px solid @{line_soft}; min-height: 92px; }
         #modelItem[firstRow="true"] { border-top: 0px; }
+        /* The prompt-addition block closes the cleanup card: it carries the same hairline as the
+           rows above it, so the card reads as one closed panel instead of an open tail
+           (Alexander, 14.10.2026). QSS has no // comments - one there silently voids the rules
+           that follow it. */
+        #cleanupPromptBlock { background: transparent; border-top: 1px solid @{line_soft}; }
         #modelItem[active="true"] { background: rgba(54,174,234,5%); }
         #modelCopy, #modelNameLine { background: transparent; }
         /* index.css: .model-item strong - the model name carries the weight. */
@@ -4686,7 +5083,7 @@ void MainWindow::apply_theme()
         #dictionary, #fillerWords { background: transparent; border-top: 1px solid @{line_soft}; }
         #dictionaryTitle { color: @{text}; font-size: 12px; font-weight: 700; }
         #dictionaryCaption, #dictionaryHint { color: @{muted}; font-size: 10px; }
-        #termsEdit, #fillerWordsEdit {
+        #termsEdit, #fillerWordsEdit, #cleanupPromptEdit {
             background: @{control}; color: @{text}; border: 1px solid @{border}; border-radius: 6px;
             padding: 10px 11px; font-family: "Cascadia Code", Consolas, monospace; font-size: 10px;
         }

@@ -160,6 +160,16 @@ struct WindowServices {
     std::function<void(ModelList engine, int index, std::function<void(ModelTransfer)>)> model_download;
     /// Asks a running download to stop; the service removes the partial file.
     std::function<void(ModelList engine, int index)> model_download_cancel;
+    /// The optional text-cleaner models (`ModelKind::cleanup`, plan p_5d68d66503ca). They are
+    /// keyed by `domain::CleanupModel` instead of by a recognition list, because the cleaner is
+    /// not an engine: `off` has no file at all, and the three sizes live in three different
+    /// repositories, so a size index could not tell them apart from a recognition model.
+    /// Empty callbacks leave the row's action button disabled with the same reason the
+    /// recognition rows use.
+    std::function<bool(domain::CleanupModel model)> cleanup_model_is_downloaded;
+    std::function<bool(domain::CleanupModel model)> cleanup_model_delete;
+    std::function<void(domain::CleanupModel model, std::function<void(ModelTransfer)>)> cleanup_model_download;
+    std::function<void(domain::CleanupModel model)> cleanup_model_download_cancel;
     /// Live log lines.
     std::function<QString()> log_text;
     /// Called after a settings change that affects a running service (engine,
@@ -274,6 +284,21 @@ private:
     /// presenter, and the other toggles are unchecked because the choice is
     /// exclusive.
     void select_model(ModelList list, int index);
+
+    /// The cleanup-model list of the «Распознавание» page (plan p_5d68d66503ca). The rows are
+    /// exclusive like the recognition ones, but they are keyed by `domain::CleanupModel`: the
+    /// hidden combo holds the choice, and the row's action button downloads or deletes that one
+    /// file through the `cleanup_model_*` services.
+    void select_cleanup_model(int index);
+    /// Mirrors the stored cleanup model into the toggles and the "Активна" badge.
+    void refresh_cleanup_list();
+    /// Labels the cleanup action buttons for what the rows really are: "Скачать", "Удалить",
+    /// or "Отменить загрузку" while a transfer runs.
+    void refresh_cleanup_buttons();
+    /// One press of a cleanup row's action button: cancel, delete or download.
+    void handle_cleanup_action(int index);
+    /// Starts downloading one cleanup model and shows its progress in the row.
+    void start_cleanup_download(int index);
 
     /// The per-engine model widgets. The three lists are addressed by engine, so
     /// every branch that used to say "whisper or parakeet" now names the list.
@@ -492,6 +517,19 @@ private:
     /// Уровень удаления слов-паразитов и свои слова к нему (план p_ffecadcca9af).
     QComboBox* filler_level_ = nullptr;
     QPlainTextEdit* filler_words_ = nullptr;
+    /// Дополнение пользователя к промпту модели чистки (план p_5d68d66503ca): добавляется к
+    /// встроенной инструкции, а не заменяет её (Александр, 14.10.2026).
+    QPlainTextEdit* cleanup_prompt_ = nullptr;
+    /// The cleanup-model list of the «Распознавание» page (plan p_5d68d66503ca): the hidden combo
+    /// carries the choice, the four rows own the toggles, the badges, the progress bars and the
+    /// 34x34 action buttons. The first row is «Не использовать» — it has no file, so its action
+    /// button is hidden.
+    QComboBox* cleanup_model_ = nullptr;
+    std::vector<ToggleSwitch*> cleanup_model_toggles_;
+    std::vector<QLabel*> cleanup_model_badges_;
+    std::vector<QPushButton*> cleanup_model_buttons_;
+    std::vector<QProgressBar*> cleanup_model_progress_;
+    std::vector<bool> cleanup_model_busy_;
     QSpinBox* silence_threshold_ = nullptr;
     QDoubleSpinBox* temperature_ = nullptr;
     QSpinBox* best_of_ = nullptr;

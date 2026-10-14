@@ -53,6 +53,46 @@ Attribution 4.0 (CC-BY-4.0):
   (MIT/CC-BY в зависимости от модели).
 - Silero VAD: https://github.com/snakers4/silero-vad (MIT).
 
+## llama.cpp (MIT)
+
+Рантайм необязательной локальной чистки текста (этап 2, план p_5d68d66503ca).
+
+- llama.cpp: https://github.com/ggml-org/llama.cpp (MIT), пин — коммит
+  `d81235049384534c167caea52b85a694f6103d14` (upstream v0.6.0, 2026-10-05), архив
+  37 887 730 байт,
+  sha256 `6b58785f0a82898f4c3442417ff962e2d4b231b1bee5d033902ad90b27901e14`.
+- ggml, входящий в llama.cpp: Copyright (c) 2023-2026 The ggml authors, MIT, версия 0.26.0.
+- Собирается в отдельную разделяемую библиотеку `voicetyper_llm.so` / `voicetyper_llm.dll`,
+  llama.cpp и ggml лежат внутри неё статически. Причина отдельной библиотеки: whisper.cpp,
+  который линкуется в это же приложение, несёт ggml 0.25.1, и общий набор символов `ggml_*`
+  их обслуживать не может.
+- Пин (репозиторий, коммит, адрес архива, его размер и sha256, контент-хеши файлов API и
+  сборки) — `native/llm/LlamaPins.cmake`; проверка идёт при скачивании и повторно после
+  распаковки, расхождение — фатальная ошибка сборки.
+
+## Модели чистки текста (этап 2, план p_5d68d66503ca)
+
+Необязательные локальные модели, которые убирают слова-паразиты из готового транскрипта.
+Скачиваются по требованию пользователя через магазин моделей (`ModelKind::cleanup`), после
+скачивания интернет не нужен; работают через llama.cpp (раздел ниже).
+
+| Размер | Модель | Файл | Байт | sha256 | Лицензия |
+|---|---|---|---|---|---|
+| маленькая | Qwen2.5-0.5B-Instruct | `qwen2.5-0.5b-instruct-q4_k_m.gguf` | 491 400 032 | `74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db` | Apache-2.0 |
+| средняя | Qwen2.5-1.5B-Instruct | `qwen2.5-1.5b-instruct-q4_k_m.gguf` | 1 117 320 736 | `6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e` | Apache-2.0 |
+| большая | Llama-3.2-3B-Instruct | `Llama-3.2-3B-Instruct-Q4_K_M.gguf` | 2 019 377 696 | `6c1a2b41161032677be168d354123594c0e6e67d2b9227c84f296ad037c728ff` | Llama 3.2 Community License |
+
+Источники весов:
+
+- https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF (Apache-2.0);
+- https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF (Apache-2.0);
+- https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF — Llama 3.2 Community License;
+  текст лицензии прилагается к сборке вместе с уведомлениями.
+
+Qwen2.5-3B-Instruct в список не вошла: её карточка помечена лицензией `other` (Qwen Research
+License, только исследования), что для продукта не годится (проверено 14.10.2026, решение
+Александра — взять Llama-3.2-3B вместо неё).
+
 ## transcribe.cpp (MIT)
 
 Нативный рантайм распознавания GigaAM (`native/transcribe/libtranscribe.dll` и его

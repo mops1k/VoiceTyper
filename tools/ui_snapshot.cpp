@@ -60,8 +60,11 @@ int main(int argc, char** argv)
     static_cast<void>(presenter.load());
 
     voicetyper::ui::MainWindow window(presenter, voicetyper::ui::WindowServices{});
-    // The mockup's own window size, so a snapshot can be compared with it directly.
-    window.resize(1220, 800);
+    // The mockup's own window size, so a snapshot can be compared with it directly. A third
+    // argument raises the height: the Recognition page grew a block below its model list, and a
+    // card that only looks closed above the fold has to be checkable whole.
+    const int requested_height = argc > 3 ? QString::fromUtf8(argv[3]).toInt() : 800;
+    window.resize(1220, requested_height > 0 ? requested_height : 800);
     window.show();
     QApplication::processEvents();
 

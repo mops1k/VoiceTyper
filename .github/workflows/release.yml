@@ -101,6 +101,30 @@ jobs:
           prerelease: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.prerelease == 'true' }}
           generate_release_notes: true
 
+      # The generated commit list is the tail of the body; RELEASE_NOTES.md is the human part and
+      # goes in front of it. The leading line of the file is the marker: the job may be re-run, and
+      # a second prepend would duplicate the text exactly like the old double generation did
+      # (Alexander, 14.10.2026).
+      - name: prepend what's new
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = '${{ github.event.inputs.tag != '' && github.event.inputs.tag || github.ref_name }}'
+          $notes = gh release view $tag --json body --jq .body
+          $whatsNew = (Get-Content RELEASE_NOTES.md -Raw).Trim()
+          if ([string]::IsNullOrWhiteSpace($whatsNew)) { throw 'RELEASE_NOTES.md is empty' }
+          $marker = ($whatsNew -split "`n" | Where-Object { $_.Trim() -ne '' } | Select-Object -First 1).Trim()
+          if ($notes.Contains($marker)) {
+            Write-Host "the body already carries '$marker' - nothing to prepend"
+            exit 0
+          }
+          # WriteAllText with an explicit no-BOM encoder: Set-Content -Encoding utf8 on the
+          # runner's PowerShell 5.1 would put a byte-order mark at the very start of the body.
+          $body = "$whatsNew`n`n$notes"
+          [System.IO.File]::WriteAllText("$PWD\release-body.md", $body, (New-Object System.Text.UTF8Encoding($false)))
+          gh release edit $tag --notes-file release-body.md
+
   # The Linux build: a self-contained AppImage, built in an Arch container because
   # the project needs Qt 6.9+ (Ubuntu 24.04 ships 6.4) and layer-shell-qt for the
   # Wayland overlay. The same release carries the Windows installer and this file.
@@ -180,4 +204,7 @@ jobs:
             build/appimage/VoiceTyper-*.AppImage.sha256
           tag_name: ${{ github.event.inputs.tag != '' && github.event.inputs.tag || github.ref_name }}
           prerelease: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.prerelease == 'true' }}
-          generate_release_notes: true
+          # No generate_release_notes here: this job only attaches the AppImage to the release the
+          # Windows job created. Generating the notes twice was what duplicated the commit list
+          # and the "Full Changelog" line in every release body (fixed 14.10.2026).
+          generate_release_notes: false

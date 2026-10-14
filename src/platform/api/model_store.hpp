@@ -72,6 +72,9 @@ enum class ModelKind : std::uint8_t {
     parakeet = 2,
     /// GigaAM-v3 e2e-rnnt GGUF weights, one per GigaamModelSize.
     gigaam = 3,
+    /// Optional local text-cleaner weights (plan p_5d68d66503ca), one per ModelSize:
+    /// small, medium and large, chosen by the user in the interface.
+    cleanup = 4,
 };
 
 [[nodiscard]] constexpr std::string_view model_kind_name(ModelKind kind) noexcept
@@ -81,6 +84,7 @@ enum class ModelKind : std::uint8_t {
     case ModelKind::vad: return "vad";
     case ModelKind::parakeet: return "parakeet";
     case ModelKind::gigaam: return "gigaam";
+    case ModelKind::cleanup: return "cleanup";
     }
     return "unknown";
 }
@@ -93,6 +97,17 @@ inline constexpr std::string_view kParakeetModelBaseUrl = "https://huggingface.c
 /// GigaAM-v3 e2e-rnnt GGUF quants published by the transcribe.cpp author; the
 /// weights inherit the upstream MIT license (see THIRD_PARTY_NOTICES.md).
 inline constexpr std::string_view kGigaamModelBaseUrl = "https://huggingface.co/handy-computer/gigaam-v3-e2e-rnnt-gguf/resolve/main/";
+
+/// Cleanup models of the optional local text cleaner. Each lives in its own repository, so
+/// these are full URLs rather than a base URL plus a name. Licences, byte counts and sha256
+/// are recorded in THIRD_PARTY_NOTICES.md: Apache-2.0 twice (Qwen2.5-0.5B, Qwen2.5-1.5B) and
+/// the Llama 3.2 Community License (Llama-3.2-3B). Qwen2.5-3B was rejected: its card says
+/// `other`, the research-only Qwen Research License (Alexander, 14.10.2026). QVikhr-1.7B stood
+/// here first and was replaced on the same day: measured, it answered with an English
+/// ` thinking` reasoning block instead of the cleaned text.
+inline constexpr std::string_view kCleanupSmallModelUrl = "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf";
+inline constexpr std::string_view kCleanupMediumModelUrl = "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf";
+inline constexpr std::string_view kCleanupLargeModelUrl = "https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q4_K_M.gguf";
 
 /// Default model download timeout (30 minutes). The download also sends the
 /// shared User-Agent defined in platform/api/http.hpp.
@@ -160,11 +175,15 @@ using ModelProgressSink = std::function<void(const ModelDownloadProgress&)>;
 [[nodiscard]] const std::array<ModelDescriptor, 1>& vad_catalog();
 [[nodiscard]] const std::array<ModelDescriptor, 4>& parakeet_catalog();
 [[nodiscard]] const std::array<ModelDescriptor, 4>& gigaam_catalog();
+/// The three cleanup models, in ModelSize order: small, medium, large.
+[[nodiscard]] const std::array<ModelDescriptor, 3>& cleanup_catalog();
 
 [[nodiscard]] Result<ModelDescriptor> find_whisper_model(ModelSize size);
 [[nodiscard]] Result<ModelDescriptor> find_vad_model();
 [[nodiscard]] Result<ModelDescriptor> find_parakeet_model(ParakeetModelSize size);
 [[nodiscard]] Result<ModelDescriptor> find_gigaam_model(GigaamModelSize size);
+/// Accepts only small, medium and large: those are the three sizes the cleaner offers.
+[[nodiscard]] Result<ModelDescriptor> find_cleanup_model(ModelSize size);
 
 /// Filenames removed at startup because they predate the q8 weights. Frozen:
 /// deleting by exact name only, so an unrelated file is never touched.

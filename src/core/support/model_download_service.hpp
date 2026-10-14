@@ -53,6 +53,13 @@ struct ModelDownloadProgress {
 [[nodiscard]] std::string_view parakeet_model_file_name(domain::ParakeetModelSize size);
 [[nodiscard]] std::string_view gigaam_model_file_name(domain::GigaamModelSize size);
 
+/// File name and published byte count of the optional local cleaner (plan p_5d68d66503ca).
+/// The app resolves models through this header, and the model catalog holds the same three rows
+/// for the store; the two are kept in step by hand, so a change here means a change there as
+/// well. `off` has no file, so it returns an empty name and zero bytes.
+[[nodiscard]] std::string_view cleanup_model_file_name(domain::CleanupModel model);
+[[nodiscard]] std::uint64_t cleanup_model_size_bytes(domain::CleanupModel model);
+
 /// The address a file is fetched from.
 [[nodiscard]] std::string model_download_url(ModelEngine engine, std::string_view file_name);
 
@@ -63,6 +70,15 @@ public:
     /// Downloads into `<models>/<file_name>.part`, renames it on success and removes it on any
     /// failure, so a broken transfer never leaves something that looks like a model.
     [[nodiscard]] platform::Status download(ModelEngine engine, std::string_view file_name,
+        const std::function<void(const ModelDownloadProgress&)>& progress,
+        const domain::CancellationToken& cancellation);
+
+    /// The same transfer for a model addressed by its complete URL. The optional text-cleaner
+    /// weights (`ModelKind::cleanup`, plan p_5d68d66503ca) have no shared base URL — each of the
+    /// three lives in its own repository — so their catalog entry
+    /// (`platform::ModelDescriptor::download_url`) carries the whole address instead. `download()`
+    /// is this method with the URL built from the engine and the file name.
+    [[nodiscard]] platform::Status download_url(std::string_view url, std::string_view file_name,
         const std::function<void(const ModelDownloadProgress&)>& progress,
         const domain::CancellationToken& cancellation);
 

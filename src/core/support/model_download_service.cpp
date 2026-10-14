@@ -86,6 +86,36 @@ std::string_view gigaam_model_file_name(domain::GigaamModelSize size)
     return "gigaam-v3-e2e-rnnt-Q8_0.gguf";
 }
 
+std::string_view cleanup_model_file_name(domain::CleanupModel model)
+{
+    switch (model) {
+    case domain::CleanupModel::off:
+        return {};
+    case domain::CleanupModel::small:
+        return "qwen2.5-0.5b-instruct-q4_k_m.gguf";
+    case domain::CleanupModel::medium:
+        return "qwen2.5-1.5b-instruct-q4_k_m.gguf";
+    case domain::CleanupModel::large:
+        return "Llama-3.2-3B-Instruct-Q4_K_M.gguf";
+    }
+    return {};
+}
+
+std::uint64_t cleanup_model_size_bytes(domain::CleanupModel model)
+{
+    switch (model) {
+    case domain::CleanupModel::off:
+        return 0;
+    case domain::CleanupModel::small:
+        return 491'400'032;
+    case domain::CleanupModel::medium:
+        return 1'117'320'736;
+    case domain::CleanupModel::large:
+        return 2'019'377'696;
+    }
+    return 0;
+}
+
 std::string model_download_url(ModelEngine engine, std::string_view file_name)
 {
     const std::string_view base = engine == ModelEngine::whisper
@@ -116,6 +146,21 @@ platform::Status ModelDownloadService::download(ModelEngine engine, std::string_
         return platform::Status::failure(platform::ErrorCode::invalid_argument,
             "the model file name is empty");
     }
+    return download_url(model_download_url(engine, file_name), file_name, progress, cancellation);
+}
+
+platform::Status ModelDownloadService::download_url(std::string_view url, std::string_view file_name,
+    const std::function<void(const ModelDownloadProgress&)>& progress,
+    const domain::CancellationToken& cancellation)
+{
+    if (file_name.empty()) {
+        return platform::Status::failure(platform::ErrorCode::invalid_argument,
+            "the model file name is empty");
+    }
+    if (url.empty()) {
+        return platform::Status::failure(platform::ErrorCode::invalid_argument,
+            "the model download address is empty");
+    }
 
     if (cancellation.can_be_cancelled() && cancellation.is_cancellation_requested()) {
         return platform::Status::failure(platform::ErrorCode::cancelled,
@@ -130,7 +175,7 @@ platform::Status ModelDownloadService::download(ModelEngine engine, std::string_
     std::filesystem::remove(target, error);
 
     platform::HttpRequest request;
-    request.url = model_download_url(engine, file_name);
+    request.url = std::string(url);
     request.headers.push_back({std::string("User-Agent"), std::string(kModelUserAgent)});
     request.timeout = kModelDownloadTimeout;
 

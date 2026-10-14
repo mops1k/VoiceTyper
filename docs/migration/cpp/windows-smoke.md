@@ -25,6 +25,13 @@ manifest content pins, so the tree is only accepted when it is byte-identical to
 the pinned commit. `-B build/windows-smoke` keeps this build out of the way of
 other builds on the same machine.
 
+The cleanup runtime needs the same treatment for the same reason:
+`-DVOICETYPER_LLM_PREFETCHED_DIR="$env:LOCALAPPDATA\Temp\vt-llama-<commit>"`
+points the pinned llama.cpp tree at a pre-fetched copy (its six content pins are
+re-hashed inside it, so only the pinned commit is accepted). The finished
+`voicetyper_llm.dll` must sit next to the exe, exactly like the Qt runtime DLLs,
+because that is where the loader looks first.
+
 The runtime DLLs must sit next to the exe. Copy the Qt6 runtime from
 `$env:VOICETYPER_QT_ROOT\bin` (`Qt6Core`, `Qt6Gui`, `Qt6Widgets`, `Qt6Network`,
 `libgcc_s_seh-1.dll`, `libstdc++-6.dll`, `libwinpthread-1.dll`) into

@@ -1,5 +1,7 @@
 #include "domain/terms_dictionary.hpp"
 
+#include "domain/utf8_text.hpp"
+
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -18,142 +20,24 @@ namespace {
 // character is. Both are impossible on raw bytes: a Cyrillic letter is two
 // bytes, so std::regex word boundaries and tolower() are wrong here (and locale
 // dependent). Decoding once keeps the rules exact and testable.
+//
+// The helpers themselves live in domain/utf8_text.hpp, shared with the filler-word
+// rules (plan p_ffecadcca9af, migrated 2026-10-14): two copies of "what is a letter"
+// drift apart, and the copy that silently differs is the bug nobody sees.
 // ---------------------------------------------------------------------------
 
-std::vector<char32_t> decode(std::string_view text)
-{
-    std::vector<char32_t> points;
-    points.reserve(text.size());
-    std::size_t index = 0;
-    while (index < text.size()) {
-        const auto lead = static_cast<unsigned char>(text[index]);
-        std::size_t extra = 0;
-        char32_t value = 0;
-        if (lead < 0x80) {
-            value = lead;
-            extra = 0;
-        } else if ((lead & 0xE0) == 0xC0) {
-            value = lead & 0x1F;
-            extra = 1;
-        } else if ((lead & 0xF0) == 0xE0) {
-            value = lead & 0x0F;
-            extra = 2;
-        } else if ((lead & 0xF8) == 0xF0) {
-            value = lead & 0x07;
-            extra = 3;
-        } else {
-            // An invalid lead byte is kept as-is (as a byte value) so a corrupt
-            // text still round-trips instead of losing characters.
-            points.push_back(lead);
-            ++index;
-            continue;
-        }
-        if (index + extra >= text.size()) {
-            points.push_back(lead);
-            ++index;
-            continue;
-        }
-        bool valid = true;
-        for (std::size_t offset = 1; offset <= extra; ++offset) {
-            const auto next = static_cast<unsigned char>(text[index + offset]);
-            if ((next & 0xC0) != 0x80) {
-                valid = false;
-                break;
-            }
-            value = (value << 6) | (next & 0x3F);
-        }
-        if (!valid) {
-            points.push_back(lead);
-            ++index;
-            continue;
-        }
-        points.push_back(value);
-        index += extra + 1;
-    }
-    return points;
-}
-
-void append_utf8(std::string& out, char32_t point)
-{
-    if (point < 0x80) {
-        out.push_back(static_cast<char>(point));
-    } else if (point < 0x800) {
-        out.push_back(static_cast<char>(0xC0 | (point >> 6)));
-        out.push_back(static_cast<char>(0x80 | (point & 0x3F)));
-    } else if (point < 0x10000) {
-        out.push_back(static_cast<char>(0xE0 | (point >> 12)));
-        out.push_back(static_cast<char>(0x80 | ((point >> 6) & 0x3F)));
-        out.push_back(static_cast<char>(0x80 | (point & 0x3F)));
-    } else {
-        out.push_back(static_cast<char>(0xF0 | (point >> 18)));
-        out.push_back(static_cast<char>(0x80 | ((point >> 12) & 0x3F)));
-        out.push_back(static_cast<char>(0x80 | ((point >> 6) & 0x3F)));
-        out.push_back(static_cast<char>(0x80 | (point & 0x3F)));
-    }
-}
-
-std::string encode(const std::vector<char32_t>& points)
-{
-    std::string out;
-    out.reserve(points.size());
-    for (const auto point : points) {
-        append_utf8(out, point);
-    }
-    return out;
-}
-
-char32_t to_lower(char32_t point)
-{
-    if (point >= U'A' && point <= U'Z') {
-        return point + 32;
-    }
-    // Cyrillic А..Я and Ё: the same offset as ASCII, with Ё handled separately.
-    if (point >= 0x0410 && point <= 0x042F) {
-        return point + 0x20;
-    }
-    if (point == 0x0401) {
-        return 0x0451;
-    }
-    return point;
-}
-
-char32_t to_upper(char32_t point)
-{
-    if (point >= U'a' && point <= U'z') {
-        return point - 32;
-    }
-    if (point >= 0x0430 && point <= 0x044F) {
-        return point - 0x20;
-    }
-    if (point == 0x0451) {
-        return 0x0401;
-    }
-    return point;
-}
-
-bool is_upper(char32_t point)
-{
-    return to_lower(point) != point;
-}
-
-bool is_letter(char32_t point)
-{
-    if (point < 0x80) {
-        return (point >= U'A' && point <= U'Z') || (point >= U'a' && point <= U'z');
-    }
-    return point >= 0x0400 && point <= 0x04FF;
-}
-
-/// A word character is anything a term must not be glued to: letters and digits
-/// (so "комитный" is one word and stays intact, and "комит2" is not a word).
-bool is_word_character(char32_t point)
-{
-    if (point < 0x80) {
-        return (point >= U'0' && point <= U'9') || (point >= U'A' && point <= U'Z')
-            || (point >= U'a' && point <= U'z');
-    }
-    return point >= 0x0400 && point <= 0x04FF;
-}
+using text::append_utf8;
+using text::decode;
+using text::encode;
+using text::is_letter;
+using text::is_space;
+using text::is_upper;
+using text::is_word_character;
+using text::lower_copy;
+using text::split_entries;
+using text::to_lower;
+using text::to_upper;
+using text::trim;
 
 bool all_upper(const std::vector<char32_t>& points, std::size_t from, std::size_t count)
 {
@@ -169,48 +53,6 @@ bool all_upper(const std::vector<char32_t>& points, std::size_t from, std::size_
         }
     }
     return any_letter;
-}
-
-bool is_space(char byte)
-{
-    return byte == ' ' || byte == '\t' || byte == '\r' || byte == '\n';
-}
-
-std::string_view trim(std::string_view text)
-{
-    std::size_t begin = 0;
-    std::size_t end = text.size();
-    while (begin < end && is_space(text[begin])) {
-        ++begin;
-    }
-    while (end > begin && is_space(text[end - 1])) {
-        --end;
-    }
-    return text.substr(begin, end - begin);
-}
-
-std::vector<std::string_view> split_entries(std::string_view text)
-{
-    std::vector<std::string_view> entries;
-    std::size_t begin = 0;
-    for (std::size_t index = 0; index <= text.size(); ++index) {
-        const bool separator = index == text.size() || text[index] == ',' || text[index] == '\n';
-        if (separator) {
-            entries.push_back(text.substr(begin, index - begin));
-            begin = index + 1;
-        }
-    }
-    return entries;
-}
-
-std::string lower_copy(std::string_view text)
-{
-    std::string out;
-    out.reserve(text.size());
-    for (const auto point : decode(text)) {
-        append_utf8(out, to_lower(point));
-    }
-    return out;
 }
 
 bool contains_ignoring_case(const std::vector<std::string>& values, std::string_view candidate)

@@ -166,6 +166,27 @@ accepted only when it is byte-identical to the pinned commit.
 cmake -S . -B build/x -DVOICETYPER_BUILD_ASR=ON -DVOICETYPER_WHISPER_PREFETCHED_DIR=/path/to/whisper.cpp
 ```
 
+### The optional cleanup runtime (llama.cpp) and its own prefetch hatch
+
+`VOICETYPER_BUILD_LLM` (on with the GUI) adds the local text-cleanup model.
+`--target voicetyper-llm-native` fetches the pinned llama.cpp archive, verifies
+its SHA-256 and the six content pins, and builds `voicetyper_llm.so`/`.dll` with
+llama.cpp and ggml linked statically inside it. It is a separate CMake tree on
+purpose: whisper.cpp carries ggml 0.25.1 and llama.cpp carries ggml 0.26.0, and
+one set of `ggml_*` symbols cannot serve both.
+
+`VOICETYPER_LLM_PREFETCHED_DIR=<path>` is the same kind of hatch as the whisper
+one, and the tree is still verified by its six content pins, so only the pinned
+commit is accepted:
+
+```sh
+cmake -S . -B build/x -DVOICETYPER_BUILD_LLM=ON -DVOICETYPER_LLM_PREFETCHED_DIR=/path/to/llama.cpp-<commit>
+```
+
+The pin itself (repository, commit, archive URL, its byte count and SHA-256, and
+the content hashes) lives in `native/llm/LlamaPins.cmake`; the main project and
+the wrapper tree both read that one file, so the pin cannot drift.
+
 ## Two documented toolchain deviations
 
 1. **Windows API level of the vendored sub-build (`_WIN32_WINNT=0x0601`).**

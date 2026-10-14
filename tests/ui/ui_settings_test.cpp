@@ -2095,6 +2095,249 @@ private slots:
         second.hide();
         std::filesystem::remove(path);
     }
+
+    // The cleanup-model card of the Recognition page (plan p_5d68d66503ca): four rows —
+    // «Не использовать» and the three sizes — with the same anatomy as the model lists of
+    // «Модели» (a toggle, the name and its badge, the meta line, the note and the 34x34 action
+    // button). There is deliberately no separate switch: off *is* the first row, because the
+    // settings carry one value (agreed with Alexander, 14.10.2026).
+    void cleanup_model_card_selects_and_reloads()
+    {
+        using voicetyper::domain::CleanupModel;
+
+        const auto path = std::filesystem::temp_directory_path() / "voicetyper-ui-cleanup-test.json";
+        std::filesystem::remove(path);
+        voicetyper::platform::PortableClock clock;
+        voicetyper::platform::PortableFileSystem file_system;
+        voicetyper::app::SettingsPresenter presenter(path, file_system, clock);
+        static_cast<void>(presenter.load());
+
+        // The download services are what turns a row's action button into "Скачать"/"Удалить".
+        // Only the middle model is on disk, so only its button must offer deletion.
+        voicetyper::ui::WindowServices services;
+        int deleted_model = -1;
+        services.cleanup_model_is_downloaded = [](CleanupModel model) {
+            return model == CleanupModel::medium;
+        };
+        services.cleanup_model_delete = [&deleted_model](CleanupModel model) {
+            deleted_model = static_cast<int>(model);
+            return true;
+        };
+        services.cleanup_model_download = [](CleanupModel,
+                                                 std::function<void(
+                                                     voicetyper::ui::WindowServices::ModelTransfer)>) {};
+
+        voicetyper::ui::MainWindow window(presenter, std::move(services));
+        window.resize(980, 640);
+        window.show();
+        QCoreApplication::processEvents();
+
+        int recognition_index = -1;
+        for (int i = 0; i < window.page_count(); ++i) {
+            if (window.tab_title(i) == QStringLiteral("Распознавание")) {
+                recognition_index = i;
+            }
+        }
+        QVERIFY2(recognition_index >= 0, "the Recognition page is not in the navigation");
+        window.show_page(recognition_index);
+        QCoreApplication::processEvents();
+
+        auto* card = window.page_widget(recognition_index)
+                         ->findChild<QWidget*>(QStringLiteral("cleanupModelsCard"));
+        QVERIFY2(card != nullptr, "the cleanup-model card is not on the Recognition page");
+        // Four rows, and every one carries a toggle and a 34x34 action button.
+        QCOMPARE(card->findChildren<QWidget*>(QStringLiteral("modelItem")).size(), 4);
+        for (int index = 0; index < 4; ++index) {
+            auto* toggle = card->findChild<voicetyper::ui::ToggleSwitch*>(
+                QStringLiteral("cleanupModelToggle%1").arg(index));
+            QVERIFY2(toggle != nullptr, "a cleanup row has no toggle");
+            auto* button = card->findChild<QPushButton*>(
+                QStringLiteral("cleanupModelButton%1").arg(index));
+            QVERIFY2(button != nullptr, "a cleanup row has no action button");
+            QCOMPARE(button->minimumSize(), QSize(34, 34));
+        }
+
+        // The four rows are exactly the four CleanupModel values, in order.
+        auto* combo = window.page_widget(recognition_index)
+                          ->findChild<QComboBox*>(QStringLiteral("cleanupModelCombo"));
+        QVERIFY2(combo != nullptr, "the cleanup-model state holder is missing");
+        QCOMPARE(combo->count(), 4);
+        QCOMPARE(combo->itemData(0).toInt(), static_cast<int>(CleanupModel::off));
+        QCOMPARE(combo->itemData(1).toInt(), static_cast<int>(CleanupModel::small));
+        QCOMPARE(combo->itemData(2).toInt(), static_cast<int>(CleanupModel::medium));
+        QCOMPARE(combo->itemData(3).toInt(), static_cast<int>(CleanupModel::large));
+        // Out of the box the cleaner is off, so the first row is the active one.
+        QCOMPARE(combo->currentData().toInt(), static_cast<int>(CleanupModel::off));
+        auto* off_toggle = card->findChild<voicetyper::ui::ToggleSwitch*>(
+            QStringLiteral("cleanupModelToggle0"));
+        QVERIFY2(off_toggle != nullptr && off_toggle->isChecked(),
+            "«Не использовать» is not the active row of a fresh profile");
+        const auto badges = card->findChildren<QLabel*>(QStringLiteral("modelBadge"));
+        QCOMPARE(badges.size(), 4);
+        QVERIFY2(!badges[0]->isHidden(), "the active row does not carry the badge");
+        QVERIFY2(badges[1]->isHidden() && badges[2]->isHidden() && badges[3]->isHidden(),
+            "a row that is not in use carries the badge");
+
+        // «Не использовать» has no file: its action button must not offer a download.
+        auto* off_button = card->findChild<QPushButton*>(QStringLiteral("cleanupModelButton0"));
+        QVERIFY2(off_button != nullptr && off_button->isHidden(),
+            "«Не использовать» offers a download that cannot happen");
+        // The middle model is the one on disk, and only it.
+        auto* small_button = card->findChild<QPushButton*>(QStringLiteral("cleanupModelButton1"));
+        auto* medium_button = card->findChild<QPushButton*>(QStringLiteral("cleanupModelButton2"));
+        QCOMPARE(medium_button->property("buttonRole").toString(), QStringLiteral("remove"));
+        QVERIFY2(medium_button->isEnabled(), "a downloaded cleanup model must offer a working delete");
+        QCOMPARE(small_button->property("buttonRole").toString(), QStringLiteral("download"));
+        QVERIFY2(!small_button->icon().isNull(), "кнопка скачивания модели чистки без иконки");
+
+        // Choosing the middle row is exclusive and reaches settings.json.
+        auto* medium_toggle = card->findChild<voicetyper::ui::ToggleSwitch*>(
+            QStringLiteral("cleanupModelToggle2"));
+        QVERIFY2(medium_toggle != nullptr, "the middle cleanup row has no toggle");
+        medium_toggle->click();
+        QCoreApplication::processEvents();
+        QCOMPARE(combo->currentData().toInt(), static_cast<int>(CleanupModel::medium));
+        QVERIFY2(!off_toggle->isChecked(), "the cleanup choice is not exclusive");
+        QVERIFY2(!badges[2]->isHidden(), "the chosen row does not carry the badge");
+        QVERIFY2(badges[0]->isHidden(), "the badge stayed on the row that is no longer in use");
+        // The 700 ms autosave debounce, plus room for the write itself.
+        QTest::qWait(1200);
+        QCOMPARE(static_cast<int>(presenter.settings().cleanup_model),
+            static_cast<int>(CleanupModel::medium));
+        const auto written = file_system.read_text(path).value_or(std::string{});
+        QVERIFY2(written.find("\"cleanupModel\": \"medium\"") != std::string::npos,
+            "cleanupModel was not written to settings.json");
+
+        // The action button of a row whose file exists deletes exactly that model.
+        medium_button->click();
+        QCoreApplication::processEvents();
+        QCOMPARE(deleted_model, static_cast<int>(CleanupModel::medium));
+
+        // Restart: a fresh presenter and a fresh window on the same file show the same row.
+        voicetyper::app::SettingsPresenter reloaded(path, file_system, clock);
+        static_cast<void>(reloaded.load());
+        QCOMPARE(static_cast<int>(reloaded.settings().cleanup_model),
+            static_cast<int>(CleanupModel::medium));
+        voicetyper::ui::MainWindow second(reloaded, voicetyper::ui::WindowServices{});
+        second.show_page(recognition_index);
+        QCoreApplication::processEvents();
+        auto* second_card = second.page_widget(recognition_index)
+                                ->findChild<QWidget*>(QStringLiteral("cleanupModelsCard"));
+        QVERIFY2(second_card != nullptr, "the cleanup-model card is missing after a restart");
+        auto* second_combo = second.page_widget(recognition_index)
+                                 ->findChild<QComboBox*>(QStringLiteral("cleanupModelCombo"));
+        QVERIFY2(second_combo != nullptr, "the cleanup-model state holder is missing after a restart");
+        QCOMPARE(second_combo->currentData().toInt(), static_cast<int>(CleanupModel::medium));
+        auto* second_medium = second_card->findChild<voicetyper::ui::ToggleSwitch*>(
+            QStringLiteral("cleanupModelToggle2"));
+        QVERIFY2(second_medium != nullptr, "the middle cleanup row has no toggle after a restart");
+        QVERIFY2(second_medium->isChecked(),
+            "the stored cleanup model is not the active row after a restart");
+
+        // Every new string exists in both languages (Alexander's rule of 13.10.2026).
+        for (const auto language : {voicetyper::domain::AppLanguage::ru, voicetyper::domain::AppLanguage::en}) {
+            for (const auto key : {voicetyper::ui::UiKey::k204, voicetyper::ui::UiKey::k205,
+                     voicetyper::ui::UiKey::k206, voicetyper::ui::UiKey::k207, voicetyper::ui::UiKey::k208,
+                     voicetyper::ui::UiKey::k209, voicetyper::ui::UiKey::k210, voicetyper::ui::UiKey::k211,
+                     voicetyper::ui::UiKey::k212, voicetyper::ui::UiKey::k213, voicetyper::ui::UiKey::k214,
+                     voicetyper::ui::UiKey::k215, voicetyper::ui::UiKey::k216, voicetyper::ui::UiKey::k217}) {
+                QVERIFY2(!voicetyper::ui::ui_text(key, language).isEmpty(),
+                    "a cleanup-model string is empty in one of the languages");
+            }
+        }
+        // The card re-letters itself in place: every cleanup string carries its UiKey, so an
+        // English interface must leave no Russian text in the card at all.
+        auto* language = window.findChild<QComboBox*>(QStringLiteral("appLanguageCombo"));
+        QVERIFY2(language != nullptr, "the interface-language combo is missing");
+        language->setCurrentIndex(1); // English
+        QCoreApplication::processEvents();
+        const auto cleanup_labels = card->findChildren<QLabel*>();
+        QVERIFY2(!cleanup_labels.isEmpty(), "the cleanup card has no labels to look at");
+        for (auto* label : cleanup_labels) {
+            for (const QChar character : label->text()) {
+                QVERIFY2(character.script() != QChar::Script_Cyrillic,
+                    qPrintable(QStringLiteral("the cleanup card kept a Russian string in English: %1")
+                                   .arg(label->text())));
+            }
+        }
+
+        window.hide();
+        second.hide();
+        std::filesystem::remove(path);
+    }
+
+    // The user's addition to the cleaner's prompt (VT-DOM-1017, plan p_5d68d66503ca): editable on
+    // the Recognition page, written to settings.json, and back on a fresh window. It is a text
+    // field on purpose - the addition can never switch the guard's invariants off, because those
+    // live outside the prompt (cleanup-guard-contract proves that end).
+    void cleanup_prompt_card_edits_and_reloads()
+    {
+        const auto path
+            = std::filesystem::temp_directory_path() / "voicetyper-ui-cleanup-prompt.json";
+        std::filesystem::remove(path);
+        voicetyper::platform::PortableClock clock;
+        voicetyper::platform::PortableFileSystem file_system;
+        voicetyper::app::SettingsPresenter presenter(path, file_system, clock);
+        static_cast<void>(presenter.load());
+
+        voicetyper::ui::MainWindow window(presenter, voicetyper::ui::WindowServices{});
+        window.show();
+        QCoreApplication::processEvents();
+
+        int recognition_index = -1;
+        for (int i = 0; i < window.page_count(); ++i) {
+            if (window.tab_title(i) == QStringLiteral("Распознавание")) {
+                recognition_index = i;
+            }
+        }
+        QVERIFY2(recognition_index >= 0, "the Recognition page is not in the navigation");
+        window.show_page(recognition_index);
+        QCoreApplication::processEvents();
+
+        auto* field = window.page_widget(recognition_index)
+                          ->findChild<QPlainTextEdit*>(QStringLiteral("cleanupPromptEdit"));
+        QVERIFY2(field != nullptr, "the prompt-addition field is missing");
+        QCOMPARE(field->toPlainText(), QString());
+
+        field->setPlainText(QStringLiteral("сделай текст ровнее и убери повторы"));
+        QTest::qWait(1200);
+        QCOMPARE(presenter.settings().cleanup_prompt,
+            std::string("сделай текст ровнее и убери повторы"));
+
+        const auto written = file_system.read_text(path).value_or(std::string{});
+        // The codec escapes non-ASCII as \uXXXX (the .NET-compatible form), so the value is
+        // checked by reading the file back, not by looking for the raw characters.
+        QVERIFY2(written.find("\"cleanupPrompt\"") != std::string::npos,
+            "cleanupPrompt was not written to settings.json");
+        QVERIFY2(written.find("\\u0441") != std::string::npos,
+            "the prompt addition was written as an empty value");
+
+        voicetyper::app::SettingsPresenter reloaded(path, file_system, clock);
+        static_cast<void>(reloaded.load());
+        QCOMPARE(reloaded.settings().cleanup_prompt,
+            std::string("сделай текст ровнее и убери повторы"));
+        voicetyper::ui::MainWindow second(reloaded, voicetyper::ui::WindowServices{});
+        second.show_page(recognition_index);
+        QCoreApplication::processEvents();
+        auto* second_field = second.page_widget(recognition_index)
+                                 ->findChild<QPlainTextEdit*>(QStringLiteral("cleanupPromptEdit"));
+        QVERIFY2(second_field != nullptr, "the prompt-addition field is missing after a restart");
+        QCOMPARE(second_field->toPlainText(),
+            QStringLiteral("сделай текст ровнее и убери повторы"));
+
+        // Every new string exists in both languages (Alexander's rule of 13.10.2026).
+        for (const auto language : {voicetyper::domain::AppLanguage::ru, voicetyper::domain::AppLanguage::en}) {
+            for (const auto key : {voicetyper::ui::UiKey::k219, voicetyper::ui::UiKey::k220,
+                     voicetyper::ui::UiKey::k221}) {
+                QVERIFY2(!voicetyper::ui::ui_text(key, language).isEmpty(),
+                    "a prompt-addition string is empty in one of the languages");
+            }
+        }
+
+        window.hide();
+        second.hide();
+        std::filesystem::remove(path);
+    }
 };
 
 // QTest's own plain logger emits nothing on the Windows build of this Qt SDK,

@@ -137,6 +137,25 @@ enum class FillerWordsLevel : std::uint8_t {
     extreme = 3,
 };
 
+/// The optional local cleaner that rewrites the finished transcript with a small language
+/// model (plan p_5d68d66503ca). The value names the model size the user picked in the list,
+/// and `off` is the «Не использовать» row: like FillerWordsLevel, this single enum is both the
+/// switch and the choice, so there is deliberately no second boolean.
+///
+/// Licences were checked on 2026-10-14 (THIRD_PARTY_NOTICES.md): small and medium are
+/// Apache-2.0, large carries the Llama 3.2 Community License. Qwen2.5-3B was rejected: its
+/// card says `other`, the research-only Qwen Research License.
+enum class CleanupModel : std::uint8_t {
+    /// The model never runs; the transcript is what the rules produced.
+    off = 0,
+    /// Qwen2.5-0.5B-Instruct, 491 400 032 bytes.
+    small = 1,
+    /// Qwen2.5-1.5B-Instruct, 1 117 320 736 bytes.
+    medium = 2,
+    /// Llama-3.2-3B-Instruct, 2 019 377 696 bytes.
+    large = 3,
+};
+
 /// Exact camelCase wire spellings, as produced by System.Text.Json with a
 /// camelCase naming policy. Reading is case-insensitive, so parsing lowercases
 /// the input first.
@@ -234,6 +253,17 @@ inline constexpr std::string_view to_wire(FillerWordsLevel value) noexcept
     return "off";
 }
 
+inline constexpr std::string_view to_wire(CleanupModel value) noexcept
+{
+    switch (value) {
+    case CleanupModel::off: return "off";
+    case CleanupModel::small: return "small";
+    case CleanupModel::medium: return "medium";
+    case CleanupModel::large: return "large";
+    }
+    return "off";
+}
+
 /// Case-insensitive wire-name lookup for every settings enum.
 /// An unknown name yields nullopt; the settings layer then falls back to the
 /// property default, exactly like an invalid enum string in System.Text.Json.
@@ -246,10 +276,11 @@ inline constexpr std::string_view to_wire(FillerWordsLevel value) noexcept
 [[nodiscard]] std::optional<RecognitionLanguage> recognition_language_from_wire(std::string_view name);
 [[nodiscard]] std::optional<AppLanguage> app_language_from_wire(std::string_view name);
 [[nodiscard]] std::optional<FillerWordsLevel> filler_words_level_from_wire(std::string_view name);
+[[nodiscard]] std::optional<CleanupModel> cleanup_model_from_wire(std::string_view name);
 
 /// Number of persisted properties, in declaration order. Golden fixtures assert
 /// this value; changing it is a schema change.
-inline constexpr std::size_t kAppSettingsPropertyCount = 25;
+inline constexpr std::size_t kAppSettingsPropertyCount = 27;
 
 /// Default hotkey that starts/stops recording.
 inline constexpr std::string_view kDefaultRecordHotkey = "Ctrl+Alt+Space";
@@ -378,6 +409,21 @@ struct AppSettings {
     /// separated by commas or newlines, each one a word or phrase to remove on
     /// top of the built-in level. Additions never replace the built-in lists.
     std::string filler_words{kDefaultFillerWords};
+    /// JSON: cleanupModel. Default "off" (the cleaner does not run).
+    ///
+    /// C++-only extension like the two fields above: the .NET reader ignores it, so a
+    /// rollback keeps dictating exactly as before. Written last, after every .NET property
+    /// and after the filler fields, so the shared prefix of the document stays byte-identical.
+    CleanupModel cleanup_model = CleanupModel::off;
+
+    /// JSON: cleanupPrompt. Extra requirements the user adds to the cleaner's prompt. The base
+    /// instruction is never replaced, only extended (Alexander, 14.10.2026): a wrong, empty or
+    /// contradictory addition therefore degrades to the rules - the guard's invariants (digits and
+    /// their order, language, length, word loss, code fences) are not part of the prompt and
+    /// cannot be switched off by it. Empty by default.
+    ///
+    /// C++-only extension like the fields above, and written after cleanupModel.
+    std::string cleanup_prompt;
 
     /// The value every property takes when settings.json is missing, corrupt,
     /// unreadable or rejected by the serializer. Exactly the "settings-defaults"
@@ -529,6 +575,17 @@ inline std::optional<FillerWordsLevel> filler_words_level_from_wire(std::string_
         {"soft", FillerWordsLevel::soft},
         {"hard", FillerWordsLevel::hard},
         {"extreme", FillerWordsLevel::extreme},
+    };
+    return detail::find_wire(name, table);
+}
+
+inline std::optional<CleanupModel> cleanup_model_from_wire(std::string_view name)
+{
+    static constexpr std::pair<std::string_view, CleanupModel> table[]{
+        {"off", CleanupModel::off},
+        {"small", CleanupModel::small},
+        {"medium", CleanupModel::medium},
+        {"large", CleanupModel::large},
     };
     return detail::find_wire(name, table);
 }

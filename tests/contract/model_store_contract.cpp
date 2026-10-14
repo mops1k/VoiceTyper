@@ -1,11 +1,14 @@
+#include "core/support/model_download_service.hpp"
 #include "platform/catalog_model_store.hpp"
 
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <iostream>
 #include <map>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -303,8 +306,29 @@ void check_catalog()
     check(parakeet[3].file_name == "tdt-0.6b-v3-q8_0.gguf" && parakeet[3].expected_bytes == 940'663'680,
         "parakeet q8_0 row matches the installed file");
 
-    check(find_whisper_model(ModelSize::large).is_ok(), "find_whisper_model accepts a known size");
-    check(find_whisper_model(static_cast<ModelSize>(9)).is_error(), "find_whisper_model rejects an unknown size");
+    // The optional text cleaner (plan p_5d68d66503ca): three sizes, each in its own
+    // repository, with the byte counts and licences recorded in THIRD_PARTY_NOTICES.md.
+    const auto& cleanup = cleanup_catalog();
+    check(cleanup.size() == 3, "cleanup catalog has exactly three sizes");
+    check(cleanup[0].kind == ModelKind::cleanup && cleanup[0].size == ModelSize::small
+            && cleanup[0].file_name == "qwen2.5-0.5b-instruct-q4_k_m.gguf"
+            && cleanup[0].expected_bytes == 491'400'032,
+        "cleanup small row is the Qwen2.5-0.5B model");
+    check(cleanup[1].size == ModelSize::medium && cleanup[1].expected_bytes == 1'117'320'736
+            && cleanup[1].file_name == "qwen2.5-1.5b-instruct-q4_k_m.gguf",
+        "cleanup medium row is the Qwen2.5-1.5B model");
+    check(cleanup[2].size == ModelSize::large && cleanup[2].expected_bytes == 2'019'377'696
+            && cleanup[2].file_name == "Llama-3.2-3B-Instruct-Q4_K_M.gguf",
+        "cleanup large row is the Llama-3.2-3B model");
+    check(cleanup[2].download_url.rfind("https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/resolve/main/", 0) == 0,
+        "cleanup rows carry a full URL of their own repository");
+    check(find_cleanup_model(ModelSize::small).is_ok() && find_cleanup_model(ModelSize::medium).is_ok()
+            && find_cleanup_model(ModelSize::large).is_ok(),
+        "find_cleanup_model resolves the three shipped sizes");
+    check(find_cleanup_model(ModelSize::tiny).is_error() && find_cleanup_model(ModelSize::base).is_error(),
+        "find_cleanup_model rejects the sizes the cleaner does not ship");
+
+    check(find_whisper_model(ModelSize::large).is_ok(), "find_whisper_model accepts a known size");    check(find_whisper_model(static_cast<ModelSize>(9)).is_error(), "find_whisper_model rejects an unknown size");
     check(find_parakeet_model(static_cast<ParakeetModelSize>(7)).is_error(), "find_parakeet_model rejects an unknown size");
     check(find_vad_model().is_ok(), "find_vad_model always resolves");
 
@@ -632,9 +656,47 @@ void check_stale_cleanup_is_exact(Fixture& fx)
 
 } // namespace
 
+// The application resolves a cleanup model through core/support, the store through this catalog.
+// Both tables describe the same three published files: if they drifted apart, the interface would
+// offer a model the cleaner cannot open, or download a name the catalog does not know. This check
+// is the reason those helpers may live next to the catalog at all.
+void check_cleanup_names_match_core_support()
+{
+    const auto catalog = platform::cleanup_catalog();
+    check(catalog.size() == 3, "the cleanup catalog lists three models");
+
+    const std::pair<domain::CleanupModel, platform::ModelSize> rows[] = {
+        {domain::CleanupModel::small, platform::ModelSize::small},
+        {domain::CleanupModel::medium, platform::ModelSize::medium},
+        {domain::CleanupModel::large, platform::ModelSize::large},
+    };
+    for (const auto& row : rows) {
+        const std::string name(core::support::cleanup_model_file_name(row.first));
+        const std::uint64_t bytes = core::support::cleanup_model_size_bytes(row.first);
+        check(!name.empty(), "core/support names a file for the cleanup model " + name);
+        const auto found = platform::find_cleanup_model(row.second);
+        check(found.is_ok(), "the catalog knows the cleanup model " + name);
+        if (found.is_error()) {
+            continue;
+        }
+        check(found.value().file_name == name,
+            "the catalog file name matches core/support for " + name);
+        check(found.value().expected_bytes == bytes,
+            "the catalog byte count matches core/support for " + name);
+        check(found.value().download_url.find(name) != std::string::npos,
+            "the cleanup download URL carries the file name " + name);
+    }
+
+    check(core::support::cleanup_model_file_name(domain::CleanupModel::off).empty(),
+        "the disabled cleanup model has no file");
+    check(core::support::cleanup_model_size_bytes(domain::CleanupModel::off) == 0,
+        "the disabled cleanup model has no byte count");
+}
+
 int main()
 {
     check_catalog();
+    check_cleanup_names_match_core_support();
 
     Fixture f1;
     check_valid_file_short_circuits(f1);

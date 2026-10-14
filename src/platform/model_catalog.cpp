@@ -69,6 +69,30 @@ const std::array<ModelDescriptor, 4> kGigaamCatalog{
     make_gigaam_descriptor(domain::GigaamModelSize::q8_0, "gigaam-v3-e2e-rnnt-Q8_0.gguf", 273'724'832),
 };
 
+/// Cleanup rows carry a full URL instead of a base URL plus a name: the three models live in
+/// three different repositories (see THIRD_PARTY_NOTICES.md for licences and sha256).
+ModelDescriptor make_cleanup_descriptor(
+    ModelSize size,
+    std::string_view file_url,
+    std::uint64_t expected_bytes)
+{
+    ModelDescriptor descriptor;
+    descriptor.kind = ModelKind::cleanup;
+    descriptor.size = size;
+    descriptor.parakeet_size = ParakeetModelSize::q8_0;
+    // The published file name is taken from the URL, so the two can never drift apart.
+    descriptor.file_name = std::filesystem::path(file_url).filename().string();
+    descriptor.download_url = std::string(file_url);
+    descriptor.expected_bytes = expected_bytes;
+    return descriptor;
+}
+
+const std::array<ModelDescriptor, 3> kCleanupCatalog{
+    make_cleanup_descriptor(ModelSize::small, kCleanupSmallModelUrl, 491'400'032),
+    make_cleanup_descriptor(ModelSize::medium, kCleanupMediumModelUrl, 1'117'320'736),
+    make_cleanup_descriptor(ModelSize::large, kCleanupLargeModelUrl, 2'019'377'696),
+};
+
 const std::vector<std::string> kLegacyModelFileNames{
     "ggml-tiny.bin",
     "ggml-base.bin",
@@ -107,6 +131,24 @@ const std::array<ModelDescriptor, 4>& parakeet_catalog()
 const std::array<ModelDescriptor, 4>& gigaam_catalog()
 {
     return kGigaamCatalog;
+}
+
+const std::array<ModelDescriptor, 3>& cleanup_catalog()
+{
+    return kCleanupCatalog;
+}
+
+Result<ModelDescriptor> find_cleanup_model(ModelSize size)
+{
+    // The catalog is sparse over ModelSize on purpose: the cleaner ships exactly three
+    // sizes, so a lookup by size is honest about tiny/base having no cleanup model.
+    for (const auto& descriptor : kCleanupCatalog) {
+        if (descriptor.size == size) {
+            return descriptor;
+        }
+    }
+    return Result<ModelDescriptor>::failure(
+        ErrorCode::invalid_argument, "unknown cleanup model size");
 }
 
 Result<ModelDescriptor> find_whisper_model(ModelSize size)

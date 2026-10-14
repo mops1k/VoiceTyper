@@ -12,7 +12,7 @@ struct Entry {
 };
 
 /// One row per UiKey, in the same order as the enum.
-constexpr std::array<Entry, 204> kTexts{{
+constexpr std::array<Entry, 222> kTexts{{
     Entry{" мс", " ms"},
     Entry{"%1 (недоступен)", "%1 (unavailable)"},
     Entry{"%1 · Скорость: %2 · Качество: %3", "%1 · Speed: %2 · Quality: %3"},
@@ -263,6 +263,48 @@ constexpr std::array<Entry, 204> kTexts{{
     Entry{"Распознавание", "Recognition"},
     Entry{"Настройки модели", "Model settings"},
     Entry{"Слова, которые мы правим, и слова-паразиты", "The words we replace, and filler words"},
+    // Страница «Распознавание», карточка «Модель чистки текста» (k204-k217, план
+    // p_5d68d66503ca, фаза D). Строки идут в порядке строк списка: сначала «Не
+    // использовать», затем маленькая, средняя и большая модели — имя, метаданные
+    // (размер · скорость · качество), описание одной строкой.
+    Entry{"Модель чистки текста", "Text cleanup model"},
+    // The card caption is not word-wrapped (settings_group), so it stays one short line: a long
+    // sentence here widened the whole Recognition page past its 820px column and pushed the
+    // filler-word combo out of the viewport at 820x560 (caught by ui-settings-test).
+    Entry{"Локальная модель правит готовую фразу. Работает офлайн.",
+        "The local model tidies the finished phrase. It runs offline."},
+    Entry{"Не использовать", "Do not use"},
+    Entry{"Без загрузки · Скорость: Мгновенно · Качество: Базовое",
+        "No download · Speed: Instant · Quality: Basic"},
+    Entry{"Чистка идёт по правилам и списку слов выше: то же поведение, что и раньше.",
+        "Cleanup follows the rules and the word list above: the same behaviour as before."},
+    Entry{"Маленькая (Qwen2.5 0.5B)", "Small (Qwen2.5 0.5B)"},
+    Entry{"≈ 491 МБ · Скорость: Быстро · Качество: Базовое",
+        "≈ 491 MB · Speed: Fast · Quality: Basic"},
+    Entry{"Самая быстрая и экономная: чистит короткие фразы, разговорную речь понимает хуже.",
+        "The fastest and the lightest: it cleans short phrases, but understands colloquial "
+        "speech less well."},
+    Entry{"Средняя (Qwen2.5 1.5B)", "Medium (Qwen2.5 1.5B)"},
+    Entry{"≈ 1.1 ГБ · Скорость: Средне · Качество: Хорошее",
+        "≈ 1.1 GB · Speed: Medium · Quality: Good"},
+    Entry{"Заметно способнее маленькой на длинных фразах: убирает паразиты и приводит фразу в "
+          "порядок. На коротких фразах выигрыша почти нет.",
+        "Noticeably more capable than the small one on long phrases: it removes fillers and "
+        "tidies the sentence up. On short phrases there is barely any gain."},
+    Entry{"Большая (Llama 3.2 3B)", "Large (Llama 3.2 3B)"},
+    Entry{"≈ 2 ГБ · Скорость: Медленно · Качество: Лучшее",
+        "≈ 2 GB · Speed: Slow · Quality: Best"},
+    Entry{"Лучшее качество на сложных фразах: самый большой файл, нужен запас памяти.",
+        "The best quality on complex phrases: the largest file, so it needs memory headroom."},
+    Entry{"Не удалось удалить файл модели %1: %2",
+        "Could not delete the model file %1: %2"},
+    Entry{"Дополнительные требования к модели", "Extra requirements for the model"},
+    Entry{"Например: сделай текст ровнее и убери повторы",
+        "For example: make the text smoother and drop repetitions"},
+    Entry{"Дополняет встроенную инструкцию, а не заменяет её: числа, их порядок и язык ответа "
+          "остаются неизменными.",
+        "It extends the built-in instruction instead of replacing it: the numbers, their order "
+        "and the language of the answer stay as they are."},
 }};
 
 } // namespace

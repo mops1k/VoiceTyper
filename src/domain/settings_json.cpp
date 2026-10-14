@@ -850,6 +850,16 @@ SettingsLoadResult SettingsCodec::load(std::string_view json)
                 (void)detail::read_enum(value, field, AppSettings::defaults().filler_words_level, result.settings.filler_words_level, filler_words_level_from_wire, 4, result.diagnostics, error);
             } else if (detail::equals_ignore_ascii_case(key, "fillerWords")) {
                 (void)detail::read_string(value, field, result.settings.filler_words, result.diagnostics, error);
+            } else if (detail::equals_ignore_ascii_case(key, "cleanupModel")) {
+                // C++-only extension of the optional local cleaner (plan p_5d68d66503ca).
+                // "off" is both the switch and the default, and an unknown size drops the
+                // document to defaults like every other enum.
+                (void)detail::read_enum(value, field, AppSettings::defaults().cleanup_model, result.settings.cleanup_model, cleanup_model_from_wire, 4, result.diagnostics, error);
+            } else if (detail::equals_ignore_ascii_case(key, "cleanupPrompt")) {
+                // C++-only extension: the user's addition to the cleaner's prompt. A string, so it
+                // can never make the document unreadable - even nonsense in it only reaches the
+                // model, and the guard then refuses whatever the model answers with.
+                (void)detail::read_string(value, field, result.settings.cleanup_prompt, result.diagnostics, error);
             }
         }
         if (error) {
@@ -929,12 +939,14 @@ std::string SettingsCodec::serialize(const AppSettings& settings, std::string_vi
     detail::append_int_field(output, "bestOf", settings.best_of, line_ending);
     detail::append_bool_field(output, "conditionOnPreviousText", settings.condition_on_previous_text, line_ending);
     // C++-only extensions last, so the .NET-shared prefix of the document stays
-    // byte-identical and a rollback reads an unchanged file plus two unknown keys.
+    // byte-identical and a rollback reads an unchanged file plus a few unknown keys.
     // microphoneDeviceId is no longer the final property, so it keeps its comma;
-    // the comma moves to whichever property is last, which is fillerWords.
+    // the comma moves to whichever property is last, which is now cleanupPrompt.
     detail::append_optional_field(output, "microphoneDeviceId", settings.microphone_device_id, line_ending);
     detail::append_enum_field(output, "fillerWordsLevel", to_wire(settings.filler_words_level), line_ending);
-    detail::append_field(output, "fillerWords", settings.filler_words, line_ending, false);
+    detail::append_field(output, "fillerWords", settings.filler_words, line_ending);
+    detail::append_enum_field(output, "cleanupModel", to_wire(settings.cleanup_model), line_ending);
+    detail::append_field(output, "cleanupPrompt", settings.cleanup_prompt, line_ending, false);
     output += "}";
     return output;
 }

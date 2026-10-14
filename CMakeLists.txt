@@ -16,10 +16,20 @@ option(VOICETYPER_BUILD_TESTS "Build CTest smoke tests" ON)
 # fully offline configuration.
 option(VOICETYPER_BUILD_ASR "Build the pinned whisper.cpp dependency (requires network once)" ${VOICETYPER_BUILD_GUI})
 
+# The local text-cleanup model (llama.cpp, plan p_5d68d66503ca Phase B) is a
+# network dependency of exactly the same kind as whisper.cpp: the pinned commit
+# archive is fetched once, hash-verified, and compiled into its own shared
+# library (voicetyper_llm) with llama.cpp's ggml linked statically inside it.
+# The default follows the GUI build, so a product build contains the runtime the
+# product ships - but nothing is downloaded or compiled unless the target
+# `voicetyper-llm-native` (or the contract test that depends on it) is named
+# explicitly, because its ExternalProject is EXCLUDE_FROM_ALL.
+option(VOICETYPER_BUILD_LLM "Build the pinned llama.cpp cleanup runtime (requires network once)" ${VOICETYPER_BUILD_GUI})
+
 # The product version. It is what the About page shows and what the update check
 # compares against the release tag, so it must be a real version, not the spike
 # default. CI overrides it with the tag being released.
-set(VOICETYPER_VERSION "3.1.0" CACHE STRING "Product version, compared with the release tag")
+set(VOICETYPER_VERSION "3.2.0" CACHE STRING "Product version, compared with the release tag")
 
 # Native dependency contract (task t_c6a6b0ce9685). The manifest is read on
 # every configuration, the Parakeet pin/ABI are cross-checked against the
@@ -274,6 +284,20 @@ target_link_libraries(voicetyper_gigaam
         voicetyper_vad
 )
 voicetyper_set_warnings(voicetyper_gigaam)
+
+# Local text-cleanup runtime (plan p_5d68d66503ca, Phase B). The pins, the
+# hash-verified download and the three targets live in cmake/LlmRuntime.cmake;
+# the target names are voicetyper-llm-native (the shared library),
+# voicetyper_llm_runtime (the portable loader) and
+# voicetyper-llm-runtime-contract (ctest llm-runtime-contract).
+if(VOICETYPER_BUILD_LLM)
+    include(${PROJECT_SOURCE_DIR}/cmake/LlmRuntime.cmake)
+    voicetyper_add_llm_runtime()
+else()
+    message(STATUS
+        "local cleanup runtime (llama.cpp): OFF - no download, no llama.cpp build. "
+        "Enable it with -DVOICETYPER_BUILD_LLM=ON.")
+endif()
 
 if(VOICETYPER_BUILD_ASR)
     # whisper.cpp and ggml are C/C++ projects, so the C language is enabled only
@@ -530,6 +554,14 @@ endif()
         )
     endif()
     voicetyper_set_warnings(voicetyper-qt-shell)
+    if(TARGET voicetyper_llm_cleanup)
+        # The optional local cleaner: when the build has the pinned llama.cpp
+        # runtime (VOICETYPER_BUILD_LLM), the composition runs the model itself;
+        # without it the null runtime keeps the same seam and the rules' text
+        # goes on untouched.
+        target_link_libraries(voicetyper-qt-shell PRIVATE voicetyper_llm_cleanup)
+        target_compile_definitions(voicetyper-qt-shell PRIVATE VOICETYPER_HAVE_LLM_RUNTIME=1)
+    endif()
 endif()
 
 if(VOICETYPER_BUILD_TESTS)
@@ -697,6 +729,18 @@ if(VOICETYPER_BUILD_TESTS)
         PASS_REGULAR_EXPRESSION "silero-vad-contract: OK"
     )
 
+    # The check that stands between a local language model and the user's text
+    # (plan p_5d68d66503ca): header-only, so it needs nothing but the domain library.
+    add_executable(voicetyper-cleanup-guard-contract EXCLUDE_FROM_ALL
+        tests/contract/cleanup_guard_contract.cpp
+    )
+    target_link_libraries(voicetyper-cleanup-guard-contract PRIVATE voicetyper_domain)
+    voicetyper_set_warnings(voicetyper-cleanup-guard-contract)
+    add_test(NAME cleanup-guard-contract COMMAND voicetyper-cleanup-guard-contract)
+    set_tests_properties(cleanup-guard-contract PROPERTIES
+        PASS_REGULAR_EXPRESSION "cleanup-guard-contract: OK"
+    )
+
     add_executable(voicetyper-filler-words-port-contract EXCLUDE_FROM_ALL
         tests/contract/filler_words_port_contract.cpp
     )
@@ -719,6 +763,23 @@ if(VOICETYPER_BUILD_TESTS)
     add_test(NAME filler-words-contract COMMAND voicetyper-filler-words-contract)
     set_tests_properties(filler-words-contract PROPERTIES
         PASS_REGULAR_EXPRESSION "filler-words-contract: OK"
+    )
+
+    # The optional local cleaner's port. The model itself is replaced by a fake
+    # here, so this test needs no GGUF, no llama.cpp and no network: it asserts
+    # the contract the port keeps with ANY runtime - the cleanup guard, the
+    # silent fallback to the rules' text, and the order of the whole decorator
+    # chain (engine -> dictionary -> filler rules -> model).
+    add_executable(voicetyper-llm-cleanup-contract EXCLUDE_FROM_ALL
+        tests/contract/llm_cleanup_contract.cpp
+    )
+    target_link_libraries(voicetyper-llm-cleanup-contract
+        PRIVATE voicetyper_filler_words voicetyper_terms voicetyper_audio
+    )
+    voicetyper_set_warnings(voicetyper-llm-cleanup-contract)
+    add_test(NAME llm-cleanup-contract COMMAND voicetyper-llm-cleanup-contract)
+    set_tests_properties(llm-cleanup-contract PROPERTIES
+        PASS_REGULAR_EXPRESSION "llm-cleanup-contract: OK"
     )
 
     add_executable(voicetyper-terms-dictionary-contract EXCLUDE_FROM_ALL
@@ -899,7 +960,7 @@ if(VOICETYPER_BUILD_TESTS)
     add_executable(voicetyper-model-store-contract EXCLUDE_FROM_ALL
         tests/contract/model_store_contract.cpp
     )
-    target_link_libraries(voicetyper-model-store-contract PRIVATE voicetyper_model_store)
+    target_link_libraries(voicetyper-model-store-contract PRIVATE voicetyper_model_store voicetyper_model_download)
     voicetyper_set_warnings(voicetyper-model-store-contract)
     add_test(NAME model-store-contract COMMAND voicetyper-model-store-contract)
     set_tests_properties(model-store-contract PROPERTIES
@@ -1138,6 +1199,18 @@ if(WIN32 AND VOICETYPER_BUILD_GUI)
             NAMES windeployqt6.exe windeployqt.exe
             HINTS "${VOICETYPER_QT_ROOT}/bin")
 
+        # The optional cleanup runtime, when this build has one. The loader looks
+        # for the library beside the executable, so a deployed tree without it
+        # would quietly run on the rules alone while the interface showed a
+        # downloaded model - the one failure nobody would see in a log.
+        set(voicetyper_deploy_llm_commands)
+        if(TARGET voicetyper_llm_cleanup)
+            list(APPEND voicetyper_deploy_llm_commands
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                        "${CMAKE_BINARY_DIR}/voicetyper_llm${CMAKE_SHARED_LIBRARY_SUFFIX}"
+                        "${VOICETYPER_DEPLOY_DIR}")
+        endif()
+
         add_custom_target(voicetyper-deploy
             COMMAND ${CMAKE_COMMAND} -E make_directory "${VOICETYPER_DEPLOY_DIR}"
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -1191,8 +1264,13 @@ if(WIN32 AND VOICETYPER_BUILD_GUI)
                     "${PROJECT_SOURCE_DIR}/native/transcribe/ggml-base.dll"
                     "${PROJECT_SOURCE_DIR}/native/transcribe/ggml-cpu.dll"
                     "${VOICETYPER_DEPLOY_DIR}/transcribe"
+            ${voicetyper_deploy_llm_commands}
             COMMENT "Assembling a runnable tree in ${VOICETYPER_DEPLOY_DIR}"
             VERBATIM)
+        if(TARGET voicetyper_llm_cleanup)
+            # The library has to exist before it can be copied into the tree.
+            add_dependencies(voicetyper-deploy voicetyper-llm-native)
+        endif()
         message(STATUS
             "deploy support: ON - build target voicetyper-deploy writes a runnable tree to "
             "${VOICETYPER_DEPLOY_DIR}")
@@ -1984,5 +2062,13 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
                 voicetyper_asr_silero
                 voicetyper_core_support
         )
+    endif()
+    if(TARGET voicetyper_llm_cleanup)
+        # The optional local cleaner: when the build has the pinned llama.cpp
+        # runtime (VOICETYPER_BUILD_LLM), the composition runs the model itself;
+        # without it the null runtime keeps the same seam and the rules' text
+        # goes on untouched.
+        target_link_libraries(voicetyper-qt-shell PRIVATE voicetyper_llm_cleanup)
+        target_compile_definitions(voicetyper-qt-shell PRIVATE VOICETYPER_HAVE_LLM_RUNTIME=1)
     endif()
 endif()

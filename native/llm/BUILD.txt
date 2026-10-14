@@ -1,0 +1,128 @@
+llama.cpp runtime for the local text-cleanup model (VoiceTyper, C++/Qt build)
+=============================================================================
+
+Repo:    https://github.com/ggml-org/llama.cpp
+Pin:     d81235049384534c167caea52b85a694f6103d14 (tag v0.6.0, 2026-10-05)
+Source:  https://github.com/ggml-org/llama.cpp/archive/d81235049384534c167caea52b85a694f6103d14.tar.gz
+         archive 37,887,730 bytes,
+         sha256 6b58785f0a82898f4c3442417ff962e2d4b231b1bee5d033902ad90b27901e14
+Version: llama.cpp 0.6.0, vendored ggml 0.26.0
+License: MIT (llama.cpp and its vendored ggml are both MIT; see THIRD_PARTY_NOTICES.md)
+Date:    2026-10-14
+
+WHERE THE PIN LIVES
+-------------------
+native/llm/LlamaPins.cmake is the single source of truth: the repository, the
+commit, the tag, the archive URL, the archive size and sha256, and the content
+pins of the six files that carry the API and the build. cmake/LlmRuntime.cmake
+and native/llm/CMakeLists.txt both read that file, so the pin cannot drift
+between the main project and the wrapper build.
+
+How the pin is verified (the same three steps as the whisper.cpp pin):
+
+  1. configure time - the archive URL must contain the commit, and the commit
+     must be a full 40-character hex id (voicetyper_llm_verify_llama_pin_shape);
+  2. download time - ExternalProject URL_HASH SHA256=<archive sha256>; a wrong
+     byte count or a re-cut archive fails the download step;
+  3. build time - after extraction, every content pin is re-hashed and a
+     mismatch is a FATAL_ERROR that prints the observed hash and refuses to
+     build. The archive hash proves the download; the content pins prove the
+     tree is the pinned commit.
+
+CONTENT PINS (sha256, hashed inside the extracted tree)
+-------------------------------------------------------
+  include/llama.h                 89,978 B  c9a5f025ad7dbf07eda6660c8ff2c32cd80c07ba440d80728707a9c9d13c1bc3
+  ggml/include/ggml.h            116,144 B  12ee71f99db7db9b353bc02b1fbb57c344ee17c01ac5fb7952b41a637a747ea9
+  ggml/src/ggml.c                       7e8bf2b60598b50d718f46aa3c36c9293b10f4e7dfde6844f0693e6fc976d505
+  ggml/src/ggml-cpu/ggml-cpu.c          45b22f8c83b2cbccabfc2f81a38ef8a5810223e1ce366b7c6f77d42faa5cc6f3
+  CMakeLists.txt                  10,918 B  94d646f48594469909522d2a539aad943705309686646fd8a69cc15c43029e69
+  ggml/CMakeLists.txt             21,801 B  c1d1d55416664981ea61e33b28a0dfdd36064659f15661d3a500b0de98d59ce4
+
+WHY A SEPARATE SHARED LIBRARY, NOT A STATIC ONE IN THE APPLICATION
+------------------------------------------------------------------
+The application links whisper.cpp statically, and whisper.cpp at its own pin
+vendors **ggml 0.25.1**. llama.cpp at this pin vendors **ggml 0.26.0**. Both
+define the same `ggml_*` symbols with different structure layouts, so no single
+set of symbols may serve both engines. Two further facts force the separate
+CMake tree:
+
+  * llama.cpp declares the targets `ggml`, `ggml-base` and `ggml-cpu`, and so
+    does whisper.cpp - one CMake project cannot hold both;
+  * llama.cpp's top-level CMakeLists only adds its own ggml when no `ggml`
+    target exists (`if (NOT TARGET ggml AND NOT LLAMA_USE_SYSTEM_GGML)`), so an
+    in-tree fetch would silently bind llama.cpp 0.6.0 to whisper.cpp's ggml
+    0.25.1.
+
+The runtime is therefore built by an ExternalProject in its own CMake tree and
+shipped as ONE shared object with llama.cpp and ggml linked statically inside
+it, exactly like parakeet.cpp and transcribe.cpp. The application reaches it
+only through native/llm/voicetyper_llm.h (flat C ABI, 13 exported entry points)
+or through the portable loader native/llm/llm_runtime.{hpp,cpp}.
+
+ARTIFACTS
+---------
+  voicetyper_llm.so   (Linux) / voicetyper_llm.dll (Windows, -static: no other
+                      MinGW runtime DLL is needed)
+  Built into <build>/llm-runtime/... and installed to <build>/llm-libs/, and
+  copied next to the application executable, where the loader looks first.
+
+Only the 13 symbols of native/llm/voicetyper_llm.h are exported: the library is
+compiled with C++ visibility hidden, and on Linux `-Wl,--exclude-libs,ALL`
+hides everything that comes out of the static llama/ggml archives.
+
+BUILD OPTIONS (reproducible, offline, CPU only)
+-----------------------------------------------
+BUILD_SHARED_LIBS=OFF, LLAMA_BUILD_COMMON/TESTS/TOOLS/EXAMPLES/SERVER/APP/UI=OFF,
+LLAMA_CURL=OFF, LLAMA_OPENSSL=OFF, LLAMA_SUBPROCESS=OFF, LLAMA_BUILD_IS_DEV=OFF,
+LLAMA_ALL_WARNINGS=OFF, all SANITIZE_*=OFF, GGML_NATIVE=OFF, GGML_OPENMP=OFF,
+GGML_LTO/CCACHE=OFF, GGML_BACKEND_DL=OFF, GGML_ACCELERATE/BLAS/RPC=OFF,
+GGML_CUDA/VULKAN/METAL/KOMPUTE/SYCL/WEBGPU=OFF, GGML_CPU_ALL_VARIANTS=OFF.
+
+x86-64 baseline: SSE4.2/AVX/AVX2/FMA/F16C/BMI2 on, AVX-512 and host tuning off -
+the same reasoned choice cmake/NativeAsr.cmake makes for whisper.cpp (ggml's own
+default drops to plain SSE2 under CMAKE_CROSSCOMPILING, which is true for the
+whole MinGW toolchain build).
+
+Windows deviation: the vendored ggml/llama targets get `_WIN32_WINNT=0x0601`,
+because MinGW-w64 13.1 (the Qt toolchain) does not declare
+THREAD_POWER_THROTTLING_STATE, which ggml-cpu.c uses inside
+`#if _WIN32_WINNT >= 0x0602`. Identical deviation and consequence as the
+whisper.cpp pin: only ggml's "ask Windows not to throttle this thread"
+optimisation is skipped.
+
+BUILD COMMANDS
+--------------
+  Linux:
+    cmake .                                  # in the existing build directory
+    cmake --build <build-dir> --target voicetyper-llm-native
+    cmake --build <build-dir> --target voicetyper-llm-runtime-contract
+    VOICETYPER_LLM_MODEL=<gguf> ctest --test-dir <build-dir> -R llm-runtime-contract
+
+  Windows (MinGW, from WSL):
+    /mnt/c/Windows/System32/cmd.exe /c "C:\Users\<user>\AppData\Local\Temp\vt-win-build.cmd build\windows-mingw-release voicetyper-llm-native"
+
+  Handing the pre-fetched tree over through cmd.exe needs the quoted form, or the
+  whole assignment inside quotes:
+    set "VOICETYPER_LLM_PREFETCHED_DIR=C:\...\llama.cpp-<commit>" && <build helper>
+  `set VAR=value && next` leaves a trailing space in the value, and a path with
+  one points at a directory that does not exist - observed here as "is not a
+  llama.cpp tree" reported for a perfectly complete tree. cmake/LlmRuntime.cmake
+  now trims the value and reports a missing directory as a missing directory.
+
+  Offline build machine (no network, or a CMake whose libcurl cannot verify
+  github.com): extract the pinned archive anywhere and point the build at it -
+  the content pins are still re-hashed, so only the pinned commit is accepted:
+    -DVOICETYPER_LLM_PREFETCHED_DIR=<directory>   (or the environment variable
+                                                   VOICETYPER_LLM_PREFETCHED_DIR)
+
+TEST MODEL
+----------
+The contract test is opt-in by data: set VOICETYPER_LLM_MODEL to a GGUF file, or
+it prints a skip reason and passes. The model the runtime was validated against:
+
+  Qwen2.5-0.5B-Instruct GGUF Q4_K_M
+  qwen2.5-0.5b-instruct-q4_k_m.gguf, 491,400,032 bytes,
+  sha256 74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db,
+  Apache-2.0, https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF
+
+The test never downloads a model: it only reads the file the environment names.

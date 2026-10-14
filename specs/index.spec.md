@@ -16,7 +16,7 @@ This file is the entry point. Module-level requirements live in
 
 | Module spec | Covers | Source tree |
 |---|---|---|
-| [domain.spec.md](modules/domain.spec.md) | settings schema, recording state machine, VAD/segmentation, terms dictionary, filler words (VT-DOM-10xx), text output, errors | `src/domain/`, `src/audio/` |
+| [domain.spec.md](modules/domain.spec.md) | settings schema, recording state machine, VAD/segmentation, terms dictionary, filler words and the local cleanup model (VT-DOM-10xx), text output, errors | `src/domain/`, `src/audio/` |
 | [platform.spec.md](modules/platform.spec.md) | frozen backend interfaces (ports) and their Win32/portable implementations | `src/platform/` |
 | [asr.spec.md](modules/asr.spec.md) | recognition engines, engine host lifecycle, Silero VAD, native libraries | `src/asr/`, `native/` |
 | [core-support.spec.md](modules/core-support.spec.md) | paths, logger, CPU topology, update manifest/service/launcher, model download, SHA-256 | `src/core/support/`, `src/domain/app_paths.hpp`, `src/domain/file_logger.hpp` |
@@ -205,7 +205,7 @@ presenter.
 | `windows_application` (composition root) | Assembles real backends on Windows, wires hotkeys → capture → engine → text output, single-instance guard, tray, overlay, update check | [ui.spec.md](modules/ui.spec.md) §VT-UI-4xx, [platform.spec.md](modules/platform.spec.md) |
 | `domain::RecordingStateMachine` | Idle→Recording→Processing→Idle control flow, cancellation epochs, final-only transcription | [domain.spec.md](modules/domain.spec.md) §VT-DOM-2xx |
 | `asr::EngineHost` | Owns the single loaded engine, serializes inference, background load/warm-up, epoch-based supersession | [asr.spec.md](modules/asr.spec.md) §VT-ASR-2xx |
-| Engine decorators (`TermsDictionaryPort`, `SilenceTrimmingPort`) | Post-process the transcript and the audio in front of any engine | [domain.spec.md](modules/domain.spec.md) §VT-DOM-5xx, [asr.spec.md](modules/asr.spec.md) §VT-ASR-5xx |
+| Engine decorators (`TermsDictionaryPort`, `SilenceTrimmingPort`, `FillerWordsPort`, `LlmCleanupPort`) | Post-process the transcript and the audio in front of any engine | [domain.spec.md](modules/domain.spec.md) §VT-DOM-5xx, §VT-DOM-1001…1016, [asr.spec.md](modules/asr.spec.md) §VT-ASR-5xx |
 | `platform::WasapiCapture` / `WindowsAudioCapture` | Device I/O and session capture behind `RecordingPort` | [platform.spec.md](modules/platform.spec.md) §VT-PLT-3xx |
 | `core::support::ModelDownloadService` | HTTPS model download with progress, cancel and atomic `.part` rename | [core-support.spec.md](modules/core-support.spec.md) §VT-COR-3xx |
 | `core::support::UpdateService` / `UpdateLauncher` | Release manifest, SHA-256 verification, installer handoff | [core-support.spec.md](modules/core-support.spec.md) §VT-COR-4xx |
@@ -382,9 +382,10 @@ system-level shape.
 
 ### 4.1 `AppSettings` — the persisted root entity
 
-25 properties (21 from the .NET reference plus four C++-only extensions), declaration order =
+27 properties (21 from the .NET reference plus six C++-only extensions: gigaamModelSize,
+bestOf, fillerWordsLevel, fillerWords, cleanupModel, cleanupPrompt), declaration order =
 JSON output order; changing the count or the order is a schema change
-([src/domain/settings.hpp:252](../src/domain/settings.hpp#L252), `kAppSettingsPropertyCount = 25`).
+([src/domain/settings.hpp:252](../src/domain/settings.hpp#L252), `kAppSettingsPropertyCount = 27`).
 Full table with defaults: [domain.spec.md](modules/domain.spec.md) §VT-DOM-2xx.
 
 ```
@@ -413,7 +414,8 @@ AppSettings
 ├─ condition_on_previous_text bool                                             = false
 ├─ microphone_device_id      optional<string>                                  = null
 ├─ filler_words_level        FillerWordsLevel {off|soft|hard|extreme}          = off
-└─ filler_words              string                                            = ""
+├─ filler_words              string                                            = ""
+└─ cleanup_model             CleanupModel {off|small|medium|large}             = off
 ```
 
 - **VT-SYS-100.** The serializer MUST emit indented UTF-8 JSON with camelCase property
@@ -421,9 +423,10 @@ AppSettings
 - **VT-SYS-101.** Reads MUST be case-insensitive; unknown properties MUST be ignored;
   nullable properties MUST be emitted as `null` and never omitted; missing properties MUST
   take their default; invalid JSON/type/enum MUST yield a complete default document.
-- **VT-SYS-102.** `gigaamModelSize`, `bestOf`, `fillerWordsLevel` and `fillerWords` are
+- **VT-SYS-102.** `gigaamModelSize`, `bestOf`, `fillerWordsLevel`, `fillerWords` and
+  `cleanupModel` are
   C++-only extensions; the legacy .NET reader ignores them, so a rollback MUST keep working
-  when `transcriptionEngine` is not `gigaam`. The two filler properties are written last, so
+  when `transcriptionEngine` is not `gigaam`. The three text properties are written last, so
   the .NET-shared prefix of the document stays byte-identical.
 
 ### 4.2 Session and request flow
@@ -435,7 +438,7 @@ Hotkey/gamepad event
   → stop(): whole session → downmix to mono → resample to 16 kHz float
   → optional NoiseSuppressor (256-sample frames, high-pass 0.94, damp 0.6)
   → optional SilenceTrimmingPort (Silero VAD map + energy guard)
-  → TermsDictionaryPort → engine (Whisper | Parakeet | GigaAM)
+  → TermsDictionaryPort → FillerWordsPort → optional LlmCleanupPort → engine (Whisper | Parakeet | GigaAM)
   → text, non-empty? → ClipboardPort (mandatory) → optional PastePort (80 ms, Ctrl+V)
   → RecordingStateMachine.Processing→Idle
 ```

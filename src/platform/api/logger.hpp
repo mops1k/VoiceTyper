@@ -30,11 +30,19 @@
 //   * No recognized audio text, no transcript, and no secrets (tokens, ids,
 //     file contents) may appear in log lines. Recognized text in particular is a
 //     privacy boundary, not a formatting preference.
+//     Amended 2026-10-13 by Alexander's decision (LOG-01 used to be
+//     unconditional): a RELEASE build still writes recognized text nowhere but
+//     the clipboard, and voiceTyper.log never carries it in any build. A DEBUG
+//     build may write it to a separate file (LoggerOptions::file_name =
+//     "voiceTyper-debug-transcripts.log") through call sites excluded at compile
+//     time by VOICETYPER_DEBUG_TRANSCRIPTS, so a release binary contains neither
+//     the write call nor the marker literal.
 //
 // Thread affinity: safe from any thread; the backend serializes its own writes.
 // Ownership: the backend owns the open file; the caller owns nothing.
 
 #include "domain/error.hpp"
+#include "platform/api/paths.hpp"
 
 #include <cstdint>
 #include <string>
@@ -85,6 +93,13 @@ struct LoggerOptions {
     std::uint64_t rotate_threshold_bytes = kLogRotateThresholdBytes;
     /// Number of retained archives; the frozen contract value is 5.
     std::uint32_t archive_count = kLogArchiveCount;
+    /// Current log file name inside the log directory. The frozen value is
+    /// platform::kLogFileName ("voiceTyper.log"): the main log keeps its path,
+    /// its format and its voiceTyper.1.log..5.log archives, and the support
+    /// tooling keeps parsing it unchanged. The only intended other value is the
+    /// debug-only transcript file "voiceTyper-debug-transcripts.log", which a
+    /// release build never sets (see the LOG-01 note above).
+    std::string file_name{std::string(kLogFileName)};
 };
 
 class Logger {

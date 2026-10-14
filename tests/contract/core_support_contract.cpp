@@ -176,6 +176,32 @@ void check_logger()
     clear_options.clear_on_start = true;
     FileLogger startup_logger(directory, clear_options, [] { return std::string("2026-01-02 03:04:05.678"); }, "\n");
     check(read_file(startup_logger.log_file_path()).empty(), "clear_on_start truncates the current log");
+
+    // Amended LOG-01 (Alexander, 13.10.2026): the debug-only transcript log is the
+    // same FileLogger with another file name. It must keep the text out of
+    // voiceTyper.log, derive its own archive series from that name, and leave the
+    // frozen main-log path and archives exactly where they were.
+    platform::LoggerOptions debug_options;
+    debug_options.file_name = "voiceTyper-debug-transcripts.log";
+    debug_options.rotate_threshold_bytes = 40;
+    FileLogger debug_logger(
+        directory, debug_options, [] { return std::string("2026-01-02 03:04:05.678"); }, "\n");
+    check(debug_logger.log_file_path() == (directory / "voiceTyper-debug-transcripts.log").string(),
+        "a custom file name is honoured by log_file_path");
+    check(debug_logger.write(platform::LogLevel::info, "TRANSCRIPT-DEBUG engine-raw", "привет мир").is_ok(),
+        "the debug transcript log writes");
+    check(read_file(debug_logger.log_file_path()).find("TRANSCRIPT-DEBUG engine-raw\nпривет мир\n")
+            != std::string::npos,
+        "recognized text lands in the debug file");
+    check(read_file((directory / "voiceTyper.log").string()).find("TRANSCRIPT-DEBUG") == std::string::npos,
+        "voiceTyper.log stays free of recognized text");
+    for (int i = 0; i < 8; ++i) {
+        (void)debug_logger.info("rotation line that crosses the threshold");
+    }
+    check(std::filesystem::exists(directory / "voiceTyper-debug-transcripts.1.log"),
+        "the debug file derives its own archive series from its name");
+    check(read_file((directory / "voiceTyper.log").string()).find("rotation line") == std::string::npos,
+        "debug rotation never moves the main log aside");
     best_effort_remove(directory);
 }
 

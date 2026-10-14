@@ -57,7 +57,7 @@ FileLogger::FileLogger(
     if (!options_.clear_on_start) {
         return;
     }
-    const auto path = directory_ / std::filesystem::path(std::string(platform::kLogFileName));
+    const auto path = directory_ / std::filesystem::path(options_.file_name);
     std::error_code error;
     if (std::filesystem::exists(path, error) && !error) {
         std::ofstream output(path, std::ios::binary | std::ios::trunc);
@@ -73,18 +73,23 @@ std::string FileLogger::log_directory() const
 std::string FileLogger::log_file_path() const
 {
     std::lock_guard<std::mutex> lock(mutex_);
-    return (directory_ / std::filesystem::path(std::string(platform::kLogFileName))).string();
+    return (directory_ / std::filesystem::path(options_.file_name)).string();
 }
 
 std::filesystem::path FileLogger::archive_path(std::uint32_t index) const
 {
-    return directory_ / ("voiceTyper." + std::to_string(index) + ".log");
+    // Archives follow the current file's own stem, so the frozen
+    // voiceTyper.1.log..5.log naming stays byte-identical for the main log and a
+    // debug-only file gets its own series instead of clobbering it.
+    return directory_
+        / (std::filesystem::path(options_.file_name).stem().string() + "."
+            + std::to_string(index) + ".log");
 }
 
 Status FileLogger::clear()
 {
     std::lock_guard<std::mutex> lock(mutex_);
-    const auto path = directory_ / std::filesystem::path(std::string(platform::kLogFileName));
+    const auto path = directory_ / std::filesystem::path(options_.file_name);
     std::error_code error;
     if (!std::filesystem::exists(path, error) || error) {
         return error
@@ -103,7 +108,7 @@ Status FileLogger::rotate_if_needed()
     if (options_.archive_count == 0 || options_.rotate_threshold_bytes == 0) {
         return Status::success();
     }
-    const auto current = directory_ / std::filesystem::path(std::string(platform::kLogFileName));
+    const auto current = directory_ / std::filesystem::path(options_.file_name);
     std::error_code error;
     if (!std::filesystem::exists(current, error) || error) {
         return error
@@ -173,7 +178,7 @@ Status FileLogger::write(
         return rotation;
     }
 
-    const auto current = directory_ / std::filesystem::path(std::string(platform::kLogFileName));
+    const auto current = directory_ / std::filesystem::path(options_.file_name);
     std::ofstream output(current, std::ios::binary | std::ios::app);
     if (!output) {
         return Status::failure(ErrorCode::io_failure, "cannot open log file");
@@ -192,7 +197,7 @@ Status FileLogger::write(
 Result<std::string> FileLogger::tail(std::uint32_t max_lines) const
 {
     std::lock_guard<std::mutex> lock(mutex_);
-    const auto path = directory_ / std::filesystem::path(std::string(platform::kLogFileName));
+    const auto path = directory_ / std::filesystem::path(options_.file_name);
     std::ifstream input(path, std::ios::binary);
     if (!input) {
         return Result<std::string>::failure(ErrorCode::io_failure, "cannot read log file");

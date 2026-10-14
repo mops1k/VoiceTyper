@@ -73,13 +73,20 @@ int main(int argc, char** argv)
         const QString file = QDir(output_directory).filePath(
             QStringLiteral("page-%1.png").arg(index));
         const QPixmap pixmap = window.grab();
+        // The column width is part of what a snapshot is reviewed for: the mockup caps it
+        // at 820px (index.css:95) and a page whose cards are narrow used to be squeezed
+        // instead of filling that width (the «Распознавание» page, found 2026-10-14).
+        const QWidget* page = window.page_widget(index);
+        const QWidget* column = page != nullptr
+            ? page->findChild<QWidget*>(QStringLiteral("pageColumn"))
+            : nullptr;
+        std::printf("OK %s %dx%d nav=%d label=%s column=%d\n", qPrintable(file), pixmap.width(),
+            pixmap.height(), index, qPrintable(title), column != nullptr ? column->width() : -1);
         if (!pixmap.save(file)) {
             std::fprintf(stderr, "FAIL %s\n", qPrintable(file));
             continue;
         }
         ++written;
-        std::printf("OK %s %dx%d nav=%d label=%s\n", qPrintable(file), pixmap.width(), pixmap.height(),
-            index, qPrintable(title));
     }
 
     window.hide();

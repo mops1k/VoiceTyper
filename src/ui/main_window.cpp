@@ -550,6 +550,11 @@ constexpr NavEntry kNavigation[] = {
     {"\uF481", "Общие", UiKey::k23, "Main"},
     {"\uF593", "Внешний вид", UiKey::k5, "Appearance"},
     {"\uF8FE", "Модели", UiKey::k18, "Models"},
+    // «Распознавание»: the settings about the text itself — the words we replace and the
+    // filler words — while «Модели» keeps the engine and the model parameters (Alexander,
+    // 14.10.2026). The glyph is text_grammar_wand_24_regular (0xED1E) of the bundled Fluent
+    // System Icons face, chosen by Alexander out of the rendered candidates.
+    {"\uED1E", "Распознавание", UiKey::k201, "Recognition"},
     {"\uF4B9", "Хоткеи", UiKey::k42, "Hotkeys"},
     {"\uE7FA", "Микрофон", UiKey::k17, "Microphone"},
     {"\uF678", "Запуск", UiKey::k13, "Startup"},
@@ -979,7 +984,13 @@ QWidget* page_column(QWidget* page, QVBoxLayout*& rows_out)
     rows->setContentsMargins(0, 0, 0, 0);
     rows->setSpacing(20);
     layout->addStretch(1);
-    layout->addWidget(content);
+    // index.css:95 — .page-content is a block box: it takes the whole width of the column
+    // up to 820px and centres itself. Two equal stretches around a widget with no stretch
+    // factor would instead size the column to its content's hint, so a page whose cards are
+    // narrow («Распознавание», found 2026-10-14) came out squeezed to a third of the window.
+    // The large factor gives the column the free space first; once it reaches its 820px
+    // maximum the remainder goes back to the stretches, which keeps it centred.
+    layout->addWidget(content, 100);
     layout->addStretch(1);
     rows_out = rows;
     return content;
@@ -1995,6 +2006,13 @@ void MainWindow::build_tabs()
     page_breadcrumb_->setFont(breadcrumb_font);
     page_title_ = new QLabel(header_text);
     page_title_->setObjectName(QStringLiteral("pageTitle"));
+    // The heading takes its font from code, exactly like the breadcrumb above: a font that
+    // arrives only with the stylesheet polish never reaches the label's size hint, so the
+    // band kept the width of the first, short title and cut «Распознавание» mid-word
+    // (found 2026-10-14 by ui-settings-test). index.css: .page-title 23px/600.
+    QFont page_title_font = navigation_font(23);
+    page_title_font.setWeight(QFont::DemiBold);
+    page_title_->setFont(page_title_font);
     header_text_layout->addWidget(page_breadcrumb_);
     header_text_layout->addWidget(page_title_);
     header_layout->addWidget(header_text);
@@ -2390,15 +2408,38 @@ void MainWindow::build_tabs()
         connect(parakeet_size_, &QComboBox::currentIndexChanged, this, [this](int) { refresh_model_list(); });
         connect(gigaam_size_, &QComboBox::currentIndexChanged, this, [this](int) { refresh_model_list(); });
 
-        // «Точность распознавания»: the two generation parameters and the dictionary.
-        const auto accuracy_group = settings_group(content, UiKey::k174, UiKey::k175, language_);
+        // «Настройки модели»: temperature and the number of candidates are Whisper's own
+        // generation parameters (asr/engine_parameters.cpp), so they belong to the model
+        // rather than to the settings about the text. The whole card appears only for
+        // Whisper (Alexander, 14.10.2026): hiding the rows alone left an empty card for
+        // GigaAM and Parakeet.
+        const auto model_group = settings_group(content, UiKey::k202, UiKey::k175, language_);
         temperature_row_ = setting_row(UiKey::k36, UiKey::k176, language_, temperature_);
-        accuracy_group.rows->addWidget(temperature_row_);
+        model_group.rows->addWidget(temperature_row_);
         // k56 is the same sentence the disabled control used to carry, now about the
         // live setting: how many candidates are compared, and that more is slower.
         best_of_->setToolTip(ui_text(UiKey::k56, language_));
         best_of_row_ = setting_row(UiKey::k55, UiKey::k177, language_, best_of_);
-        accuracy_group.rows->addWidget(best_of_row_);
+        model_group.rows->addWidget(best_of_row_);
+        model_settings_card_ = model_group.card;
+        // The dictionary and the filler words moved to the «Распознавание» page: they are
+        // settings about the text, not about the model (Alexander, 14.10.2026).
+        rows->addWidget(model_group.card);
+
+        update_engine_specific_rows();
+        rows->addStretch(1);
+        add_page_to_nav(page, ui_text(UiKey::k18, language_));
+    }
+
+    // --- Распознавание ------------------------------------------------------
+    {
+        // The settings about the text itself: the words we replace and the filler words.
+        // They used to sit on «Модели», which mixed them with the engine and the model list
+        // (Alexander, 14.10.2026). The card keeps its name, «Точность распознавания».
+        auto* page = new QWidget(central);
+        QVBoxLayout* rows = nullptr;
+        auto* content = page_column(page, rows);
+        const auto accuracy_group = settings_group(content, UiKey::k174, UiKey::k203, language_);
 
         // The dictionary block of the mockup (.dictionary): its title, one sentence about
         // the field, the textarea and the hint that explains how a term is understood.
@@ -2431,11 +2472,59 @@ void MainWindow::build_tabs()
         dictionary_layout->addSpacing(7);
         dictionary_layout->addWidget(terms_hint);
         accuracy_group.rows->addWidget(dictionary);
-        rows->addWidget(accuracy_group.card);
 
-        update_engine_specific_rows();
+        // The filler-word block (plan p_ffecadcca9af), styled like .dictionary: the
+        // dictionary turns a heard word into a written one, this one drops a word entirely,
+        // and sharing one hint made the term list read as if "ну" belonged in it.
+        auto* filler = new QWidget(content);
+        filler->setObjectName(QStringLiteral("fillerWords"));
+        filler->setAttribute(Qt::WA_StyledBackground, true);
+        auto* filler_layout = new QVBoxLayout(filler);
+        filler_layout->setContentsMargins(18, 14, 18, 18);
+        filler_layout->setSpacing(4);
+        auto* filler_title = new QLabel(ui_text(UiKey::k192, language_), filler);
+        filler_title->setObjectName(QStringLiteral("dictionaryTitle"));
+        filler_title->setProperty("uiKey", static_cast<int>(UiKey::k192));
+        auto* filler_caption = new QLabel(ui_text(UiKey::k193, language_), filler);
+        filler_caption->setObjectName(QStringLiteral("dictionaryCaption"));
+        filler_caption->setProperty("uiKey", static_cast<int>(UiKey::k193));
+        filler_caption->setWordWrap(true);
+        filler_layout->addWidget(filler_title);
+        filler_layout->addWidget(filler_caption);
+        filler_layout->addSpacing(7);
+        // One combo instead of a checkbox plus a level: "Выключено" *is* the off state,
+        // which is why the settings have no separate boolean (agreed 2026-10-14).
+        filler_level_ = new QComboBox(filler);
+        filler_level_->setObjectName(QStringLiteral("fillerWordsLevel"));
+        filler_level_->addItem(ui_text(UiKey::k196, language_),
+            static_cast<int>(domain::FillerWordsLevel::off));
+        filler_level_->addItem(ui_text(UiKey::k197, language_),
+            static_cast<int>(domain::FillerWordsLevel::soft));
+        filler_level_->addItem(ui_text(UiKey::k198, language_),
+            static_cast<int>(domain::FillerWordsLevel::hard));
+        filler_level_->addItem(ui_text(UiKey::k199, language_),
+            static_cast<int>(domain::FillerWordsLevel::extreme));
+        filler_layout->addWidget(setting_row(UiKey::k194, UiKey::k195, language_, filler_level_));
+        filler_layout->addSpacing(7);
+        filler_words_ = new QPlainTextEdit(filler);
+        filler_words_->setObjectName(QStringLiteral("fillerWordsEdit"));
+        // The mockup's .dictionary textarea is 82px tall (index.css:182), and the term
+        // editor in the block above uses exactly that: two fields of different heights in
+        // one card read as a mistake.
+        filler_words_->setFixedHeight(82);
+        filler_words_->setTabChangesFocus(true);
+        filler_layout->addWidget(filler_words_);
+        auto* filler_hint = new QLabel(ui_text(UiKey::k200, language_), filler);
+        filler_hint->setObjectName(QStringLiteral("dictionaryHint"));
+        filler_hint->setWordWrap(true);
+        filler_hint->setProperty("uiKey", static_cast<int>(UiKey::k200));
+        filler_layout->addSpacing(7);
+        filler_layout->addWidget(filler_hint);
+        accuracy_group.rows->addWidget(filler);
+
+        rows->addWidget(accuracy_group.card);
         rows->addStretch(1);
-        add_page_to_nav(page, ui_text(UiKey::k18, language_));
+        add_page_to_nav(page, ui_text(UiKey::k201, language_));
     }
 
     // --- Хоткеи ------------------------------------------------------------
@@ -3262,6 +3351,9 @@ void MainWindow::update_engine_specific_rows()
     if (best_of_row_ != nullptr) {
         best_of_row_->setVisible(whisper);
     }
+    if (model_settings_card_ != nullptr) {
+        model_settings_card_->setVisible(whisper);
+    }
 }
 
 void MainWindow::capture_hotkey_into(bool record)
@@ -3517,6 +3609,8 @@ void MainWindow::bind_settings_to_controls()
     // control, exactly like silenceThresholdMs above.
     best_of_->setValue(std::clamp(settings.best_of, kBestOfMin, kBestOfMax));
     terms_->setPlainText(to_q(settings.terms_dictionary));
+    select(filler_level_, static_cast<int>(settings.filler_words_level));
+    filler_words_->setPlainText(to_q(settings.filler_words));
     record_hotkey_->setText(to_q(settings.record_hotkey));
     cancel_hotkey_->setText(to_q(settings.cancel_hotkey));
     // The gamepad bindings are optional: an absent one shows as an empty readout.
@@ -3598,6 +3692,23 @@ void MainWindow::bind_settings_to_controls()
         const QString text = terms_->toPlainText();
         presenter_.update(voicetyper::app::SettingsChange::model, [text](domain::AppSettings& settings) {
             settings.terms_dictionary = text.toStdString();
+        });
+    });
+    // Same change class as the dictionary: the filter reads the settings on every
+    // dictation, so the next one already uses the new level or list.
+    connect(filler_level_, &QComboBox::currentIndexChanged, this, [this](int index) {
+        if (index < 0) {
+            return;
+        }
+        const auto level = static_cast<domain::FillerWordsLevel>(filler_level_->itemData(index).toInt());
+        presenter_.update(voicetyper::app::SettingsChange::model, [level](domain::AppSettings& settings) {
+            settings.filler_words_level = level;
+        });
+    });
+    connect(filler_words_, &QPlainTextEdit::textChanged, this, [this] {
+        const QString text = filler_words_->toPlainText();
+        presenter_.update(voicetyper::app::SettingsChange::model, [text](domain::AppSettings& settings) {
+            settings.filler_words = text.toStdString();
         });
     });
     connect(record_hotkey_, &QLineEdit::textChanged, this, [this](const QString& text) {
@@ -4255,6 +4366,15 @@ void MainWindow::refresh_page_title(int index)
     // The .NET page labels are a sentence fragment ("Общие"); the band shows the same
     // word capitalised as a heading, as the reference does.
     page_title_->setText(nav_->item(index)->text());
+    // The band is laid out with an empty heading, so its box and the label inside it keep the
+    // width of whatever title came first and clip a longer one — «Распознавание» lost its
+    // last letter (found 2026-10-14 by ui-settings-test). Both carry their own width from the
+    // heading's metrics instead of waiting for a layout that has already run.
+    const int needed = page_title_->fontMetrics().horizontalAdvance(page_title_->text());
+    page_title_->setMinimumWidth(needed);
+    if (QWidget* band = page_title_->parentWidget(); band != nullptr) {
+        band->setMinimumWidth(needed);
+    }
 }
 
 void MainWindow::refresh_navigation_icons()
@@ -4363,6 +4483,9 @@ void MainWindow::apply_theme()
         #sectionTitle { color: @{text}; font-size: 18px; font-weight: 600; letter-spacing: 0px; }
         /* The page title strip: a tinted band that does not scroll with the rows. */
         #pageHeader { background: @{header}; border-bottom: 1px solid @{border}; min-height: 80px; max-height: 80px; }
+        /* The heading's own font-size keeps it above the generic QLabel rule of the sheet;
+           the same size is set on the widget in code so the layout gets the right metrics
+           (see the header construction). */
         #pageTitle { color: @{text}; font-size: 23px; font-weight: 600; background: transparent; }
         #pageBreadcrumb { color: @{accent}; background: transparent; }
         #pageVersion { color: @{muted}; background: transparent; }
@@ -4560,14 +4683,14 @@ void MainWindow::apply_theme()
             color: @{accent}; background: rgba(54,174,234,11%); border-radius: 4px;
             padding: 2px 5px; font-size: 8px; font-weight: 700;
         }
-        #dictionary { background: transparent; border-top: 1px solid @{line_soft}; }
+        #dictionary, #fillerWords { background: transparent; border-top: 1px solid @{line_soft}; }
         #dictionaryTitle { color: @{text}; font-size: 12px; font-weight: 700; }
         #dictionaryCaption, #dictionaryHint { color: @{muted}; font-size: 10px; }
-        #termsEdit {
+        #termsEdit, #fillerWordsEdit {
             background: @{control}; color: @{text}; border: 1px solid @{border}; border-radius: 6px;
             padding: 10px 11px; font-family: "Cascadia Code", Consolas, monospace; font-size: 10px;
         }
-        #termsEdit:focus { border: 1px solid @{accent}; }
+        #termsEdit:focus, #fillerWordsEdit:focus { border: 1px solid @{accent}; }
         #settingsRow {
             background: transparent; border-bottom: 1px solid @{line_soft};
             min-height: 68px;

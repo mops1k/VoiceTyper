@@ -107,6 +107,36 @@ enum class AppLanguage : std::uint8_t {
     en = 1,
 };
 
+/// How much of the filler words a finished transcript loses.
+///
+/// C++-only extension beyond the .NET reference (decided by Alexander
+/// 2026-10-14). The level IS the switch: `off` means the feature is disabled, so
+/// there is deliberately no second boolean property that could contradict it.
+/// Defaults to `off` - the filter changes what the user ends up pasting, so it is
+/// opt-in, and once enabled it starts at `soft`, which cannot change the meaning
+/// of a sentence.
+///
+/// The split is measured, not guessed (docs/migration/cpp/filler-words-measurement.md):
+/// both engines keep filled pauses ("э-э", "эм-м", "мм") and verbal hesitations
+/// ("ну", "вот", "значит", "как бы", "типа", "короче", "в общем"), while word
+/// repetitions reach the text only on GigaAM (whisper collapses them itself) and
+/// whisper can emit a pathological vowel run ("Ааааа...") on a long vowel.
+enum class FillerWordsLevel : std::uint8_t {
+    /// Disabled. The transcript is delivered exactly as the engine returned it.
+    off = 0,
+    /// Filled pauses only: "э-э", "эм-м", "мм", "а-а" and their English
+    /// equivalents, plus collapsing a run of one repeated vowel.
+    soft = 1,
+    /// Adds verbal hesitations, and only where they are an introductory
+    /// insertion (start of a sentence or between commas), so "короче говоря",
+    /// "это значит", "ну-ка" and "в целом" survive untouched.
+    hard = 2,
+    /// Adds word repetitions and the openers that can still carry meaning
+    /// ("вообще", "в принципе", "так", "это"), plus the punctuation cleanup that
+    /// any removal needs.
+    extreme = 3,
+};
+
 /// Exact camelCase wire spellings, as produced by System.Text.Json with a
 /// camelCase naming policy. Reading is case-insensitive, so parsing lowercases
 /// the input first.
@@ -193,6 +223,17 @@ inline constexpr std::string_view to_wire(AppLanguage value) noexcept
     return "ru";
 }
 
+inline constexpr std::string_view to_wire(FillerWordsLevel value) noexcept
+{
+    switch (value) {
+    case FillerWordsLevel::off: return "off";
+    case FillerWordsLevel::soft: return "soft";
+    case FillerWordsLevel::hard: return "hard";
+    case FillerWordsLevel::extreme: return "extreme";
+    }
+    return "off";
+}
+
 /// Case-insensitive wire-name lookup for every settings enum.
 /// An unknown name yields nullopt; the settings layer then falls back to the
 /// property default, exactly like an invalid enum string in System.Text.Json.
@@ -204,10 +245,11 @@ inline constexpr std::string_view to_wire(AppLanguage value) noexcept
 [[nodiscard]] std::optional<GigaamModelSize> gigaam_model_size_from_wire(std::string_view name);
 [[nodiscard]] std::optional<RecognitionLanguage> recognition_language_from_wire(std::string_view name);
 [[nodiscard]] std::optional<AppLanguage> app_language_from_wire(std::string_view name);
+[[nodiscard]] std::optional<FillerWordsLevel> filler_words_level_from_wire(std::string_view name);
 
 /// Number of persisted properties, in declaration order. Golden fixtures assert
 /// this value; changing it is a schema change.
-inline constexpr std::size_t kAppSettingsPropertyCount = 23;
+inline constexpr std::size_t kAppSettingsPropertyCount = 25;
 
 /// Default hotkey that starts/stops recording.
 inline constexpr std::string_view kDefaultRecordHotkey = "Ctrl+Alt+Space";
@@ -215,6 +257,10 @@ inline constexpr std::string_view kDefaultRecordHotkey = "Ctrl+Alt+Space";
 inline constexpr std::string_view kDefaultCancelHotkey = "Ctrl+Alt+Escape";
 /// Default technical-terms prompt list.
 inline constexpr std::string_view kDefaultTermsDictionary = "API,CPU,GPU,ASR,STT,TTS,LLM,JSON,IDE,SQL";
+/// Default user additions to the built-in filler lists. Empty on purpose: the
+/// built-in levels already cover every filler the measurement found, and an empty
+/// string means "add nothing" rather than "remove nothing".
+inline constexpr std::string_view kDefaultFillerWords = "";
 /// Default VAD silence threshold, milliseconds.
 inline constexpr int kDefaultSilenceThresholdMs = 1200;
 /// Inclusive bounds the UI clamps silenceThresholdMs to before saving. A direct
@@ -318,6 +364,20 @@ struct AppSettings {
     /// preserved; that is a Phase B/D behavior change with a regression test,
     /// not a contract-header decision.
     std::optional<std::string> microphone_device_id;
+
+    /// JSON: fillerWordsLevel. Default "off" (feature disabled).
+    ///
+    /// C++-only extension: the .NET serializer has no such property and ignores
+    /// it on read, so a rollback keeps dictating exactly as before. Written last,
+    /// after every .NET property, so the shared prefix of the document stays
+    /// byte-identical and only unknown keys are appended.
+    FillerWordsLevel filler_words_level = FillerWordsLevel::off;
+    /// JSON: fillerWords. Default "" (no user additions).
+    ///
+    /// Free-form additions in the same shape as `termsDictionary`: entries
+    /// separated by commas or newlines, each one a word or phrase to remove on
+    /// top of the built-in level. Additions never replace the built-in lists.
+    std::string filler_words{kDefaultFillerWords};
 
     /// The value every property takes when settings.json is missing, corrupt,
     /// unreadable or rejected by the serializer. Exactly the "settings-defaults"
@@ -458,6 +518,17 @@ inline std::optional<AppLanguage> app_language_from_wire(std::string_view name)
     static constexpr std::pair<std::string_view, AppLanguage> table[]{
         {"ru", AppLanguage::ru},
         {"en", AppLanguage::en},
+    };
+    return detail::find_wire(name, table);
+}
+
+inline std::optional<FillerWordsLevel> filler_words_level_from_wire(std::string_view name)
+{
+    static constexpr std::pair<std::string_view, FillerWordsLevel> table[]{
+        {"off", FillerWordsLevel::off},
+        {"soft", FillerWordsLevel::soft},
+        {"hard", FillerWordsLevel::hard},
+        {"extreme", FillerWordsLevel::extreme},
     };
     return detail::find_wire(name, table);
 }

@@ -386,8 +386,10 @@ does not enter the taskbar (`Qt::Tool`), does not take focus
 **Deliberately NOT implemented, and not claimed:**
 
 - No audio/level meter, no progress bar, no recognised text and no transcript
-  preview: the .NET overlay showed status text only, and §7/LOG-01 still forbid
-  putting recognised text anywhere but the clipboard.
+  preview: the .NET overlay showed status text only, and §7/LOG-01 keeps
+  recognised text out of the overlay - a release build writes it nowhere but the
+  clipboard, and a debug build writes it only to the separate debug transcript
+  file (amended 13.10.2026, `VT-SYS-073`).
 - No click-through interaction with the pill, no context menu and no drag: it is
   `WA_TransparentForMouseEvents` by design.
 - The real-desktop behaviour (no taskbar entry, no activation steal while

@@ -30,6 +30,7 @@
 #include <QProgressBar>
 #include <QSlider>
 #include <QScrollBar>
+#include <QPlainTextEdit>
 #include <QTextEdit>
 #include <QRegularExpression>
 #include <QScrollArea>
@@ -548,6 +549,7 @@ private slots:
             {"Общие", "silenceThresholdSpin"},
             {"Внешний вид", "themeTileSystem"},
             {"Модели", "engineCombo"},
+            {"Распознавание", "fillerWordsEdit"},
             {"Хоткеи", "recordHotkeyEdit"},
             {"Микрофон", "microphoneCombo"},
             {"Журнал", "logView"},
@@ -576,7 +578,30 @@ private slots:
         }
         QVERIFY(models_row >= 0);
         QVERIFY(window.page_widget(models_row)->findChild<QWidget*>(QStringLiteral("engineCombo")) != nullptr);
-        QCOMPARE(window.page_count(), 8);
+        // «Распознавание» is the longest navigation entry, and the header takes its text
+        // from the row: the title must fit its label instead of being cut mid-word.
+        window.show_page(0);
+        QCoreApplication::processEvents();
+        for (int row = 0; row < window.page_count(); ++row) {
+            window.show_page(row);
+            QCoreApplication::processEvents();
+            const QString label = window.tab_title(row);
+            auto* title = window.findChild<QLabel*>(QStringLiteral("pageTitle"));
+            QVERIFY2(title != nullptr, "заголовок страницы не найден");
+            QCOMPARE(title->text(), label);
+            const int needed = title->fontMetrics().horizontalAdvance(label);
+            QVERIFY2(title->width() >= needed,
+                qPrintable(QStringLiteral("заголовок «%1» обрезан: %2 px при нужных %3")
+                    .arg(label).arg(title->width()).arg(needed)));
+            // The label alone is not enough: the box that carries it is laid out before the
+            // first page name is known, and a box narrower than its heading clips it.
+            QWidget* band = title->parentWidget();
+            QVERIFY2(band != nullptr, "у заголовка нет контейнера");
+            QVERIFY2(band->width() >= needed,
+                qPrintable(QStringLiteral("контейнер заголовка «%1» узкий: %2 px при нужных %3")
+                    .arg(label).arg(band->width()).arg(needed)));
+        }
+        QCOMPARE(window.page_count(), 9);
         std::filesystem::remove(path);
     }
 
@@ -1691,6 +1716,11 @@ private slots:
         QCoreApplication::processEvents();
         const QImage painted = nav->viewport()->grab().toImage();
         for (int row = 0; row < nav->count(); ++row) {
+            // With nine entries the list no longer fits the sidebar at the 640px minimum
+            // height, so the row has to be scrolled into view before its glyph box can be
+            // probed: an off-screen row would otherwise report zero painted pixels.
+            nav->scrollToItem(nav->item(row));
+            QCoreApplication::processEvents();
             const QRect rect = nav->visualItemRect(nav->item(row));
             const QColor row_background = painted.pixelColor(rect.right() - 2, rect.top() + 2);
             // The glyph box is 19 px wide, 15 px from the left edge; the label starts at
@@ -1970,6 +2000,99 @@ private slots:
         // once the installer has really been started.
         QTRY_VERIFY(status->text() != status_before);
         window.hide();
+        std::filesystem::remove(path);
+    }
+    void filler_words_card_edits_and_reloads()
+    {
+        // The filler-word card of the models page (plan p_ffecadcca9af). Its level combo
+        // *is* the switch: the settings have no second boolean, so the four items must
+        // carry exactly the four enum values, and both properties must reach
+        // settings.json and come back on a fresh window.
+        using voicetyper::domain::FillerWordsLevel;
+
+        const auto path = std::filesystem::temp_directory_path() / "voicetyper-ui-filler-test.json";
+        std::filesystem::remove(path);
+        voicetyper::platform::PortableClock clock;
+        voicetyper::platform::PortableFileSystem file_system;
+        voicetyper::app::SettingsPresenter presenter(path, file_system, clock);
+        static_cast<void>(presenter.load());
+
+        voicetyper::ui::MainWindow window(presenter, voicetyper::ui::WindowServices{});
+        window.show();
+        QCoreApplication::processEvents();
+
+        // The dictionary and the filler words live on «Распознавание» since 14.10.2026;
+        // «Модели» keeps the engine, the model lists and the Whisper parameters.
+        int recognition_index = -1;
+        for (int i = 0; i < window.page_count(); ++i) {
+            if (window.tab_title(i) == QStringLiteral("Распознавание")) {
+                recognition_index = i;
+            }
+        }
+        QVERIFY2(recognition_index >= 0, "the Recognition page is not in the navigation");
+        window.show_page(recognition_index);
+        QCoreApplication::processEvents();
+
+        auto* card = window.page_widget(recognition_index)->findChild<QWidget*>(QStringLiteral("fillerWords"));
+        QVERIFY2(card != nullptr, "the filler-word card is not on the models page");
+        auto* level = card->findChild<QComboBox*>(QStringLiteral("fillerWordsLevel"));
+        QVERIFY2(level != nullptr, "the filler-word level control is missing");
+        auto* words = card->findChild<QPlainTextEdit*>(QStringLiteral("fillerWordsEdit"));
+        QVERIFY2(words != nullptr, "the filler-word editor is missing");
+
+        QCOMPARE(level->count(), 4);
+        QCOMPARE(level->itemData(0).toInt(), static_cast<int>(FillerWordsLevel::off));
+        QCOMPARE(level->itemData(1).toInt(), static_cast<int>(FillerWordsLevel::soft));
+        QCOMPARE(level->itemData(2).toInt(), static_cast<int>(FillerWordsLevel::hard));
+        QCOMPARE(level->itemData(3).toInt(), static_cast<int>(FillerWordsLevel::extreme));
+        QCOMPARE(level->currentData().toInt(), static_cast<int>(FillerWordsLevel::off));
+
+        level->setCurrentIndex(2); // hard
+        words->setPlainText(QStringLiteral("блин, ёлки"));
+        // The 700 ms autosave debounce, plus room for the write itself.
+        QTest::qWait(1200);
+        QCOMPARE(static_cast<int>(presenter.settings().filler_words_level),
+            static_cast<int>(FillerWordsLevel::hard));
+        QCOMPARE(presenter.settings().filler_words, std::string("блин, ёлки"));
+
+        const auto written = file_system.read_text(path).value_or(std::string{});
+        QVERIFY2(written.find("\"fillerWordsLevel\": \"hard\"") != std::string::npos,
+            "fillerWordsLevel was not written to settings.json");
+        QVERIFY2(written.find("\"fillerWords\"") != std::string::npos,
+            "fillerWords was not written to settings.json");
+
+        // Restart: a fresh presenter and a fresh window on the same file show both again.
+        voicetyper::app::SettingsPresenter reloaded(path, file_system, clock);
+        static_cast<void>(reloaded.load());
+        QCOMPARE(static_cast<int>(reloaded.settings().filler_words_level),
+            static_cast<int>(FillerWordsLevel::hard));
+        QCOMPARE(reloaded.settings().filler_words, std::string("блин, ёлки"));
+        voicetyper::ui::MainWindow second(reloaded, voicetyper::ui::WindowServices{});
+        second.show_page(recognition_index);
+        QCoreApplication::processEvents();
+        auto* second_card
+            = second.page_widget(recognition_index)->findChild<QWidget*>(QStringLiteral("fillerWords"));
+        QVERIFY2(second_card != nullptr, "the filler-word card is missing after a restart");
+        QCOMPARE(second_card->findChild<QComboBox*>(QStringLiteral("fillerWordsLevel"))
+                     ->currentData()
+                     .toInt(),
+            static_cast<int>(FillerWordsLevel::hard));
+        QCOMPARE(second_card->findChild<QPlainTextEdit*>(QStringLiteral("fillerWordsEdit"))->toPlainText(),
+            QStringLiteral("блин, ёлки"));
+
+        // Every new string exists in both languages (Alexander's rule of 13.10.2026).
+        for (const auto language : {voicetyper::domain::AppLanguage::ru, voicetyper::domain::AppLanguage::en}) {
+            for (const auto key : {voicetyper::ui::UiKey::k192, voicetyper::ui::UiKey::k193,
+                     voicetyper::ui::UiKey::k194, voicetyper::ui::UiKey::k195, voicetyper::ui::UiKey::k196,
+                     voicetyper::ui::UiKey::k197, voicetyper::ui::UiKey::k198, voicetyper::ui::UiKey::k199,
+                     voicetyper::ui::UiKey::k200}) {
+                QVERIFY2(!voicetyper::ui::ui_text(key, language).isEmpty(),
+                    "a filler-word string is empty in one of the languages");
+            }
+        }
+
+        window.hide();
+        second.hide();
         std::filesystem::remove(path);
     }
 };

@@ -16,7 +16,7 @@ This file is the entry point. Module-level requirements live in
 
 | Module spec | Covers | Source tree |
 |---|---|---|
-| [domain.spec.md](modules/domain.spec.md) | settings schema, recording state machine, VAD/segmentation, terms dictionary, text output, errors | `src/domain/`, `src/audio/` |
+| [domain.spec.md](modules/domain.spec.md) | settings schema, recording state machine, VAD/segmentation, terms dictionary, filler words (VT-DOM-10xx), text output, errors | `src/domain/`, `src/audio/` |
 | [platform.spec.md](modules/platform.spec.md) | frozen backend interfaces (ports) and their Win32/portable implementations | `src/platform/` |
 | [asr.spec.md](modules/asr.spec.md) | recognition engines, engine host lifecycle, Silero VAD, native libraries | `src/asr/`, `native/` |
 | [core-support.spec.md](modules/core-support.spec.md) | paths, logger, CPU topology, update manifest/service/launcher, model download, SHA-256 | `src/core/support/`, `src/domain/app_paths.hpp`, `src/domain/file_logger.hpp` |
@@ -162,7 +162,7 @@ segments, plus the transcription contract itself - `SessionOptions`,
 `TranscriptionPort` and the `SilenceTrimmingPort` decorator. It is portable: it
 includes no Qt and no OS header, and depends only on the vocabulary headers
 (`domain/error.hpp`, `domain/settings.hpp`, `domain/cancellation.hpp`). `src/domain`
-(the recording machine, the terms dictionary) and
+(the recording machine, the terms dictionary, the filler-word filter) and
 `src/platform/api/transcriber.hpp` use its types; the OS capture backends
 (`wasapi_capture`, `windows_audio_capture`, `linux_audio_capture`,
 `pulse_support`) stay in `src/platform/`, because they are backends of the
@@ -303,7 +303,12 @@ presenter.
 - **VT-SYS-071.** Rotation MUST happen before an append that would cross 1,000,000 bytes;
   archives MUST be `voiceTyper.1.log` … `voiceTyper.5.log`.
 - **VT-SYS-072.** A logging failure MUST NOT propagate to the caller.
-- **VT-SYS-073.** Recognized text MUST NOT be written to the log (`LOG-01` rule, `docs/migration/cpp/compatibility-contracts.md` §7).
+- **VT-SYS-073.** Recognized text MUST NOT be written to `voiceTyper.log` in any build, and a
+  **release** build MUST write it nowhere but the clipboard. A **debug** build MAY write it to
+  the separate file `voiceTyper-debug-transcripts.log` through a call site excluded at compile
+  time (`VOICETYPER_DEBUG_TRANSCRIPTS`), so a release binary contains neither the call nor the
+  marker literal (`LOG-01` rule, `docs/migration/cpp/compatibility-contracts.md` §7; amended
+  13.10.2026 by Alexander's decision - before that the prohibition was unconditional).
 - **VT-SYS-074.** Qt's own `qInfo`/`qWarning` output MUST be forwarded into the
   application log so the UI is not a black box (commit `24d3b56`).
 
@@ -377,9 +382,10 @@ system-level shape.
 
 ### 4.1 `AppSettings` — the persisted root entity
 
-23 properties, declaration order = JSON output order; changing the count or the order is a
-schema change ([src/domain/settings.hpp:210](../src/domain/settings.hpp#L210), `kAppSettingsPropertyCount = 23`). Full table with
-defaults: [domain.spec.md](modules/domain.spec.md) §VT-DOM-1xx.
+25 properties (21 from the .NET reference plus four C++-only extensions), declaration order =
+JSON output order; changing the count or the order is a schema change
+([src/domain/settings.hpp:252](../src/domain/settings.hpp#L252), `kAppSettingsPropertyCount = 25`).
+Full table with defaults: [domain.spec.md](modules/domain.spec.md) §VT-DOM-2xx.
 
 ```
 AppSettings
@@ -405,7 +411,9 @@ AppSettings
 ├─ temperature               double                                            = 0.0
 ├─ best_of                   int (1..8)                                        = 3
 ├─ condition_on_previous_text bool                                             = false
-└─ microphone_device_id      optional<string>                                  = null
+├─ microphone_device_id      optional<string>                                  = null
+├─ filler_words_level        FillerWordsLevel {off|soft|hard|extreme}          = off
+└─ filler_words              string                                            = ""
 ```
 
 - **VT-SYS-100.** The serializer MUST emit indented UTF-8 JSON with camelCase property
@@ -413,9 +421,10 @@ AppSettings
 - **VT-SYS-101.** Reads MUST be case-insensitive; unknown properties MUST be ignored;
   nullable properties MUST be emitted as `null` and never omitted; missing properties MUST
   take their default; invalid JSON/type/enum MUST yield a complete default document.
-- **VT-SYS-102.** `gigaamModelSize` and `bestOf` are C++-only extensions; the legacy .NET
-  reader ignores them, so a rollback MUST keep working when `transcriptionEngine` is not
-  `gigaam`.
+- **VT-SYS-102.** `gigaamModelSize`, `bestOf`, `fillerWordsLevel` and `fillerWords` are
+  C++-only extensions; the legacy .NET reader ignores them, so a rollback MUST keep working
+  when `transcriptionEngine` is not `gigaam`. The two filler properties are written last, so
+  the .NET-shared prefix of the document stays byte-identical.
 
 ### 4.2 Session and request flow
 

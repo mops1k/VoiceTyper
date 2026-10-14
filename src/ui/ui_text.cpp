@@ -12,7 +12,7 @@ struct Entry {
 };
 
 /// One row per UiKey, in the same order as the enum.
-constexpr std::array<Entry, 192> kTexts{{
+constexpr std::array<Entry, 204> kTexts{{
     Entry{" мс", " ms"},
     Entry{"%1 (недоступен)", "%1 (unavailable)"},
     Entry{"%1 · Скорость: %2 · Качество: %3", "%1 · Speed: %2 · Quality: %3"},
@@ -238,6 +238,31 @@ constexpr std::array<Entry, 192> kTexts{{
         "the microphone delivered no audio — check the device and try again"},
     // Очистка привязки кнопки геймпада (кнопка «Очистить» в карточке «Геймпад»).
     Entry{"Привязка очищена", "Binding cleared"},
+    // Карточка «Слова-паразиты» (план p_ffecadcca9af, k192-k200).
+    Entry{"Слова-паразиты", "Filler words"},
+    Entry{"Убирать из распознанного текста «э-э», «эм-м», «ну», «вот», «значит», «как бы» — "
+          "настолько, насколько выберет уровень.",
+        "Remove fillers such as \"um\", \"uh\", \"you know\", \"I mean\" from the recognised "
+        "text, as far as the chosen level goes."},
+    Entry{"Уровень", "Level"},
+    Entry{"Мягкий — только заполненные паузы («э-э», «эм-м», «ммм»). Жёсткий — ещё вводные "
+          "«ну», «вот», «значит», «как бы», «типа» в начале фразы или между запятыми. "
+          "Экстремальный — ещё повторы слов и открывающие «вообще», «в принципе», «так», «это».",
+        "Soft removes filled pauses only (\"um\", \"uh\", \"hmm\"). Hard also removes introductory "
+        "\"you know\", \"I mean\", \"well\" at the start of a sentence or between commas. Extreme "
+        "also removes repeated words and sentence-opening \"basically\", \"actually\"."},
+    Entry{"Выключено", "Off"},
+    Entry{"Мягкий", "Soft"},
+    Entry{"Жёсткий", "Hard"},
+    Entry{"Экстремальный", "Extreme"},
+    Entry{"Свои слова через запятую: они добавляются к встроенным и работают на любом уровне, "
+          "кроме «Выключено».",
+        "Your own words, comma separated: they are added to the built-in ones and work at every "
+        "level except Off."},
+    // Страница «Распознавание» и карточка параметров модели (k201-k203, план p_ffecadcca9af).
+    Entry{"Распознавание", "Recognition"},
+    Entry{"Настройки модели", "Model settings"},
+    Entry{"Слова, которые мы правим, и слова-паразиты", "The words we replace, and filler words"},
 }};
 
 } // namespace

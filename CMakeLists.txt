@@ -146,6 +146,15 @@ add_library(voicetyper_terms STATIC
 target_link_libraries(voicetyper_terms PUBLIC voicetyper_domain)
 voicetyper_set_warnings(voicetyper_terms)
 
+# Filler-word removal (plan p_ffecadcca9af). Portable text rules over the finished
+# transcript, applied by a decorator in front of every engine, so it needs nothing
+# but the domain layer - no ASR, no Qt, no network.
+add_library(voicetyper_filler_words STATIC
+    src/domain/filler_words.cpp
+)
+target_link_libraries(voicetyper_filler_words PUBLIC voicetyper_domain)
+voicetyper_set_warnings(voicetyper_filler_words)
+
 add_library(voicetyper_state STATIC
     src/domain/recording_state_machine.cpp
 )
@@ -468,6 +477,13 @@ if(VOICETYPER_BUILD_GUI)
             assets/fonts/SourceSans3-Bold.ttf
             assets/fonts/FluentSystemIcons-Regular.ttf
     )
+    # Debug-only transcript capture (amended LOG-01, Alexander 13.10.2026). The
+    # macro is defined for Debug configurations only, so a Release binary contains
+    # neither the logging call nor the marker literal: this is an exclusion at
+    # compile time, not a runtime switch that could be flipped in a shipped build.
+    target_compile_definitions(voicetyper-qt-shell PRIVATE
+        $<$<CONFIG:Debug>:VOICETYPER_DEBUG_TRANSCRIPTS=1>
+    )
 if(WIN32)
     # The executable's own icon: the tray icon comes from the Qt resources, but the file
     # had none, so shortcuts and Explorer showed a generic icon.
@@ -496,6 +512,9 @@ endif()
                 # The terms dictionary port wraps the engine host, so the
                 # composition that builds it needs the replacement code linked.
                 voicetyper_terms
+                # The filler filter wraps the dictionary port, so the same
+                # composition links the filler rules as well.
+                voicetyper_filler_words
                 # The composition opens the Silero VAD model and wraps the engine
                 # with the trimming decorator.
                 voicetyper_asr_silero
@@ -676,6 +695,30 @@ if(VOICETYPER_BUILD_TESTS)
     add_test(NAME silero-vad-contract COMMAND voicetyper-silero-vad-contract)
     set_tests_properties(silero-vad-contract PROPERTIES
         PASS_REGULAR_EXPRESSION "silero-vad-contract: OK"
+    )
+
+    add_executable(voicetyper-filler-words-port-contract EXCLUDE_FROM_ALL
+        tests/contract/filler_words_port_contract.cpp
+    )
+    # The order test needs both decorators, and TermsDictionaryPort needs the audio
+    # vocabulary (SampleBuffer) the port signature is written in.
+    target_link_libraries(voicetyper-filler-words-port-contract
+        PRIVATE voicetyper_filler_words voicetyper_terms voicetyper_audio
+    )
+    voicetyper_set_warnings(voicetyper-filler-words-port-contract)
+    add_test(NAME filler-words-port-contract COMMAND voicetyper-filler-words-port-contract)
+    set_tests_properties(filler-words-port-contract PROPERTIES
+        PASS_REGULAR_EXPRESSION "filler-words-port-contract: OK"
+    )
+
+    add_executable(voicetyper-filler-words-contract EXCLUDE_FROM_ALL
+        tests/contract/filler_words_contract.cpp
+    )
+    target_link_libraries(voicetyper-filler-words-contract PRIVATE voicetyper_filler_words)
+    voicetyper_set_warnings(voicetyper-filler-words-contract)
+    add_test(NAME filler-words-contract COMMAND voicetyper-filler-words-contract)
+    set_tests_properties(filler-words-contract PROPERTIES
+        PASS_REGULAR_EXPRESSION "filler-words-contract: OK"
     )
 
     add_executable(voicetyper-terms-dictionary-contract EXCLUDE_FROM_ALL
@@ -1937,6 +1980,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
                 voicetyper_state
                 voicetyper_output
                 voicetyper_terms
+                voicetyper_filler_words
                 voicetyper_asr_silero
                 voicetyper_core_support
         )

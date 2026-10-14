@@ -843,6 +843,13 @@ SettingsLoadResult SettingsCodec::load(std::string_view json)
                 (void)detail::read_bool(value, field, result.settings.condition_on_previous_text, result.diagnostics, error);
             } else if (detail::equals_ignore_ascii_case(key, "microphoneDeviceId")) {
                 (void)detail::read_optional_string(value, field, result.settings.microphone_device_id, result.diagnostics, error);
+            } else if (detail::equals_ignore_ascii_case(key, "fillerWordsLevel")) {
+                // C++-only extension: unknown to the .NET reader, which ignores it
+                // and keeps dictating as before. An unknown level string drops the
+                // whole document to defaults, exactly like every other enum.
+                (void)detail::read_enum(value, field, AppSettings::defaults().filler_words_level, result.settings.filler_words_level, filler_words_level_from_wire, 4, result.diagnostics, error);
+            } else if (detail::equals_ignore_ascii_case(key, "fillerWords")) {
+                (void)detail::read_string(value, field, result.settings.filler_words, result.diagnostics, error);
             }
         }
         if (error) {
@@ -921,7 +928,13 @@ std::string SettingsCodec::serialize(const AppSettings& settings, std::string_vi
     detail::append_double_field(output, "temperature", settings.temperature, line_ending);
     detail::append_int_field(output, "bestOf", settings.best_of, line_ending);
     detail::append_bool_field(output, "conditionOnPreviousText", settings.condition_on_previous_text, line_ending);
-    detail::append_optional_field(output, "microphoneDeviceId", settings.microphone_device_id, line_ending, false);
+    // C++-only extensions last, so the .NET-shared prefix of the document stays
+    // byte-identical and a rollback reads an unchanged file plus two unknown keys.
+    // microphoneDeviceId is no longer the final property, so it keeps its comma;
+    // the comma moves to whichever property is last, which is fillerWords.
+    detail::append_optional_field(output, "microphoneDeviceId", settings.microphone_device_id, line_ending);
+    detail::append_enum_field(output, "fillerWordsLevel", to_wire(settings.filler_words_level), line_ending);
+    detail::append_field(output, "fillerWords", settings.filler_words, line_ending, false);
     output += "}";
     return output;
 }

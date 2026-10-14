@@ -64,10 +64,10 @@ void check(bool condition, const char* what)
 
 // --- Frozen contract constants, asserted at compile time -------------------
 
-// Settings: 21 persisted .NET properties plus the two C++-only extensions
-// (gigaamModelSize, bestOf); exact defaults from
+// Settings: 21 persisted .NET properties plus the four C++-only extensions
+// (gigaamModelSize, bestOf, fillerWordsLevel, fillerWords); exact defaults from
 // docs/migration/cpp/compatibility-contracts.md §1.
-static_assert(domain::kAppSettingsPropertyCount == 23);
+static_assert(domain::kAppSettingsPropertyCount == 25);
 static_assert(domain::kDefaultRecordHotkey == "Ctrl+Alt+Space");
 static_assert(domain::kDefaultCancelHotkey == "Ctrl+Alt+Escape");
 static_assert(domain::kDefaultTermsDictionary == "API,CPU,GPU,ASR,STT,TTS,LLM,JSON,IDE,SQL");

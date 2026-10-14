@@ -72,7 +72,7 @@ just a tick.
 | 18 | Long transcript | OUT-01 | dictate until the clipboard holds ~1 MB | the whole text is written and pasted, nothing truncated |
 | 19 | Exit during inference | REC-03 | start a long dictation and quit from the tray immediately | clean exit, no crash, and the next start is not affected |
 | 20 | Offline | PRIV-01 | disconnect the network, dictate | recognition still works; nothing is sent anywhere |
-| 21 | Log hygiene | LOG-01 | read the log after the run | paths and error codes are present; no audio and no recognised text in the log |
+| 21 | Log hygiene | LOG-01 | read the log after the run | paths and error codes are present; no audio and no recognised text in `voiceTyper.log`. A debug build may leave transcripts, but only in the separate `voiceTyper-debug-transcripts.log`; a release build leaves none anywhere but the clipboard |
 | 22 | Startup minimized | LIFE-01 | enable автозапуск + свёрнутым, restart Windows, log in | the app appears only in the tray, no window pops up |
 | 23 | Overlay while dictating | LIFE-01 | focus a text editor, hold the record hotkey, speak, release, keep typing through it | a frameless pill appears at the bottom center showing «Захват» (blue dot pulsing every ~350 ms), then «Распознавание» (orange), then disappears; it never appears in the taskbar or Alt+Tab, never takes focus, and the typing/caret in the editor is untouched |
 | 24 | Overlay keeps an error visible | LIFE-01 | point the model path at a deleted file, dictate, then fix the setting and dictate again | the pill shows the error with its reason and stays visible while idle; the next dictation replaces it with «Захват» |

@@ -54,13 +54,15 @@ engine_unavailable=15, model_not_ready=16, invalid_state=17, internal=18`.
 
 ### 2.1 The persisted root
 
-- **VT-DOM-201.** `AppSettings` MUST persist exactly **23** properties in the declaration
+- **VT-DOM-201.** `AppSettings` MUST persist exactly **25** properties in the declaration
   order that is also the JSON output order; the count is pinned as
-  `kAppSettingsPropertyCount = 23` ([src/domain/settings.hpp:210](../../src/domain/settings.hpp#L210)).
+  `kAppSettingsPropertyCount = 25` ([src/domain/settings.hpp:252](../../src/domain/settings.hpp#L252)).
   Changing the count or the order is a schema change and MUST come with a new golden fixture.
+  The five .NET fixtures are .NET-shaped and byte-frozen: a C++-only property is not added to
+  them, it is injected by `settings-json-contract` when that test assembles the expected bytes.
 - **VT-DOM-202.** Every enum MUST have a camelCase wire spelling produced by `to_wire()` and a
   case-insensitive reverse lookup returning `std::nullopt` for an unknown name
-  ([src/domain/settings.hpp:113-206](../../src/domain/settings.hpp#L113-L206)).
+  ([src/domain/settings.hpp:113-248](../../src/domain/settings.hpp#L113-L248)).
 
 | Enum | Wire values (ordinal order) | Fallback in `to_wire` |
 |---|---|---|
@@ -72,6 +74,7 @@ engine_unavailable=15, model_not_ready=16, invalid_state=17, internal=18`.
 | `GigaamModelSize` | `q4_k_m`, `q5_k_m`, `q6_k`, `q8_0` | `q8_0` |
 | `RecognitionLanguage` | `auto` (C++ name `automatic`), `ru`, `en` | `ru` |
 | `AppLanguage` | `ru`, `en` | `ru` |
+| `FillerWordsLevel` | `off`, `soft`, `hard`, `extreme` | `off` |
 
 - **VT-DOM-203.** The persisted property list, in output order, is:
 
@@ -100,10 +103,14 @@ engine_unavailable=15, model_not_ready=16, invalid_state=17, internal=18`.
 | 21 | `bestOf` | int | `3` *(C++-only)* |
 | 22 | `conditionOnPreviousText` | bool | `false` |
 | 23 | `microphoneDeviceId` | string \| null | null |
+| 24 | `fillerWordsLevel` | enum string: `off` \| `soft` \| `hard` \| `extreme` | `off` *(C++-only)* |
+| 25 | `fillerWords` | string | `` (empty) *(C++-only)* |
 
-- **VT-DOM-204.** `gigaamModelSize` and `bestOf` MUST be treated as C++-only extensions: the
-  legacy .NET reader ignores them, so a rollback MUST keep working while
-  `transcriptionEngine != "gigaam"`.
+- **VT-DOM-204.** `gigaamModelSize`, `bestOf`, `fillerWordsLevel` and `fillerWords` MUST be
+  treated as C++-only extensions: the legacy .NET reader ignores them, so a rollback MUST keep
+  working while `transcriptionEngine != "gigaam"`. `fillerWordsLevel` is both the switch and
+  the amount of filler removal (`off` means disabled), so there is deliberately no second
+  boolean property.
 - **VT-DOM-205.** `AppSettings::defaults()` MUST be the value used whenever the file is
   missing, corrupt, unreadable or rejected; `clone()` MUST deep-copy the optionals and strings.
 - **VT-DOM-206.** `validate()` MUST reject (with `out_of_range`) `silence_threshold_ms`
@@ -571,7 +578,57 @@ Contracts: [src/domain/hotkey_gesture.hpp](../../src/domain/hotkey_gesture.hpp),
 
 ---
 
-## 10. Requirement-to-evidence map
+## 10. Filler words (`VT-DOM-10xx`)
+
+The rules of the filler-word filter (plan `p_ffecadcca9af`). They are a pure text
+transformation over the finished transcript, so they work with every engine, on both
+platforms, offline. The measurement the level contents rest on is
+`docs/migration/cpp/filler-words-measurement.md` (24 dictated phrases, whisper small
+q8_0 and GigaAM-v3 q8_0, synthetic and live speech, 14.10.2026).
+
+- **VT-DOM-1001.** `apply_filler_words(text, level, user_entries)` MUST be a pure offline
+  transformation: no file, network, engine or Qt call, nothing but the standard library and
+  `domain/utf8_text.hpp`. Tokenisation MUST work on code points, not on `std::regex`, `\b`
+  or `std::tolower`: those are wrong or locale-dependent for two-byte Cyrillic.
+- **VT-DOM-1002.** `FillerWordsLevel::off` MUST return the input byte-for-byte, and so MUST
+  a level that matched nothing. A pass MUST be idempotent: applying it twice MUST equal
+  applying it once.
+- **VT-DOM-1003.** `soft` MUST remove filled pauses (`э-э`, `ээ`, `э-э-э`, `эээ`, `эм`, `эм-м`,
+  `эмм`, `м-м`, `мм`, `ммм`, `а-а`, `аа` and `um`, `uh`, `uhm`, `umm`, `er`, `erm`, `hmm`, `mm`,
+  `mmm`, `ah`) wherever they stand, and a word that is one letter repeated four or more times
+  (`Ааааа`, `Мммм`): the measurement of 14.10.2026 shows whisper really emits such runs.
+- **VT-DOM-1004.** `hard` MUST additionally remove the introductory hesitations `ну`, `вот`,
+  `значит`, `типа`, `короче`, `собственно`, `как бы`, `в общем`, `так сказать`, `это самое`,
+  `как говорится` and `you know`, `i mean`, `sort of`, `kind of`, `like` — but **only** in an
+  introductory position: at the start of a sentence or beside a comma. A hesitation in the
+  middle of a sentence with no commas MUST stay. The cost is accepted deliberately
+  (decision of 14.10.2026): whisper writes no commas, so there the hard level removes little,
+  while GigaAM punctuates and the level works; the alternative would have removed `короче` in
+  «дорога короче, чем…» and `типа` in «типа данных».
+- **VT-DOM-1005.** `extreme` MUST additionally remove a word repeated immediately after itself
+  (`я я`, `это это`, `это, это`) and the sentence-opening `вообще`, `в принципе`, `так`, `это`
+  (`well`, `basically`, `actually`, `literally`, `right`). A repetition whose words contain a
+  digit MUST stay (`100, 100`), and a hyphen-joined pair MUST stay (`Я-я`): removing half of it
+  would leave a dangling hyphen and would destroy `чуть-чуть`, `еле-еле`, `кое-как`.
+- **VT-DOM-1006.** Digits MUST never be touched at any level, including the commas between
+  them: `Повтори 100, 100 и 4, 0, 4, 0.` MUST survive every level byte-for-byte. The measurement
+  shows both engines mangle numbers on their own; the filter MUST NOT add to that.
+- **VT-DOM-1007.** The protected combinations MUST be kept: `короче говоря`, `это значит`,
+  `ну-ка`, `как бы то ни было`, `в целом`, `во всяком случае`.
+- **VT-DOM-1008.** `fillerWords` MUST be additive to the built-in lists. `parse_filler_words`
+  MUST split on commas and newlines, trim, drop empty entries and de-duplicate
+  case-insensitively; user entries MUST match wherever they stand, at every level except `off`.
+- **VT-DOM-1009.** Cleaning after a removal MUST keep the sentence readable: the comma that
+  delimited an insertion goes with it (`Он, типа, сказал` → `Он сказал`), runs of spaces
+  collapse to one, no space is left before a sign, a dangling or doubled comma is dropped
+  (never between two digits) and the first letter of a sentence keeps its capital.
+- **VT-DOM-1010.** The filter MUST be a decorator over `domain::TranscriptionPort`
+  (`FillerWordsPort`) wired in the composition between `TermsDictionaryPort` and
+  `RecordingStateMachine`, and MUST read both settings on every transcription. The order is
+  deliberate: the dictionary restores the spellings the user wrote first, so a user term can
+  never be eaten as a filler.
+
+## 11. Requirement-to-evidence map
 
 | Requirement block | Contract test |
 |---|---|
@@ -581,6 +638,7 @@ Contracts: [src/domain/hotkey_gesture.hpp](../../src/domain/hotkey_gesture.hpp),
 | VAD | `vad-contract`, `silero-vad-contract` |
 | segmentation and trimming | `speech-segments-contract`, `silence-trimming-contract` |
 | terms dictionary | `terms-dictionary-contract` |
+| filler words | `filler-words-contract`, `filler-words-port-contract`, `ui-settings-test` |
 | text output | `text-output-contract` |
 | audio | `audio-dsp-contract`, `noise-suppression-contract` |
 | paths/logger/CPU | `core-support-contract` |

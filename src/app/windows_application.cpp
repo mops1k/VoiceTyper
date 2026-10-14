@@ -38,7 +38,9 @@
 #include "domain/recording_state_machine.hpp"
 #include "audio/silence_trimming_port.hpp"
 #include "domain/terms_dictionary.hpp"
+#include "domain/filler_words_port.hpp"
 #include "domain/terms_dictionary_port.hpp"
+#include "domain/transcript_debug_port.hpp"
 #include "domain/version.hpp"
 #include "domain/text_output.hpp"
 #include "platform/windows/win32_clock.hpp"
@@ -708,11 +710,32 @@ int run(int argc, char** argv)
     // engine receives audio without the silence around the dictation and without
     // the long pauses inside it. The dictionary decorator stays outside it: it
     // rewrites the text that comes back.
-    audio::SilenceTrimmingPort silence_port(engine_host, segmenter);
+    // Amended LOG-01 (Alexander, 13.10.2026): a Debug build records what an engine
+    // actually returned, before any decorator rewrites it, because that is the only
+    // way to tell "the engine dropped the filler itself" from "the terms dictionary
+    // replaced it". A Release build leaves debug_transcripts null and the logging
+    // block is not compiled in at all.
+    platform::Logger* debug_transcripts = nullptr;
+#if defined(VOICETYPER_DEBUG_TRANSCRIPTS)
+    platform::LoggerOptions debug_transcript_options;
+    debug_transcript_options.file_name = std::string(domain::kDebugTranscriptFileName);
+    domain::FileLogger debug_transcript_logger(log_directory(paths), debug_transcript_options);
+    debug_transcripts = &debug_transcript_logger;
+#endif
+    domain::TranscriptDebugPort raw_transcript_port(engine_host, debug_transcripts, "engine-raw");
+    audio::SilenceTrimmingPort silence_port(raw_transcript_port, segmenter);
     domain::TermsDictionaryPort dictionary_port(
         silence_port, [&presenter] { return presenter.settings().terms_dictionary; });
+    // The filler filter wraps the dictionary port, not the engine: the dictionary
+    // restores the spellings the user wrote, and only then does the filter read the
+    // text (plan p_ffecadcca9af, decided 2026-10-14). It is off by default, and both
+    // settings are read per call, exactly like the dictionary's.
+    domain::FillerWordsPort filler_port(dictionary_port, [&presenter] {
+        return domain::FillerWordsPort::Settings{presenter.settings().filler_words_level,
+            domain::parse_filler_words(presenter.settings().filler_words)};
+    });
     domain::RecordingStateMachine machine(
-        logged_capture, dictionary_port, output, worker, machine_options, &segmenter);
+        logged_capture, filler_port, output, worker, machine_options, &segmenter);
     // The machine reads its per-session parameters and its mode from the live
     // settings, exactly like the .NET machine asking the settings view model.
     // Without this every field the user changes - language, temperature, terms
@@ -773,8 +796,12 @@ int run(int argc, char** argv)
         // is typing into, so the overlay is hidden instead (reported 2026-10-11).
         status_overlay.post_state(platform::OverlayState::idle);
     });
-    machine.set_text_ready_handler([&logger, status_channel, &silence_port, &engine_host](std::string text) {
-        // Length only. The log must never contain recognised text (LOG-01).
+    machine.set_text_ready_handler([&logger, status_channel, &silence_port, &engine_host, debug_transcripts](std::string text) {
+        // Amended LOG-01: the finished text is recorded next to the raw engine
+        // output, so a measurement can tell which of the two changed what. In a
+        // Release build this is a no-op with no logging code in the binary.
+        domain::log_debug_transcript(debug_transcripts, "final", text);
+        // Length only. voiceTyper.log must never contain recognised text (LOG-01).
         // What the trimming step did, in numbers only: the log never contains the
         // text (LOG-01), but "why was this dictation slow" and "did the silence
         // actually go away" have to be answerable.

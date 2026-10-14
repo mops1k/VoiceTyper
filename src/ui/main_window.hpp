@@ -382,6 +382,10 @@ private:
     /// The two rows that only the Whisper engine understands; hidden for the others.
     QWidget* temperature_row_ = nullptr;
     QWidget* best_of_row_ = nullptr;
+    /// Карточка «Настройки модели»: показывается только для Whisper (план p_ffecadcca9af,
+    /// решение Александра 14.10.2026 — раньше прятались только строки, и оставалась пустая
+    /// карточка).
+    QWidget* model_settings_card_ = nullptr;
     QComboBox* whisper_size_ = nullptr;
     QComboBox* parakeet_size_ = nullptr;
     QComboBox* gigaam_size_ = nullptr;
@@ -485,6 +489,9 @@ private:
     QPushButton* record_gamepad_clear_ = nullptr;
     QPushButton* cancel_gamepad_clear_ = nullptr;
     QPlainTextEdit* terms_ = nullptr;
+    /// Уровень удаления слов-паразитов и свои слова к нему (план p_ffecadcca9af).
+    QComboBox* filler_level_ = nullptr;
+    QPlainTextEdit* filler_words_ = nullptr;
     QSpinBox* silence_threshold_ = nullptr;
     QDoubleSpinBox* temperature_ = nullptr;
     QSpinBox* best_of_ = nullptr;

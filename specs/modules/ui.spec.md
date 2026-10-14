@@ -140,9 +140,10 @@ roots, the settings presenter and the Qt HTTP client.
   from `AppSettings::defaults()`.
 - **VT-UI-214.** **Models** MUST offer an engine combo (Whisper/Parakeet/GigaAM, maximum width
   220), exactly one visible model list for the selected engine (Whisper 5 rows, Parakeet 4,
-  GigaAM 4), hidden size combos that keep the values, a temperature spin box `0..1` step 0.05 and
-  a "recognition candidates" spin box `1..8` shown **only** for Whisper, and the terms dictionary
-  editor with its hint. Each model row MUST contain a toggle, the name, an "Активна" badge, meta
+  GigaAM 4), hidden size combos that keep the values, and — in a card of its own titled
+  «Настройки модели» — a temperature spin box `0..1` step 0.05 and a "recognition candidates"
+  spin box `1..8`. Those two parameters belong to the model, so the whole card MUST be hidden
+  for engines that ignore them instead of leaving an empty card (VT-UI-1110). Each model row MUST contain a toggle, the name, an "Активна" badge, meta
   (`%1 · Скорость: %2 · Качество: %3`), a description, a 34×34 action button and a 90 px progress
   bar with a separate percentage label.
 - **VT-UI-215.** Model selection MUST be exclusive: selecting a row MUST set the hidden size combo
@@ -480,6 +481,21 @@ consequences are:
   `io_failure`; a non-2xx status is not a transport error.
 - **VT-UI-1106.** ⚠ gap G-8: the port contract's "do not silently follow a redirect to another
   host" rule for the release API is not implemented (no host comparison).
+- **VT-UI-1108.** The filler-word card (`.fillerWords` on the models page) MUST carry a level
+  combo `fillerWordsLevel` whose four items are exactly the four `FillerWordsLevel` values —
+  `off` is the switch, so there is deliberately no separate toggle — and the word editor
+  `fillerWordsEdit`; both MUST be written to `settings.json` and restored by a fresh window.
+  Every string of the card MUST exist in Russian and in English (rule of 13.10.2026).
+- **VT-UI-1109.** **Recognition** MUST be a page of its own, in the navigation directly after
+  «Модели» and before «Хоткеи», with the glyph `text_grammar_wand_24_regular` (U+ED1E) of the
+  bundled Fluent System Icons face. The page holds the card «Точность распознавания» with the
+  terms dictionary block and the filler-word block (VT-UI-1108). The dictionary and the filler
+  words MUST NOT appear on **Models**: that page is about the model, this one about the text
+  (Alexander, 14.10.2026).
+- **VT-UI-1110.** The page column MUST fill the available width and stop at the mockup's 820px
+  cap, centred (index.css:95 `.page-content`); a page whose cards are narrow MUST NOT be squeezed
+  to its content's hint. The heading in the header band MUST follow the current page name without
+  being clipped, and the band's box with it.
 
 ---
 
@@ -487,7 +503,7 @@ consequences are:
 
 | Suite | What it pins |
 |---|---|
-| `ui-settings-test` (39 slots) | edit → file → restart round-trips; theme tiles and reset; engine/threshold/best-of reaching the services; microphone persistence across device-less and different-device launches; per-page navigation binding in both languages; footer and control fit at 980×640 and 820×560; hotkey capture; model list exclusivity and per-engine keys; noise reduction placement; downloaded models offer delete; log scroll retention; in-place language switch; every key non-empty; About update controls; hide-on-focus-loss; status pill theme; tray show restores the window; tray menu padding; overlay and tray language; model page language; exact tail of the string table; percentage + cancel; navigation icons; every navigation entry opens its own page; record button disabled without a backend; gamepad readouts read-only with the clear buttons following the binding (VT-UI-222); update reports delivered from a worker thread applied on the interface thread (VT-UI-315) |
+| `ui-settings-test` (40 slots) | edit → file → restart round-trips; theme tiles and reset; engine/threshold/best-of reaching the services; microphone persistence across device-less and different-device launches; per-page navigation binding in both languages (including «Распознавание», VT-UI-1109); the heading of every page fitting the band and the page column filling its width (VT-UI-1110); footer and control fit at 980×640 and 820×560; hotkey capture; model list exclusivity and per-engine keys; noise reduction placement; downloaded models offer delete; log scroll retention; in-place language switch; every key non-empty; About update controls; hide-on-focus-loss; status pill theme; tray show restores the window; tray menu padding; overlay and tray language; model page language; exact tail of the string table; percentage + cancel; navigation icons; every navigation entry opens its own page; record button disabled without a backend; gamepad readouts read-only with the clear buttons following the binding (VT-UI-222); update reports delivered from a worker thread applied on the interface thread (VT-UI-315); the filler-word card's level and word list round-trip (VT-UI-1108) |
 | `ui-status-overlay-test` (8 slots) | idempotent create; frameless/topmost/no-input pill; frozen 350 ms pulse; processing accent and stopped pulse; an error hides the overlay; hide/idle; geometry (centred, 26 px above the bottom); worker-thread `post_state()` and terminal `destroy()` |
 | `ui-snapshot` (tool) | renders all 8 pages to PNG offscreen for visual review (not an assertion) |
 

@@ -31,8 +31,16 @@
 **Recognition**
 - Three engines to choose from: **Whisper** (models from Tiny to Large turbo), **Parakeet v3** by NVIDIA — large-level quality at small speed — and **GigaAM v3** by SberDevices/SaluteDevices (Russian only, punctuation and casing out of the box).
 - Recognition language: Russian, English, or detected automatically.
-- Fine tuning: a dictionary of terms and names (works with every engine), plus temperature for Whisper.
+- Fine tuning: a dictionary of terms and names with exact replacements (`commit=commit`), works with every engine, plus temperature for Whisper.
+- **Filler words**: "uh", "um", "like", "you know", "so" and friends are removed from the recognised text at three levels — soft, strict and extreme — and your own words can be added on top.
 - **Background noise suppression** — the filter removes the rumble and damps quiet noise without squeezing a calm voice.
+
+**Text cleanup with a local model**
+- The recognised phrase can be polished further by a small language model that runs **on your machine**: nothing is sent anywhere, and the internet is needed only to download the file.
+- Three sizes: **Qwen2.5 0.5B** (≈491 MB, the fastest), **Qwen2.5 1.5B** (≈1.1 GB, noticeably better on long phrases) and **Llama 3.2 3B** (≈2 GB, the best quality).
+- Downloaded straight from the settings, switched on the fly (the previous model is unloaded from memory) and deleted with one button.
+- The built-in instruction can be **extended, not replaced**: add a requirement of your own (up to 400 bytes), for example "make the text smoother and drop the repetitions".
+- Safety first: an answer is rejected if it loses a number or changes their order, switches language, or is not a rewrite of what you said — then the result of the rules above is used, so an error never reaches your text.
 
 **Microphone**
 - Device selection, a sensitivity slider, and a **microphone test** right in the settings: the application tells you whether it hears you and what it heard.
@@ -60,13 +68,13 @@ The engine and the model are chosen in the application, next to their size and s
 ## Installation
 
 1. Open the [latest release](https://github.com/mops1k/VoiceTyper/releases/latest).
-2. Download `VoiceTyper-<version>-win64-Setup.exe` (about 17 MB).
+2. Download `VoiceTyper-<version>-win64-Setup.exe` (about 21 MB).
 3. Run it: it installs for **the current user**, no administrator rights needed. An earlier version, if present, is removed automatically.
 4. The application starts after installation and stays in the tray.
 
 To remove it, use the usual "Apps" page in Windows settings.
 
-On Linux every release also carries `VoiceTyper-<version>-x86_64.AppImage` (about 51 MB) with a
+On Linux every release also carries `VoiceTyper-<version>-x86_64.AppImage` (about 52 MB) with a
 `.sha256` file: make it executable and run it — no installation, and the models are downloaded on
 first use. The AppImage updates itself: the About page downloads the new image, verifies its
 sha256, replaces the running file and restarts the application (a build that was not started from
@@ -79,14 +87,15 @@ an AppImage opens the release page instead). To build it (or the application) fr
   The Linux build needs `libpulse`, the Qt 6 DBus module, readable `/dev/input/event*` for the
   global hotkeys and `ydotool` for automatic pasting — see [docs/build.md](docs/build.md).
 - An x64 processor. No graphics card needed.
-- Disk space for a model: from 42 MB (Tiny) to about 1 GB (Parakeet q8).
+- Disk space for a model: from 42 MB (Whisper Tiny) to about 2 GB (the largest text-cleanup model).
 - A microphone.
 
 ## First run
 
 1. On the "Microphone" page pick your device and press "Test microphone" — make sure the indicator reacts to your voice.
 2. On the "Models" page choose an engine and a model, and press "Download" in its row: the file is fetched into the models folder (from 42 MB to about 1 GB, depending on the model).
-3. Press the hotkey (by default <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Space</kbd>) and say a phrase — the text appears in the active field.
+3. On the "Recognition" page choose how hard the filler words are cleaned and add your own words if you want; the local cleanup model on the same page is optional.
+4. Press the hotkey (by default <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Space</kbd>) and say a phrase — the text appears in the active field.
 
 Any combination can be reassigned: the "Record" field in the settings captures the gesture itself.
 

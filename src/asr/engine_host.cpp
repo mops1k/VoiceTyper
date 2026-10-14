@@ -375,9 +375,25 @@ domain::Result<std::string> EngineHost::transcribe(
     request.best_of = options.best_of;
     request.speech_map = options.speech_map;
 
+    const auto inference_started = std::chrono::steady_clock::now();
     in_flight_.fetch_add(1, std::memory_order_acq_rel);
     auto result = engine->transcribe(audio::WavAudio(std::move(wav_data)), request, cancellation);
     in_flight_.fetch_sub(1, std::memory_order_acq_rel);
+
+    // "The dictation was slow" has to be splittable into "the decode was slow"
+    // and "everything around it was slow", so the wall time measured here is
+    // published together with the engine's own decode shape (chunks, window).
+    const auto inference_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - inference_started).count();
+    const auto engine_stats = engine->last_decode_stats();
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        last_inference_.duration_ms = inference_ms;
+        last_inference_.audio_seconds =
+            static_cast<double>(samples.size()) / static_cast<double>(audio::kTargetSampleRate);
+        last_inference_.chunks = engine_stats.chunks;
+        last_inference_.window_seconds = engine_stats.window_seconds;
+    }
 
     if (cancellation.is_cancellation_requested()) {
         // A late result is discarded: the session that requested it is gone.

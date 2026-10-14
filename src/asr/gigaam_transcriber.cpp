@@ -129,6 +129,10 @@ domain::Result<std::string> GigaamTranscriber::transcribe(
     // the other two engines.
     std::lock_guard<std::mutex> lock(inference_mutex_);
 
+    // Diagnostics start empty for every call: a failure below must not leave the
+    // previous dictation's shape in the log line.
+    decode_stats_ = platform::DecodeStats{};
+
     if (!engine_->is_ready()) {
         return domain::Result<std::string>::failure(
             domain::ErrorCode::model_not_ready, "gigaam: warmup() has not completed");
@@ -138,6 +142,7 @@ domain::Result<std::string> GigaamTranscriber::transcribe(
     }
 
     const double window = engine_->max_audio_seconds();
+    decode_stats_.window_seconds = window;
     const double duration = static_cast<double>(audio.size()) / static_cast<double>(audio::kTargetSampleRate);
 
     // Within the model window (or with no declared window) the clip is decoded in
@@ -145,6 +150,7 @@ domain::Result<std::string> GigaamTranscriber::transcribe(
     if (window <= 0.0 || duration <= window) {
         const auto text = engine_->transcribe(audio, cancellation);
         last_chunk_count_ = text.is_error() ? 0 : 1;
+        decode_stats_.chunks = last_chunk_count_;
         return text;
     }
 
@@ -205,11 +211,13 @@ domain::Result<std::string> GigaamTranscriber::transcribe(
             // A failed chunk fails the dictation: joining the rest would deliver
             // a transcript that silently lost a sentence.
             last_chunk_count_ = 0;
+            decode_stats_.chunks = 0;
             return text;
         }
         parts.push_back(text.value());
     }
     last_chunk_count_ = parts.size();
+    decode_stats_.chunks = last_chunk_count_;
     if (parts.size() == 1) {
         return parts.front();
     }

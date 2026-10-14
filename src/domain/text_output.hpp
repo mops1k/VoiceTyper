@@ -88,6 +88,10 @@ struct OutputReport {
     platform::TextOutputOutcome outcome = platform::TextOutputOutcome::skipped_empty;
     std::optional<PasteDiagnostics> paste;
     bool delivered = false;
+    /// Wall time of the whole delivery, from the clipboard write to the paste
+    /// attempt, in milliseconds. Diagnostics for the log: it is what separates
+    /// "recognition was slow" from "the paste into the focused window was slow".
+    long long duration_ms = 0;
 };
 
 class TextOutputService final : public TextOutputPort {

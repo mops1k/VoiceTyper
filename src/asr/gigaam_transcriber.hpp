@@ -67,6 +67,15 @@ public:
     /// audio fitted the window. For diagnostics and tests.
     [[nodiscard]] std::size_t last_chunk_count() const;
 
+    /// The same answer as last_chunk_count() plus the window in force, in the
+    /// shape the engine host logs (platform::DecodeStats). Inline because it is a
+    /// one-line diagnostics accessor over the inference lock.
+    [[nodiscard]] platform::DecodeStats last_decode_stats() const noexcept override
+    {
+        const std::lock_guard<std::mutex> lock(inference_mutex_);
+        return decode_stats_;
+    }
+
 private:
     std::filesystem::path model_path_;
     std::unique_ptr<TranscribeEngine> engine_;
@@ -75,6 +84,8 @@ private:
     /// under the same lock that guards inference.
     mutable std::mutex inference_mutex_;
     std::size_t last_chunk_count_ = 0;
+    /// Written under inference_mutex_ by transcribe(), read by the accessor.
+    platform::DecodeStats decode_stats_{};
 };
 
 /// Factory used by NativeEngineRegistry: opens the runtime library and wraps it.

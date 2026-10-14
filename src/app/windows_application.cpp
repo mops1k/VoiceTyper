@@ -476,10 +476,11 @@ int run(int argc, char** argv)
     // this line there was nothing to check it against.
     output.set_report_sink([&logger](const domain::OutputReport& report) {
         const std::string_view outcome = platform::text_output_outcome_name(report.outcome);
-        const std::string detail = report.paste.has_value()
+        const std::string detail = (report.paste.has_value()
             ? (std::string(report.paste->reason) + " (injection_supported="
                   + (report.paste->injection_supported ? "true" : "false") + ")")
-            : std::string();
+            : std::string())
+            + " duration_ms=" + std::to_string(report.duration_ms);
         platform::LogLevel level = platform::LogLevel::info;
         if (report.outcome == platform::TextOutputOutcome::clipboard_failed) {
             level = platform::LogLevel::error;
@@ -772,7 +773,7 @@ int run(int argc, char** argv)
         // is typing into, so the overlay is hidden instead (reported 2026-10-11).
         status_overlay.post_state(platform::OverlayState::idle);
     });
-    machine.set_text_ready_handler([&logger, status_channel, &silence_port](std::string text) {
+    machine.set_text_ready_handler([&logger, status_channel, &silence_port, &engine_host](std::string text) {
         // Length only. The log must never contain recognised text (LOG-01).
         // What the trimming step did, in numbers only: the log never contains the
         // text (LOG-01), but "why was this dictation slow" and "did the silence
@@ -784,7 +785,19 @@ int run(int argc, char** argv)
             "segments=" + std::to_string(trimming.speech_segments)
                 + " removed_leading=" + std::to_string(trimming.removed_leading)
                 + " removed_trailing=" + std::to_string(trimming.removed_trailing)
-                + " compressed_pause=" + std::to_string(trimming.compressed_pause_samples)));
+                + " compressed_pause=" + std::to_string(trimming.compressed_pause_samples)
+                + " detect_ms=" + std::to_string(trimming.detect_ms)));
+        // The split that makes a slow dictation diagnosable: how long the engine
+        // itself took over how much audio, and how many sequential decodes it
+        // needed (more than one means the dictation was cut to the model window).
+        const auto inference = engine_host.last_inference();
+        static_cast<void>(logger.write(
+            platform::LogLevel::info,
+            "engine inference",
+            "audio_seconds=" + std::to_string(inference.audio_seconds)
+                + " duration_ms=" + std::to_string(inference.duration_ms)
+                + " chunks=" + std::to_string(inference.chunks)
+                + " window_seconds=" + std::to_string(inference.window_seconds)));
         static_cast<void>(logger.write(
             platform::LogLevel::info,
             "text delivered",

@@ -27,6 +27,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <functional>
@@ -107,6 +108,24 @@ struct EngineStateSnapshot {
     std::string last_error;
 };
 
+/// What the last completed transcription cost, for the log.
+///
+/// EngineHost measures the wall time and the audio length itself (that applies
+/// to every engine) and merges in whatever the engine reports about its own
+/// decoding (platform::DecodeStats::chunks / window_seconds). The whole point is
+/// that "the dictation was slow" has to be splittable into "the decode was slow"
+/// and "everything around it was slow".
+struct InferenceReport {
+    /// Wall time of the engine->transcribe() call, in milliseconds.
+    long long duration_ms = 0;
+    /// Seconds of audio the engine was handed (after trimming), 16 kHz mono.
+    double audio_seconds = 0.0;
+    /// Sequential model decodes used; 0 = the engine does not report it.
+    std::size_t chunks = 0;
+    /// The engine's own input window in seconds (0 = unbounded/not reported).
+    double window_seconds = 0.0;
+};
+
 /// Adapts the platform Transcriber to audio::TranscriptionPort and owns its
 /// lifetime across a hotkey-driven dictation.
 class EngineHost final : public audio::TranscriptionPort {
@@ -128,6 +147,15 @@ public:
     [[nodiscard]] bool is_ready_for_recording() const noexcept;
     /// Blocks until a background load finished, or the timeout expires.
     bool wait_until_settled(std::chrono::milliseconds timeout);
+
+    /// Wall time and shape of the last transcription. Diagnostics for the log;
+    /// never a decision input, and it reports the last call rather than
+    /// per-session state.
+    [[nodiscard]] InferenceReport last_inference() const
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return last_inference_;
+    }
 
     /// audio::TranscriptionPort. Returns model_not_ready without touching the
     /// engine when it is not warm, engine_unavailable when the machine cannot
@@ -160,6 +188,7 @@ private:
     std::atomic<std::uint32_t> in_flight_{0};
     std::shared_ptr<platform::Transcriber> active_;
     std::vector<std::shared_ptr<platform::Transcriber>> retired_;
+    InferenceReport last_inference_;
     bool shutting_down_ = false;
 };
 

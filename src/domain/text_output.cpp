@@ -194,8 +194,13 @@ Result<bool> TextOutputService::output(
         std::lock_guard<std::mutex> lock(report_mutex_);
         sink = report_sink_;
     }
+    const auto started = clock_.now();
     const auto publish = [&](OutputReport report) {
         report.delivered = platform::is_delivered(report.outcome);
+        // The delivery cost is stamped here rather than at each call site, so the
+        // log always carries it: recognition and pasting are otherwise one number.
+        report.duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            clock_.elapsed_since(started)).count();
         if (sink) {
             try {
                 sink(report);

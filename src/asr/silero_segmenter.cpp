@@ -6,11 +6,10 @@
 // whisper_native.cpp is the only one that knows its decoding ABI.
 #include "whisper.h"
 
-#include <algorithm>
 #include <cstddef>
 #include <mutex>
 #include <string>
-#include <thread>
+#include <vector>
 
 namespace voicetyper::asr {
 
@@ -19,7 +18,6 @@ namespace {
 /// One Silero frame is 512 samples at 16 kHz (31.9 ms) in whisper.cpp.
 constexpr double kFrameSamples = 512.0;
 constexpr double kSampleRate = 16000.0;
-constexpr unsigned kMaxThreads = 16;
 
 std::string path_text(const std::filesystem::path& path)
 {
@@ -66,9 +64,17 @@ domain::Result<std::unique_ptr<SileroSegmenter>> SileroSegmenter::open(
     auto impl = std::make_unique<Impl>();
     whisper_vad_context_params context_params = whisper_vad_default_context_params();
     context_params.use_gpu = false;
-    const unsigned hardware = std::thread::hardware_concurrency();
-    context_params.n_threads = static_cast<int>(
-        std::clamp(hardware == 0U ? 1U : hardware, 1U, kMaxThreads));
+    // ONE thread, deliberately. The VAD graph is one 512-sample frame wide, so the
+    // arithmetic per frame is tiny and the per-op thread synchronization dominates
+    // the cost. Measured 2026-10-14 on the target machine (i7-1165G7, 4 vCPU):
+    // one pass over 30 s of audio took 10264 ms with n_threads =
+    // hardware_concurrency - 938 chunks, about 11 ms of wall time per 512-sample
+    // chunk, which no amount of arithmetic explains. This file used to claim
+    // 1369 ms for the same 30 s. The cost is also latency-bound, so it exploded
+    // under CPU contention: a 26.35 s dictation paid 72025 ms here and left the
+    // user waiting more than a minute, while the recognizer itself needed 4.9 s.
+    // The silero-vad contract prints the per-pass cost, so a regression is visible.
+    context_params.n_threads = 1;
     impl->context = whisper_vad_init_from_file_with_params(path_text(model_path).c_str(), context_params);
     if (impl->context == nullptr) {
         return domain::Result<std::unique_ptr<SileroSegmenter>>::failure(

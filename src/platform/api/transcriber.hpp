@@ -101,6 +101,21 @@ struct EngineCapabilities {
     bool supports_streaming_partials = false;
 };
 
+/// What the most recent transcribe() call actually cost the engine, for the log.
+///
+/// Why this exists: "why was this dictation slow" is otherwise unanswerable from
+/// a log, because audio longer than the model window is decoded in several
+/// sequential passes while a shorter clip is one pass - two situations that look
+/// identical from the outside. Diagnostics only: no delivery policy and no
+/// progress reporting may be built on it (the product shows no streaming preview).
+struct DecodeStats {
+    /// Sequential model decodes the last call used; 1 means the audio fitted the
+    /// window in a single pass. 0 = this engine does not report it (default).
+    std::size_t chunks = 0;
+    /// The input window the engine itself applies, in seconds (0 = unbounded).
+    double window_seconds = 0.0;
+};
+
 /// A loaded speech-to-text engine bound to exactly one model file.
 class Transcriber {
 public:
@@ -141,6 +156,11 @@ public:
     /// caller decides whether that suppresses the paste.
     [[nodiscard]] virtual Result<std::string> transcribe(
         const WavAudio& wav, const TranscriptionRequest& request, const CancellationToken& cancellation) = 0;
+
+    /// Diagnostics of the last transcribe() call on this instance. Engines that
+    /// do not measure it keep the default (zeros): the seam exists so the log can
+    /// say "one pass or many, and over which window", not to change behaviour.
+    [[nodiscard]] virtual DecodeStats last_decode_stats() const noexcept { return {}; }
 
 protected:
     Transcriber() = default;

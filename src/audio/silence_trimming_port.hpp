@@ -6,6 +6,7 @@
 #include "audio/vad.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cstddef>
 
 namespace voicetyper::audio {
@@ -40,6 +41,11 @@ public:
         bool unchanged = true;
         /// True when the recording was too short to be worth a detection pass.
         bool skipped_short = false;
+        /// Wall time of the detection + energy-guard + trim pass, in milliseconds.
+        /// 0 when the pass was skipped. Logged because this pass sits inside the
+        /// same window as the decode: without it, "slow dictation" cannot be
+        /// attributed to the detector or to the engine.
+        long long detect_ms = 0;
     };
 
     SilenceTrimmingPort(TranscriptionPort& engine, SpeechSegmenter& segmenter)
@@ -70,6 +76,7 @@ public:
             return engine_.transcribe(audio, options, cancellation);
         }
 
+        const auto detect_started = std::chrono::steady_clock::now();
         segmenter_.reset();
         const auto detected_segments = segmenter_.detect_speech_no_reset(samples);
         const SpeechMap detected{detected_segments, segmenter_.last_frame_probabilities(),
@@ -79,9 +86,11 @@ public:
         // survives even when the VAD missed it. One pass, no model.
         const auto segments = extend_segments_with_energy(samples, detected_segments, kTargetSampleRate);
         const TrimReport trimmed = trim_silence_to_segments(samples, segments, kTargetSampleRate);
+        const auto detect_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - detect_started).count();
         report_ = Report{trimmed.removed_leading, trimmed.removed_trailing,
             trimmed.compressed_pause_samples, trimmed.speech_segments,
-            trimmed.samples.size() == samples.size()};
+            trimmed.samples.size() == samples.size(), false, detect_ms};
 
         // The detector's answer travels with the audio: the engine must not pay for
         // a second pass over the same dictation.

@@ -1633,6 +1633,13 @@ add_custom_target(voicetyper-tests
         voicetyper-native-dependency-contract
         voicetyper-whisper-native-contract
 
+    # These four exist on both platforms, but they were EXCLUDE_FROM_ALL and missing from
+    # this list: CI builds exactly this aggregate target and then runs ctest, so the
+    # suites showed up as "Not Run" and failed the job (filler-words, 2026-10-14).
+    DEPENDS voicetyper-filler-words-contract
+    DEPENDS voicetyper-filler-words-port-contract
+    DEPENDS voicetyper-cleanup-guard-contract
+    DEPENDS voicetyper-llm-cleanup-contract
     DEPENDS voicetyper-noise-suppression-contract
     DEPENDS voicetyper-microphone-probe-contract
     DEPENDS voicetyper-model-download-contract)
@@ -1657,6 +1664,12 @@ if(TARGET voicetyper-tests)
     # before this target exists, so its dependency is declared here instead.
     if(TARGET voicetyper-appimage-update-contract)
         add_dependencies(voicetyper-tests voicetyper-appimage-update-contract)
+    endif()
+    # The llama.cpp runtime contract exists only when VOICETYPER_BUILD_LLM is on; without
+    # VOICETYPER_LLM_MODEL it skips itself, so attaching it stays cheap and keeps ctest
+    # from reporting it as "Not Run" on a machine that does build the runtime.
+    if(TARGET voicetyper-llm-runtime-contract)
+        add_dependencies(voicetyper-tests voicetyper-llm-runtime-contract)
     endif()
 endif()
 

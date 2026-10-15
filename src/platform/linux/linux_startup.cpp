@@ -116,6 +116,50 @@ std::filesystem::path default_autostart_directory(const domain::EnvironmentLooku
     return config / "autostart";
 }
 
+bool is_installed_instance(const std::filesystem::path& executable)
+{
+    if (executable.empty()) {
+        return false;
+    }
+    // Only the parent chain is inspected, never the file name: an executable
+    // called "build" is not a build tree.
+    std::filesystem::path directory = executable.parent_path();
+    while (!directory.empty()) {
+        if (directory.filename() == "build") {
+            return false;
+        }
+        const std::filesystem::path parent = directory.parent_path();
+        if (parent == directory) {
+            break; // the root: no component left to look at
+        }
+        directory = parent;
+    }
+    return true;
+}
+
+std::string autostart_file_name_for(const std::filesystem::path& executable)
+{
+    return is_installed_instance(executable) ? std::string(kAutostartFileName)
+                                             : std::string(kDevelopmentAutostartFileName);
+}
+
+namespace {
+
+/// The options the production constructor uses: the XDG autostart directory plus
+/// the file name that belongs to this instance kind.
+StartupOptions production_options()
+{
+    StartupOptions options;
+    options.autostart_directory = default_autostart_directory(&process_environment);
+    // An unresolvable image path cannot be shown not to be a build, and
+    // is_installed_instance answers false for it, so such a process gets the
+    // development name - and every write fails later with the same reason.
+    options.file_name = autostart_file_name_for(executable_file_path());
+    return options;
+}
+
+} // namespace
+
 std::string quote_exec_argument(std::string_view argument)
 {
     if (argument.empty()) {
@@ -237,6 +281,15 @@ bool launch_may_rewrite(std::string_view stored_command_line,
     return !target_exists;
 }
 
+bool command_line_names(std::string_view command_line, std::string_view executable)
+{
+    if (executable.empty()) {
+        return false;
+    }
+    const std::string stored = first_argument(command_line);
+    return !stored.empty() && stored == executable;
+}
+
 bool wants_start_minimized(int argc, char** argv)
 {
     for (int index = 1; index < argc; ++index) {
@@ -248,11 +301,7 @@ bool wants_start_minimized(int argc, char** argv)
 }
 
 LinuxStartup::LinuxStartup()
-    : LinuxStartup(StartupOptions{
-          default_autostart_directory(&process_environment),
-          std::string(kAutostartFileName),
-          std::nullopt,
-      })
+    : LinuxStartup(production_options())
 {
 }
 
@@ -315,10 +364,10 @@ Result<std::filesystem::path> LinuxStartup::executable_path() const
     return own;
 }
 
-Status LinuxStartup::set_enabled(bool enabled, bool start_minimized) const
+Status LinuxStartup::set_enabled(bool enabled, bool start_minimized, bool override_owner) const
 {
     if (!enabled) {
-        return remove_entry();
+        return remove_entry(override_owner);
     }
     if (file_path_.empty()) {
         return Status::failure(ErrorCode::invalid_argument,
@@ -367,12 +416,32 @@ Status LinuxStartup::set_enabled(bool enabled, bool start_minimized) const
     return Status::success();
 }
 
-Status LinuxStartup::remove_entry() const
+Status LinuxStartup::remove_entry(bool override_owner) const
 {
     if (file_path_.empty()) {
         return Status::failure(ErrorCode::invalid_argument,
             "no autostart directory: neither XDG_CONFIG_HOME nor HOME is set");
     }
+
+    // Only an entry naming *this* executable is ours to remove, unless the user
+    // explicitly asked for autostart to be off (`override_owner`). The entry name
+    // is shared with every other copy of the product on this machine - the
+    // installed one and each build tree - and removing it blindly disabled
+    // autostart for a copy this process does not own. The Windows backend has the
+    // same rule, so the platforms cannot drift.
+    if (!override_owner) {
+        const auto current = read();
+        if (current.is_ok() && current.value().present) {
+            const std::string stored = command_line_executable(current.value().command_line);
+            const auto own = executable_path();
+            if (own.is_ok() && !stored.empty() && stored != own.value().string()) {
+                return Status::failure(ErrorCode::permission_denied,
+                    "the autostart entry names another installation and was left alone: "
+                        + std::string("it points at an executable this process did not register"));
+            }
+        }
+    }
+
     std::error_code error;
     const bool removed = std::filesystem::remove(file_path_, error);
     if (error) {

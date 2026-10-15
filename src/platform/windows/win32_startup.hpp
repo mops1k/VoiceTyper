@@ -41,6 +41,11 @@
 //     compatibility-contracts.md §2 records that the .NET
 //     `IsRunAtStartupEnabled()` "is not used by the current UI"; that is the
 //     gap this backend exists to close.
+//   * Two value names, one per instance kind: `VoiceTyper` for an installed copy
+//     and `VoiceTyper-dev` for a copy running from a build tree (2026-10-16).
+//     The .NET build wrote a single name from wherever it ran, and so did this
+//     backend until a build launched from a build tree stole the installed
+//     copy's entry; see kAutostartDevelopmentValueName.
 //
 // Scope, deliberately NOT here (see compatibility-contracts.md §2):
 //   * HKCU only. There is no per-user/per-machine choice and no HKLM write, so
@@ -66,6 +71,7 @@
 
 #include "domain/error.hpp"
 
+#include <filesystem>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -86,6 +92,41 @@ inline constexpr std::wstring_view kAutostartKeyPath =
 /// installed program, so this name is the only thing that keeps VoiceTyper's
 /// entry separate from OneDrive/Teams and from any other port of this app.
 inline constexpr std::wstring_view kAutostartValueName = L"VoiceTyper";
+
+/// The value name a *development* copy of this product owns: one running from a
+/// build tree rather than from an installation.
+///
+/// Two copies of the same product live on a development machine at the same
+/// time - the installed one the user actually uses and the build being tested -
+/// and they must not fight over one Run value. Measured 2026-10-16: a build
+/// launched while the canonical value happened to be absent (the user had just
+/// unticked the box in the installed app) registered *itself* under
+/// `kAutostartValueName`, and Windows then started the build tree at the next
+/// logon. The installed app could not get the value back either: `remove_entry`
+/// refuses to delete a value naming another executable, so unticking the box
+/// changed nothing while the setting said "off".
+///
+/// So the canonical value belongs to the installed copy, and a development copy
+/// uses this name: it can register, refresh and remove its own entry to prove
+/// the mechanism works, and it never touches the installed copy's entry.
+inline constexpr std::wstring_view kAutostartDevelopmentValueName = L"VoiceTyper-dev";
+
+/// Whether the executable at `executable` belongs to an *installed* copy of the
+/// product: the Inno Setup uninstaller (`unins*.exe` / `unins*.dat`) sits beside
+/// it, which every installation made by `installer/installer-native.iss` has and
+/// no build tree (`build/windows-mingw-*/deploy`) has.
+///
+/// An empty path, a missing directory or an unreadable one answers `false`:
+/// an executable that cannot be *shown* to be installed is treated as a
+/// development copy, so it can never take over the installed copy's entry.
+[[nodiscard]] bool is_installed_instance(const std::filesystem::path& executable);
+
+/// The Run value name an instance running from `executable` owns:
+/// `kAutostartValueName` for an installed copy, `kAutostartDevelopmentValueName`
+/// for one that cannot be shown to be installed. The production constructor and
+/// the contract test both go through this single function, so the rule has one
+/// spelling.
+[[nodiscard]] std::wstring autostart_value_name_for(const std::filesystem::path& executable);
 
 /// The switch that starts the app with its window hidden. Written into the Run
 /// value when `startMinimized` is on and honoured on launch by
@@ -135,8 +176,12 @@ struct StartupOptions {
 /// null object).
 class Win32Startup final {
 public:
-    /// Production instance: the real key path, the real value name and this
-    /// process's own executable path.
+    /// Production instance: the real key path, this process's own executable
+    /// path, and the value name that belongs to *this instance kind* -
+    /// `kAutostartValueName` for an installed copy, `kAutostartDevelopmentValueName`
+    /// for one running from a build tree (see `is_installed_instance`). Pass an
+    /// explicit `StartupOptions` to pin a name: the contract test does, and so
+    /// does a reader that wants the *other* copy's entry.
     Win32Startup();
 
     /// Explicit instance, for a pinned executable path and/or a different
@@ -180,13 +225,27 @@ public:
     /// and disabling a value that is not there succeeds. `start_minimized` is
     /// only consulted when enabling, so a caller that wants to change just the
     /// switch passes `enabled = true` again.
-    [[nodiscard]] Status set_enabled(bool enabled, bool start_minimized) const;
+    ///
+    /// `override_owner` is the difference between "the user said so" and "the
+    /// app is starting": a write always writes (that is what the caller asked
+    /// for), but *removing* a value that names a different executable is
+    /// refused unless this flag is set, because that value belongs to another
+    /// installation. Only an explicit settings change passes `true`; a
+    /// launch-time reconciliation never does.
+    [[nodiscard]] Status set_enabled(bool enabled, bool start_minimized, bool override_owner = false) const;
 
     /// Removes the autostart value. Named `remove_entry`, not `remove`, because
     /// `<cstdio>` declares a global `remove(const char*)` and a member with the
     /// bare name is a needless trap in a Windows translation unit.
     /// Idempotent: an absent value is the state the caller asked for.
-    [[nodiscard]] Status remove_entry() const;
+    ///
+    /// A value naming a *different* executable is refused
+    /// (`permission_denied`) unless `override_owner` is set: the canonical name
+    /// belongs to the product, but one installation's copy must not disable
+    /// another's autostart. The user's explicit untick passes `true`, so
+    /// "autostart off" really means off even when the value currently names a
+    /// development build.
+    [[nodiscard]] Status remove_entry(bool override_owner = false) const;
 
     /// The executable this instance would register: the pinned
     /// `StartupOptions::executable_path`, or this process's own image.
@@ -228,6 +287,12 @@ private:
 /// escape resolved. Empty when nothing usable is parsed, so a caller can tell
 /// "no entry" from "an entry naming something else".
 [[nodiscard]] std::wstring command_line_executable(std::wstring_view command_line);
+
+/// Whether a stored command line names `executable`: the "is this entry ours"
+/// question, answered case-insensitively the way Windows compares paths. An
+/// empty `executable` or a command line that parses to nothing answers `false`,
+/// so a caller can never mistake a missing entry for its own.
+[[nodiscard]] bool command_line_names(std::wstring_view command_line, std::wstring_view executable);
 
 /// Whether a *launch-time* reconciliation may rewrite the entry that is already
 /// registered.

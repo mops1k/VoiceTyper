@@ -249,7 +249,14 @@ configure never sees them. The header is standard-C++20 with no
 
 - `Win32Startup` over `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run`,
   value `VoiceTyper` — the same key, the same value name and the same
-  `REG_SZ` data type the .NET `StartupManager` used.
+  `REG_SZ` data type the .NET `StartupManager` used — and value `VoiceTyper-dev` for a copy
+  that is *not* installed (a build run from a build tree). The split was added on 2026-10-16:
+  with one value name, a build could register itself under the canonical name and Windows then
+  started the build tree instead of the installed app. An *installed* copy is recognised by the
+  Inno Setup uninstaller (`unins*.exe`/`unins*.dat`) beside its executable
+  (`win32::is_installed_instance`); anything that cannot be shown to be installed, including an
+  unresolvable image path, counts as a development copy and can never own the canonical value
+  (`win32::autostart_value_name_for`).
 - `is_enabled()` answers the existence question with the .NET spelling (any
   failure is `false`); `read()` is the diagnostic read that returns
   `{present, command_line, value_type, start_minimized}`, so a UI can show
@@ -263,6 +270,12 @@ configure never sees them. The header is standard-C++20 with no
   `set_enabled(false, …)` removes the value. Both directions are idempotent:
   enabling twice stores identical bytes, and disabling an absent value
   succeeds, so a save can never leave a Run value behind.
+- **Removing a value that names another executable is refused**
+  (`permission_denied`) unless the caller passes `override_owner = true`, which the composition
+  does only for an *explicit* settings change of an installed copy: the untick must really mean
+  "no autostart", even when the value currently names a development build. A launch-time
+  reconciliation never passes it, and neither does a development copy, so a build can neither
+  steal nor disable the installed copy's autostart.
 - The command line is quoted with the **CommandLineToArgvW rules** (embedded
   quotes escaped, backslashes before a quote doubled) rather than by wrapping
   in two literal quote characters. For a normal path the result is
@@ -294,13 +307,26 @@ configure never sees them. The header is standard-C++20 with no
   points at a file that no longer exists — the cutover repair case. An entry that
   names a different, still-present executable is left alone with a warning in the
   log, and the user's explicit «Запускать вместе с Windows» change always writes
-  (`apply_autostart(..., reconcile_on_launch)`). Covered by
+  (`apply_autostart(..., AutostartTrigger::user_change)`). Covered by
   `win32-startup-contract` (parsing the stored command line back, including a
   path ending in a backslash, and the four decision cases).
+- **The split of 2026-10-16 closes the other half of that incident.** A value name is
+  owned by the copy of the product that may write it: an installed copy owns
+  `VoiceTyper`, a build tree owns `VoiceTyper-dev`, and a development copy does not
+  reconcile at all — it logs `autostart entry left to the installed copy` and warns
+  with `the installed copy's autostart entry names this build tree` when the
+  canonical value names the running build. That warning names the state the machine
+  was found in: the canonical value pointed at
+  `build\windows-mingw-release\deploy\voicetyper-qt-shell.exe`, so the next logon
+  started the build while the setting in the installed app said "off". Unticking
+  «Запускать вместе с Windows» in the installed copy now removes such a value
+  (`override_owner = true`, VT-SYS-053b), so the entry can always be taken back.
 - `--selftest` **reports** the Run key and never writes it: a diagnostic launch
   must not add or remove an autostart entry on the user's machine. The JSON now
-  carries `start_with_windows`, `start_minimized`, `autostart_enabled` and
-  `autostart_state`.
+  carries `start_with_windows`, `start_minimized`, `autostart_instance`
+  (`installed`/`development`), `autostart_entry_name`, `autostart_enabled`,
+  `autostart_state` (this instance's own entry) and `installed_autostart_state`
+  (the canonical entry, which is what starts at logon).
 
 **Deliberately NOT implemented, and not claimed:**
 

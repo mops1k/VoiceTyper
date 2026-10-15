@@ -309,6 +309,47 @@ void check_linux_startup()
         "an entry naming a dead executable is repaired");
     check(launch_may_rewrite(executable, executable, true), "our own entry is rewritten");
 
+    // --- which entry an instance owns -------------------------------------------
+    // A build tree is `build/<preset>/...`; anything else counts as an installed
+    // copy. Measured 2026-10-16: without this split a build registered itself in
+    // the installed copy's entry and the installed copy could not take it back.
+    const std::filesystem::path build_tree =
+        std::filesystem::path("/home/someone/VoiceTyper/build/linux-arch-release/deploy/voicetyper-qt-shell");
+    check(!is_installed_instance(build_tree), "an executable inside a build tree is a development copy");
+    check(is_installed_instance(executable), "an executable outside a build tree is an installed copy");
+    check(!is_installed_instance(""), "an unknown executable path is not trusted as installed");
+    check(autostart_file_name_for(build_tree) == std::string(kDevelopmentAutostartFileName),
+        "a development copy owns voicetyper-dev.desktop");
+    check(autostart_file_name_for(executable) == std::string(kAutostartFileName),
+        "an installed copy owns voicetyper.desktop");
+
+    // The "is this entry ours" question, spelled once and shared by both backends.
+    check(command_line_names(executable, executable), "an entry naming this executable is ours");
+    check(command_line_names(executable + " --start-minimized", executable),
+        "the minimized switch is not part of the name");
+    check(!command_line_names("/other/voicetyper", executable), "an entry naming another copy is not ours");
+    check(!command_line_names("", executable), "an empty command line names nothing");
+    check(!command_line_names(executable, ""), "an empty executable can never match");
+
+    // --- ownership: only the user's explicit word overrides a foreign entry -----
+    const std::string other_copy = "/opt/other/voicetyper-qt-shell";
+    {
+        std::ofstream foreign(startup.file_path(), std::ios::binary | std::ios::trunc);
+        foreign << build_desktop_entry(other_copy, false);
+    }
+    const auto refused_removal = startup.set_enabled(false, false);
+    check(refused_removal.is_error(), "disabling an entry that names another copy is refused");
+    check(refused_removal.code() == voicetyper::domain::ErrorCode::permission_denied,
+        "the refusal is permission_denied, not a silent success");
+    check(std::filesystem::exists(startup.file_path(), error) && !error,
+        "another copy's autostart entry was not disabled");
+
+    // The explicit settings change may remove it anyway: "autostart off" means off.
+    const auto explicit_removal = startup.set_enabled(false, false, /*override_owner=*/true);
+    check(explicit_removal.is_ok(), "an explicit settings change removes a foreign entry");
+    check(!std::filesystem::exists(startup.file_path(), error),
+        "the entry is gone after the explicit disable");
+
     best_effort_remove(root);
 }
 

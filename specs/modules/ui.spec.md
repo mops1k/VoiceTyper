@@ -68,11 +68,17 @@ roots, the settings presenter and the Qt HTTP client.
 ### Autostart reconciliation
 
 - **VT-UI-114.** On a real launch with `startWithWindows` enabled the composition MUST reconcile
-  the Run value (`reconcile_on_launch = true`) and MUST NOT overwrite an entry belonging to
-  another installation (it logs
-  `"autostart entry belongs to another installation and was left alone"`).
-- **VT-UI-115.** A settings change MUST reconcile with `reconcile_on_launch = false`, so toggling
-  `startMinimized` rewrites the command line of an already registered entry.
+  the entry of its own instance kind (`AutostartTrigger::launch`) and MUST NOT overwrite an entry
+  belonging to another copy (it logs
+  `"autostart entry belongs to another installation and was left alone"`). A development copy
+  (one running from a build tree) MUST NOT reconcile at all: it logs
+  `"autostart entry left to the installed copy"`, and warns with
+  `"the installed copy's autostart entry names this build tree"` when the canonical entry names
+  the running build.
+- **VT-UI-115.** A settings change MUST reconcile through `AutostartTrigger::user_change`, so
+  toggling `startMinimized` rewrites the command line of an already registered entry; an
+  installed copy passes `override_owner = true`, so unticking the box removes an entry that
+  names a development build (VT-SYS-053b).
 - **VT-UI-116.** `start_hidden` MUST be `--start-minimized` OR `settings.start_minimized`, and
   the launch source MUST be written to the log.
 

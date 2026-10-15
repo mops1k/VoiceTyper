@@ -434,14 +434,25 @@ branches of the shared runtime loaders. The Windows rules above are unchanged.
   buffer that grows until the link fits, and MUST return an empty path when it cannot
   ([src/platform/linux/linux_paths.cpp](../../src/platform/linux/linux_paths.cpp)).
 - **VT-PLT-1103.** Autostart MUST be a freedesktop desktop entry
-  `$XDG_CONFIG_HOME/autostart/voicetyper.desktop`, written atomically (temporary file +
-  rename) so a crash cannot leave a truncated entry, with the `Exec` value quoted by the
-  freedesktop rules and ` --start-minimized` appended when the setting is on
+  `$XDG_CONFIG_HOME/autostart/voicetyper.desktop` — `voicetyper-dev.desktop` for a copy running
+  from a build tree (VT-PLT-1108) — written atomically (temporary file + rename) so a crash
+  cannot leave a truncated entry, with the `Exec` value quoted by the freedesktop rules and
+  ` --start-minimized` appended when the setting is on
   ([src/platform/linux/linux_startup.cpp](../../src/platform/linux/linux_startup.cpp)).
 - **VT-PLT-1104.** Enabling twice MUST store byte-identical content, and disabling an absent
   entry MUST succeed (idempotence in both directions).
 - **VT-PLT-1105.** A launch-time reconciliation MUST NOT rewrite an entry that names a
   different executable which still exists (the Linux form of VT-SYS-053).
+- **VT-PLT-1108.** The entry file name MUST follow the instance kind:
+  `linuxos::is_installed_instance(executable)` is true when no component of the executable's
+  parent chain is named `build` (the layout every CMake preset here produces), and
+  `linuxos::autostart_file_name_for()` then returns `voicetyper.desktop`; otherwise the copy is
+  a development one and owns `voicetyper-dev.desktop`. An empty or unresolvable executable path
+  MUST answer "development", so it can never take over an installed copy's entry.
+- **VT-PLT-1109.** Removing an entry that names a different executable MUST be refused with
+  `permission_denied` unless the caller passes `override_owner = true`, which the composition
+  sets only for an explicit settings change of an installed copy — the same rule and the same
+  spelling as the Windows backend (VT-SYS-053b).
 - **VT-PLT-1106.** Single instance on Linux MUST use the `QLocalServer` channel of
   `src/ui/tray_controller.cpp`; the global mutex of VT-PLT-104 is Windows-only. A second
   launch MUST exit and the owner MUST raise its window.

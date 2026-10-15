@@ -392,10 +392,25 @@ int run(int argc, char** argv)
     // nothing. So the entry is *reconciled* against the setting, never merely
     // displayed from it, and a refused write is logged instead of swallowed -
     // the .NET catch-all made a failed write look exactly like a successful one.
-    platform::win32::Win32Startup startup;
+    //
+    // Two copies of the product live on a development machine at once - the
+    // installed one the user works with and the build being tested - and they must
+    // not share one Run value: measured 2026-10-16, a build launched while the
+    // canonical value happened to be absent registered itself under it, Windows
+    // started the build tree at the next logon, and the installed app could not
+    // take the value back (remove_entry refuses a value naming another
+    // executable). An instance therefore owns the value name of its kind:
+    // `VoiceTyper` for an installed copy, `VoiceTyper-dev` for a build tree.
+    const auto own_executable = platform::win32::module_file_path();
+    const bool installed_instance = own_executable.is_ok()
+        && platform::win32::is_installed_instance(std::filesystem::path(own_executable.value()));
+    platform::win32::Win32Startup startup; // the value name follows the instance kind
+    // The canonical value read-only: what it holds is what starts at the next
+    // logon, so a development copy reports it even though it never writes it.
+    const platform::win32::Win32Startup canonical_startup{platform::win32::StartupOptions{}};
 
-    const auto autostart_state_text = [&startup] {
-        const auto current = startup.read();
+    const auto autostart_state_text = [](const platform::win32::Win32Startup& backend) {
+        const auto current = backend.read();
         if (current.is_error()) {
             return "registry=unreadable (" + current.error().to_string() + ")";
         }
@@ -408,35 +423,59 @@ int run(int argc, char** argv)
             + "\"";
     };
 
-    // `reconcile_on_launch` separates "the user asked for this" from "the app is
-    // starting". Only the user's explicit change may rewrite an entry that
-    // belongs to another installation: measured 2026-10-01, a single launch of
-    // this C++ build repointed the installed .NET app's Run value at the build
-    // tree, so Windows would have started the development build at the next
-    // logon. While the .NET build is still the reference release that is data
-    // corruption, and it is what this flag exists to prevent.
-    const auto apply_autostart = [&startup, &logger, &autostart_state_text](
-                                    const domain::AppSettings& applied, bool reconcile_on_launch) {
+    // Who asked for the write. `user_change` is the explicit settings change - the
+    // user's word, which may also remove or repoint a value naming another
+    // executable. `launch` is the app starting: it reconciles, and never
+    // overwrites a living entry that belongs to another copy.
+    enum class AutostartTrigger { launch, user_change };
+
+    const auto apply_autostart = [&startup, &canonical_startup, &installed_instance, &own_executable,
+                                     &logger, &autostart_state_text](
+                                    const domain::AppSettings& applied, AutostartTrigger trigger) {
         const std::string requested = std::string("start_with_windows=")
             + (applied.start_with_windows ? "true" : "false") + " start_minimized="
             + (applied.start_minimized ? "true" : "false");
+        const bool user_change = trigger == AutostartTrigger::user_change;
 
-        if (reconcile_on_launch && applied.start_with_windows) {
+        if (!installed_instance && !user_change) {
+            // A development copy registers nothing at launch and never touches the
+            // canonical value: a build tree starting at logon in place of the
+            // installed app is exactly what this split exists to prevent. It only
+            // reports, and shouts when the canonical value names this very build.
+            static_cast<void>(logger.write(platform::LogLevel::info,
+                "autostart entry left to the installed copy",
+                "instance=development entry=\"" + platform::win32::to_log_text(startup.value_name())
+                    + "\" requested=" + (applied.start_with_windows ? "on" : "off")
+                    + " canonical=" + autostart_state_text(canonical_startup)));
+            const auto canonical_entry = canonical_startup.read();
+            if (canonical_entry.is_ok() && canonical_entry.value().present && own_executable.is_ok()
+                && platform::win32::command_line_names(
+                    canonical_entry.value().command_line, own_executable.value())) {
+                static_cast<void>(logger.write(platform::LogLevel::warn,
+                    "the installed copy's autostart entry names this build tree",
+                    "canonical=\"" + platform::win32::to_log_text(canonical_entry.value().command_line)
+                        + "\" this=\"" + platform::win32::to_log_text(own_executable.value())
+                        + "\" (" + localized(ui::UiKey::k14).toStdString()
+                        + " in the installed app gives the entry back to it)"));
+            }
+            return;
+        }
+
+        if (installed_instance && trigger == AutostartTrigger::launch && applied.start_with_windows) {
             const auto current = startup.read();
-            const auto own_path = platform::win32::module_file_path();
-            if (current.is_ok() && current.value().present && own_path.is_ok()) {
+            if (current.is_ok() && current.value().present && own_executable.is_ok()) {
                 const std::wstring target = platform::win32::command_line_executable(current.value().command_line);
                 std::error_code exists_error;
                 const bool target_exists = !target.empty()
                     && std::filesystem::exists(std::filesystem::path(target), exists_error)
                     && !exists_error;
                 if (!platform::win32::launch_may_rewrite(
-                        current.value().command_line, own_path.value(), target_exists)) {
+                        current.value().command_line, own_executable.value(), target_exists)) {
                     static_cast<void>(logger.write(
                         platform::LogLevel::warn,
                         "autostart entry belongs to another installation and was left alone",
                         "registry=\"" + platform::win32::to_log_text(current.value().command_line)
-                            + "\" this=\"" + platform::win32::to_log_text(own_path.value())
+                            + "\" this=\"" + platform::win32::to_log_text(own_executable.value())
                             + "\" (" + localized(ui::UiKey::k14).toStdString()
                             + " to re-register it for this build)"));
                     return;
@@ -444,7 +483,12 @@ int run(int argc, char** argv)
             }
         }
 
-        const auto status = startup.set_enabled(applied.start_with_windows, applied.start_minimized);
+        // The explicit settings change may also remove or repoint a value that
+        // names another executable; a launch never does (and a development copy
+        // never does either, so a build cannot disable the installed copy's
+        // autostart).
+        const auto status = startup.set_enabled(applied.start_with_windows, applied.start_minimized,
+            /*override_owner=*/user_change && installed_instance);
         if (status.is_error()) {
             static_cast<void>(logger.write(
                 platform::LogLevel::error,
@@ -452,10 +496,9 @@ int run(int argc, char** argv)
                 requested + " -> " + status.error().to_string()));
             return;
         }
-        static_cast<void>(logger.write(
-            platform::LogLevel::info,
+        static_cast<void>(logger.write(platform::LogLevel::info,
             "autostart entry applied",
-            requested + " -> " + autostart_state_text()));
+            requested + " -> " + autostart_state_text(startup)));
     };
 
     // --- text output ---------------------------------------------------------
@@ -1615,7 +1658,7 @@ int run(int argc, char** argv)
         // Save). A changed startMinimized therefore rewrites the command line
         // of an entry that is already registered, rather than waiting for the
         // next launch to discover it.
-        apply_autostart(updated, /*reconcile_on_launch=*/false);
+        apply_autostart(updated, AutostartTrigger::user_change);
     };
 
     services.log_text = [&logger] {
@@ -1627,8 +1670,11 @@ int run(int argc, char** argv)
         // The Run key is reported, never touched: a diagnostic launch must not
         // add or remove an autostart entry on the user's machine, and the drift
         // between the setting and the registry is exactly what a support run
-        // needs to see.
+        // needs to see. Two entries can matter: this instance's own value (the
+        // development name for a build tree) and the installed copy's canonical
+        // one, which is what starts at logon - so both are reported.
         const auto autostart_entry = startup.read();
+        const auto canonical_entry = canonical_startup.read();
         std::cout << "{\n";
         std::cout << "  \"settings\": \"" << settings_path(paths).string() << "\",\n";
         std::cout << "  \"engine_readiness\": \""
@@ -1646,11 +1692,20 @@ int run(int argc, char** argv)
         std::cout << "  \"start_minimized\": "
                   << ((start_minimized_switch || presenter.settings().start_minimized) ? "true" : "false")
                   << ",\n";
+        std::cout << "  \"autostart_instance\": \""
+                  << (installed_instance ? "installed" : "development") << "\",\n";
+        std::cout << "  \"autostart_entry_name\": \""
+                  << platform::win32::to_log_text(startup.value_name()) << "\",\n";
         std::cout << "  \"autostart_enabled\": "
                   << (autostart_entry.is_ok() && autostart_entry.value().present ? "true" : "false")
                   << ",\n";
         std::cout << "  \"autostart_state\": \""
-                  << (autostart_entry.is_ok() ? autostart_state_text() : autostart_entry.error().to_string())
+                  << (autostart_entry.is_ok() ? autostart_state_text(startup)
+                                              : autostart_entry.error().to_string())
+                  << "\",\n";
+        std::cout << "  \"installed_autostart_state\": \""
+                  << (canonical_entry.is_ok() ? autostart_state_text(canonical_startup)
+                                              : canonical_entry.error().to_string())
                   << "\"\n";
         std::cout << "}\n";
         std::cout << "voicetyper-selftest: OK\n";
@@ -1664,7 +1719,7 @@ int run(int argc, char** argv)
     // entry must point at *this* executable, so it is rewritten whenever the
     // setting is on. Logged either way, so "autostart does not work" is a line
     // in the log rather than a mystery.
-    apply_autostart(presenter.settings(), /*reconcile_on_launch=*/true);
+    apply_autostart(presenter.settings(), AutostartTrigger::launch);
     // «Запускать свёрнутым» is honoured on the stored setting *or* the switch
     // the autostart entry passes; the switch wins, because it is the explicit
     // request of this particular launch.

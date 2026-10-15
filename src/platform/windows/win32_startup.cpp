@@ -12,6 +12,7 @@
 #include <cctype>
 #include <climits>
 #include <cwctype>
+#include <filesystem>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -98,6 +99,83 @@ std::wstring registry_type_name(DWORD type)
     default: break;
     }
     return L"REG_TYPE_" + std::to_wstring(static_cast<unsigned long>(type));
+}
+
+/// Case-insensitive suffix test, for the Inno marker's extension. Spelled out
+/// here rather than reusing `paths_equal`, which is defined further down: this
+/// helper is needed by `is_installed_instance` above it.
+bool ends_with_case_insensitive(std::wstring_view text, std::wstring_view suffix)
+{
+    if (text.size() < suffix.size()) {
+        return false;
+    }
+    const std::wstring_view tail = text.substr(text.size() - suffix.size());
+    for (std::size_t index = 0; index < suffix.size(); ++index) {
+        if (std::towlower(tail[index]) != std::towlower(suffix[index])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+} // namespace
+
+bool is_installed_instance(const std::filesystem::path& executable)
+{
+    if (executable.empty()) {
+        return false;
+    }
+    const std::filesystem::path directory = executable.parent_path();
+    if (directory.empty()) {
+        return false;
+    }
+
+    // Non-throwing iteration: an unreadable directory is a "cannot prove it"
+    // answer, and this runs on the launch path where an exception would be a
+    // crash rather than a log line.
+    std::error_code error;
+    for (std::filesystem::directory_iterator entry(directory, error), end; !error && entry != end;
+         entry.increment(error)) {
+        const std::wstring name = entry->path().filename().wstring();
+        // "unins" prefix plus a .exe/.dat extension: what Inno Setup leaves in
+        // the installation directory (unins000.exe next to unins000.dat).
+        if (name.size() < 9) {
+            continue;
+        }
+        if (std::towlower(name[0]) != L'u' || std::towlower(name[1]) != L'n'
+            || std::towlower(name[2]) != L'i' || std::towlower(name[3]) != L'n'
+            || std::towlower(name[4]) != L's') {
+            continue;
+        }
+        if (ends_with_case_insensitive(name, L".exe") || ends_with_case_insensitive(name, L".dat")) {
+            return true;
+        }
+    }
+    return false;
+}
+
+std::wstring autostart_value_name_for(const std::filesystem::path& executable)
+{
+    return is_installed_instance(executable) ? std::wstring(kAutostartValueName)
+                                            : std::wstring(kAutostartDevelopmentValueName);
+}
+
+namespace {
+
+/// The options the production constructor uses: the canonical key path plus the
+/// value name that belongs to this instance kind.
+StartupOptions production_options()
+{
+    const auto own = module_file_path();
+    if (own.is_error()) {
+        // Without this process's own image path the kind cannot be decided, and
+        // the canonical name is the conservative answer: a read is harmless, and
+        // a write fails with this very error before it reaches the registry.
+        return StartupOptions{};
+    }
+    StartupOptions options;
+    options.value_name = autostart_value_name_for(std::filesystem::path(own.value()));
+    return options;
 }
 
 } // namespace
@@ -298,6 +376,15 @@ bool launch_may_rewrite(
     return !target_exists; // another installation: only a dead target is repaired
 }
 
+bool command_line_names(std::wstring_view command_line, std::wstring_view executable)
+{
+    if (executable.empty()) {
+        return false;
+    }
+    const std::wstring stored = command_line_executable(command_line);
+    return !stored.empty() && paths_equal(stored, executable);
+}
+
 bool wants_start_minimized(int argc, char** argv)
 {    if (argv == nullptr) {
         return false;
@@ -361,7 +448,7 @@ std::string to_log_text(std::wstring_view text)
 }
 
 Win32Startup::Win32Startup()
-    : Win32Startup(StartupOptions{})
+    : Win32Startup(production_options())
 {
 }
 
@@ -462,14 +549,14 @@ Result<std::wstring> Win32Startup::executable_path() const
     return module_file_path();
 }
 
-Status Win32Startup::set_enabled(bool enabled, bool start_minimized) const
+Status Win32Startup::set_enabled(bool enabled, bool start_minimized, bool override_owner) const
 {
     if (options_.key_path.empty() || options_.value_name.empty()) {
         return Status::failure(
             ErrorCode::invalid_argument, "the autostart key path and value name must not be empty");
     }
     if (!enabled) {
-        return remove_entry();
+        return remove_entry(override_owner);
     }
 
     const auto executable = executable_path();
@@ -531,7 +618,7 @@ Status Win32Startup::set_enabled(bool enabled, bool start_minimized) const
     return Status::success();
 }
 
-Status Win32Startup::remove_entry() const
+Status Win32Startup::remove_entry(bool override_owner) const
 {
     if (options_.key_path.empty() || options_.value_name.empty()) {
         return Status::failure(
@@ -551,13 +638,14 @@ Status Win32Startup::remove_entry() const
             status_message(opened, "the autostart value could not be opened for removal", "RegOpenKeyExW/KEY_SET_VALUE"));
     }
 
-    // Only an entry that names *this* executable is ours to remove. The value name
-    // is shared with the installed build of the product, and deleting it blindly
-    // disabled autostart for an installation this process does not own - measured
-    // 2026-10-01: the C++ build, run with startWithWindows=false, removed the
-    // installed .NET application's Run value.
+    // Only an entry that names *this* executable is ours to remove, unless the
+    // user explicitly asked for autostart to be off (`override_owner`). The value
+    // name is shared with the installed build of the product, and deleting it
+    // blindly disabled autostart for an installation this process does not own -
+    // measured 2026-10-01: the C++ build, run with startWithWindows=false, removed
+    // the installed .NET application's Run value.
     const auto current = read();
-    if (current.is_ok() && current.value().present) {
+    if (!override_owner && current.is_ok() && current.value().present) {
         const std::wstring stored = command_line_executable(current.value().command_line);
         const auto own = executable_path();
         if (own.is_ok() && !stored.empty() && !paths_equal(stored, own.value())) {

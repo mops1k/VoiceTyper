@@ -245,16 +245,31 @@ presenter.
 - **VT-SYS-052.** On launch the process MUST start window-hidden when it was invoked with
   `--start-minimized` or when `startMinimized` is enabled. The window object and the tray
   icon MUST still exist.
-- **VT-SYS-053.** A launch MAY rewrite the `HKCU\...\Run\VoiceTyper` value only when the
-  entry is absent, unparsable, already owned by this product, or points at a file that no
-  longer exists; an entry naming a different, still-present executable MUST be left alone
-  and logged (commit `wasapi_capture`/`win32_startup` contract, `docs/migration/cpp/compatibility-contracts.md` §2).
+- **VT-SYS-053.** The autostart value MUST belong to the copy of the product that registered
+  it. An *installed* copy — the Inno Setup uninstaller `unins*.exe`/`unins*.dat` sits beside
+  its executable — owns `HKCU\...\Run\VoiceTyper`; every other copy (a build run from a build
+  tree) owns `VoiceTyper-dev` and MUST NOT write, repoint or remove the canonical value.
+  Measured 2026-10-16: a build registered itself under the canonical name, Windows started the
+  build tree instead of the installed app, and the installed app's untick could not take the
+  value back. A launch MAY rewrite the value it owns only when the entry is absent, unparsable,
+  already owned by this copy, or points at a file that no longer exists; an entry naming a
+  different, still-present executable MUST be left alone and logged (commit
+  `wasapi_capture`/`win32_startup` contract, `docs/migration/cpp/compatibility-contracts.md` §2).
+- **VT-SYS-053b.** An explicit change of «Запускать вместе с системой» in an installed copy MUST
+  also remove or repoint a value naming another executable (`override_owner = true`): "autostart
+  off" means off even when a build tree stole the value. A launch-time reconciliation MUST NOT
+  pass it. A development copy MUST NOT pass it either, so a build can never disable the
+  installed copy's autostart.
 - **VT-SYS-054.** `--selftest` MUST report state (including autostart) and MUST NOT write
-  to the registry or modify settings.
-- **VT-SYS-053a.** On Linux the same reconciliation rule MUST hold for the freedesktop entry
-  `$XDG_CONFIG_HOME/autostart/voicetyper.desktop`: it MAY be rewritten only when it is absent,
-  unparsable, already owned by this product, or points at a file that no longer exists
-  (VT-PLT-1105).
+  to the registry or modify settings. It MUST report the instance kind, the entry name this
+  instance owns and the state of both entries this product can have
+  (`autostart_instance`, `autostart_entry_name`, `autostart_state`,
+  `installed_autostart_state`).
+- **VT-SYS-053a.** On Linux the same split MUST hold for the freedesktop entries: an installed
+  copy (its executable is not inside a directory named `build`) owns
+  `$XDG_CONFIG_HOME/autostart/voicetyper.desktop`, a build tree owns
+  `$XDG_CONFIG_HOME/autostart/voicetyper-dev.desktop`, and the same launch and ownership rules
+  apply (VT-PLT-1105, VT-PLT-1108, VT-PLT-1109).
 - **VT-SYS-054a.** On Linux `--selftest` MUST NOT write the autostart entry either; the
   reconciliation runs only on a normal launch.
 
@@ -288,7 +303,7 @@ presenter.
 | Log | `$XDG_DATA_HOME/VoiceTyper/logs/voiceTyper.log` | VT-SYS-068 |
 | Update download | beside the running AppImage (`<image>.download`, renamed over it); `$XDG_DATA_HOME/VoiceTyper/updates` for the Windows installer | VT-SYS-068, VT-SYS-014 |
 | Engine libraries | beside the executable, then `<exe_dir>/engine-libs` | VT-PLT-1602 |
-| Autostart | `$XDG_CONFIG_HOME/autostart/voicetyper.desktop` (freedesktop desktop entry) | VT-SYS-065a |
+| Autostart | `$XDG_CONFIG_HOME/autostart/voicetyper.desktop` (freedesktop desktop entry); `voicetyper-dev.desktop` for a copy running from a build tree | VT-SYS-065a, VT-PLT-1103 |
 
 - **VT-SYS-068.** The Linux paths MUST come from the same resolver
   (`domain::AppPaths` over `domain::linux_app_path_roots`, VT-COR-105) and MUST NOT be

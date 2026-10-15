@@ -14,7 +14,12 @@
 //     bytes, and enabling twice is idempotent;
 //   * disabling removes the value - verified again through the raw registry,
 //     not only through the backend - and disabling twice is idempotent, so
-//     enable/disable can never leave a Run value behind.
+//     enable/disable can never leave a Run value behind;
+//   * which value belongs to which copy of the product: an installed copy (an
+//     Inno uninstaller beside its executable) owns "VoiceTyper", a build tree
+//     owns "VoiceTyper-dev" and can never be given the canonical one
+//     (2026-10-16), while the user's explicit untick still removes a value that
+//     names another copy - a launch never does;
 //
 // Rules this test obeys:
 //   * it NEVER writes or deletes the production value name "VoiceTyper". The
@@ -36,6 +41,7 @@
 
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
 #include <string>
 
 #ifndef WIN32_LEAN_AND_MEAN
@@ -48,10 +54,14 @@
 
 namespace {
 
+using voicetyper::platform::win32::autostart_value_name_for;
 using voicetyper::platform::win32::build_command_line;
 using voicetyper::platform::win32::carries_start_minimized;
 using voicetyper::platform::win32::command_line_executable;
+using voicetyper::platform::win32::command_line_names;
+using voicetyper::platform::win32::is_installed_instance;
 using voicetyper::platform::win32::is_start_minimized_switch;
+using voicetyper::platform::win32::kAutostartDevelopmentValueName;
 using voicetyper::platform::win32::kAutostartKeyPath;
 using voicetyper::platform::win32::kAutostartValueName;
 using voicetyper::platform::win32::kStartMinimizedSwitch;
@@ -286,6 +296,61 @@ void test_launch_reconciliation()
         "an entry that parses to something that exists is kept, however odd it looks");
 }
 
+/// Group B: which Run value an instance owns, and the two questions behind it -
+/// "is this copy installed" (the Inno Setup marker beside the executable) and
+/// "does this entry name this executable". No registry here: a temporary
+/// directory stands in for an installation directory, so the rule is checked
+/// without touching a real one.
+void test_instance_kind()
+{
+    std::printf("group: instance kind and value name\n");
+
+    const std::filesystem::path root = std::filesystem::temp_directory_path()
+        / (std::wstring(L"voicetyper-startup-kind-")
+            + std::to_wstring(static_cast<unsigned long>(::GetCurrentProcessId())));
+    std::error_code error;
+    std::filesystem::remove_all(root, error);
+    std::filesystem::create_directories(root, error);
+    const std::filesystem::path installed_exe = root / "VoiceTyper.exe";
+    const std::filesystem::path build_exe =
+        root / "build" / "windows-mingw-release" / "deploy" / "voicetyper-qt-shell.exe";
+    std::filesystem::create_directories(build_exe.parent_path(), error);
+
+    // No uninstaller anywhere: this is a build tree, and a build tree must never
+    // own the canonical value (measured 2026-10-16).
+    check(!is_installed_instance(installed_exe), "a directory with no uninstaller is a development copy");
+    check_wide(autostart_value_name_for(installed_exe), std::wstring(kAutostartDevelopmentValueName),
+        "a development copy owns VoiceTyper-dev");
+    check(!is_installed_instance(build_exe), "a deploy directory is a development copy");
+    check(!is_installed_instance(""), "an unknown executable path is not trusted as installed");
+
+    // The Inno Setup marker: unins000.exe/unins000.dat beside the executable is
+    // what every installation made by installer/installer-native.iss has.
+    {
+        std::ofstream marker(root / "unins000.dat", std::ios::binary | std::ios::trunc);
+        marker << "marker";
+    }
+    check(is_installed_instance(installed_exe), "an uninstaller beside the executable means installed");
+    check_wide(autostart_value_name_for(installed_exe), std::wstring(kAutostartValueName),
+        "an installed copy owns the canonical VoiceTyper value");
+    check(!is_installed_instance(build_exe),
+        "the marker of another directory does not make a build tree installed");
+
+    // "Is this entry ours", the question the composition asks before it shouts
+    // that the installed copy's autostart points at a build tree.
+    check(command_line_names(build_command_line(installed_exe.wstring(), false), installed_exe.wstring()),
+        "an entry naming this executable is ours");
+    check(command_line_names(build_command_line(installed_exe.wstring(), true), installed_exe.wstring()),
+        "the minimized switch is not part of the name");
+    check(command_line_names(L"\"C:\\OTHER\\VOICETYPER.EXE\"", L"C:\\other\\VoiceTyper.exe"),
+        "the comparison is case-insensitive, as Windows paths are");
+    check(!command_line_names(L"", installed_exe.wstring()), "an empty command line names nothing");
+    check(!command_line_names(build_command_line(installed_exe.wstring(), false), L""),
+        "an empty executable can never match");
+
+    std::filesystem::remove_all(root, error);
+}
+
 } // namespace
 
 int main()
@@ -293,6 +358,7 @@ int main()
     test_quoting_and_command_line();
     test_switch_detection();
     test_launch_reconciliation();
+    test_instance_kind();
 
     // --- the executable this process would register -----------------------------
     const auto executable = voicetyper::platform::win32::module_file_path();
@@ -326,10 +392,10 @@ int main()
     check(production_before.status == ERROR_SUCCESS || production_before.status == ERROR_FILE_NOT_FOUND,
         "the production Run key is readable (RegOpenKeyExW/RegQueryValueExW)");
 
-    // The production instance is exercised read-only: same key, same value
-    // name, so the constants this ships really are the ones a user's registry
-    // is read through.
-    const Win32Startup production;
+    // The production instance is exercised read-only, through the canonical value
+    // name explicitly, so the constants this ships really are the ones a user's
+    // registry is read through.
+    const Win32Startup production{StartupOptions{}};
     const auto production_entry = production.read();
     check(production_entry.is_ok(), "the production autostart value can be read");
     if (production_entry.is_ok()) {
@@ -345,6 +411,15 @@ int main()
             production_entry.value().present ? "enabled" : "disabled",
             narrow(production_entry.value().command_line).c_str());
     }
+
+    // The default constructor decides the value name by instance kind, and this
+    // test binary runs from a build tree, so it must take the development value
+    // and never the canonical one - the fix for the 2026-10-16 hijack.
+    const Win32Startup own_instance;
+    check_wide(own_instance.value_name(), std::wstring(kAutostartDevelopmentValueName),
+        "a build tree resolves to the development value name");
+    check(own_instance.value_name() != std::wstring(kAutostartValueName),
+        "a build tree never resolves to the canonical value name");
 
     // --- the real Run key, a test-scoped value name ----------------------------
     std::printf("group: real HKCU Run key round-trip (test value name only)\n");
@@ -456,7 +531,17 @@ int main()
         const auto removed_mine = startup.set_enabled(false, false);
         check(removed_mine.is_ok(), "our own entry is removed again");
         check(!read_raw_run_value(test_name).present, "our own value is gone after removal");
-        check(read_raw_run_value(test_name).present == false, "the foreign value was already replaced");
+
+        // Planted again, then removed by the *user's* explicit change: the
+        // canonical name belongs to the product, so "autostart off" has to mean
+        // off even when the value currently names another copy (2026-10-16). This
+        // is what the installed app's untick does for a value a build stole.
+        if (write_raw_run_value(test_name, foreign_command)) {
+            const auto explicit_removal = startup.set_enabled(false, false, /*override_owner=*/true);
+            check(explicit_removal.is_ok(), "an explicit settings change removes a foreign Run value");
+            check(!read_raw_run_value(test_name).present,
+                "the foreign value is gone after the explicit disable");
+        }
     } else {
         std::printf("  note: the test Run value could not be written directly, so the foreign-entry rule was not checked\n");
     }

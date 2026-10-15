@@ -31,6 +31,13 @@
 //   * The entry is written atomically (a temporary file plus rename), so a
 //     crash in the middle cannot leave a truncated desktop entry that the
 //     session would then try to execute.
+//   * Two entry names, one per instance kind: `voicetyper.desktop` for an
+//     installed copy and `voicetyper-dev.desktop` for a copy running from a
+//     build tree (2026-10-16), mirroring `VoiceTyper`/`VoiceTyper-dev` on
+//     Windows; see kDevelopmentAutostartFileName.
+//   * Removing an entry that names a different executable is refused unless the
+//     caller says the user asked for it (`override_owner`), exactly as the
+//     Windows backend does: the two platforms must not drift on ownership.
 //
 // Scope, deliberately NOT here: no systemd user unit, no `~/.profile` edit, no
 // per-machine installation and no desktop-environment-specific "Startup
@@ -60,6 +67,36 @@ using domain::Status;
 /// rather than a string literal at the call site.
 inline constexpr std::string_view kAutostartFileName = "voicetyper.desktop";
 
+/// File name of the autostart entry a *development* copy owns: one running from
+/// a build tree rather than from an installed prefix.
+///
+/// Mirrors `platform::win32::kAutostartDevelopmentValueName` and exists for the
+/// same reason (measured 2026-10-16 on Windows): two copies of the product - the
+/// installed one the user uses and the build being tested - share one entry
+/// name, so a build could take over the installed copy's autostart and the
+/// installed copy could not take it back. On this platform the rule is expressed
+/// with the file name, which is what a desktop environment lists in
+/// "Startup Applications".
+inline constexpr std::string_view kDevelopmentAutostartFileName = "voicetyper-dev.desktop";
+
+/// Whether the executable at `executable` belongs to an *installed* copy of the
+/// product. This platform has no installer yet, so the rule is the build-tree
+/// convention: the product's build trees live under a directory named `build`
+/// (`build/<preset>/...`, the layout every CMake preset here produces), while an
+/// installed copy lives in a system prefix, an AppImage mount or a user prefix
+/// without that component.
+///
+/// An empty path answers `false`: an executable that cannot be *shown* not to be
+/// a build is treated as a development copy, so it can never take over the
+/// installed copy's entry.
+[[nodiscard]] bool is_installed_instance(const std::filesystem::path& executable);
+
+/// The entry file name an instance running from `executable` owns:
+/// kAutostartFileName for an installed copy, kDevelopmentAutostartFileName for
+/// one running from a build tree. The production constructor and the contract
+/// test both go through this single function, so the rule has one spelling.
+[[nodiscard]] std::string autostart_file_name_for(const std::filesystem::path& executable);
+
 /// The switch that starts the application with its window hidden, byte-identical
 /// to the Windows one so both platforms accept the same launch arguments.
 inline constexpr std::string_view kStartMinimizedSwitch = "--start-minimized";
@@ -86,7 +123,9 @@ struct StartupEntry {
 struct StartupOptions {
     /// Directory holding the `.desktop` file, e.g. `$XDG_CONFIG_HOME/autostart`.
     std::filesystem::path autostart_directory;
-    /// Entry file name inside that directory. Defaults to kAutostartFileName.
+    /// Entry file name inside that directory. Defaults to kAutostartFileName;
+    /// a development copy passes kDevelopmentAutostartFileName, which the
+    /// production constructor decides on its own (see is_installed_instance).
     std::string file_name{kAutostartFileName};
     /// Executable to register. `std::nullopt` (the production spelling) means
     /// "the running binary" from /proc/self/exe.
@@ -103,8 +142,12 @@ struct StartupOptions {
 /// once per composition root and call it from anywhere.
 class LinuxStartup final {
 public:
-    /// Production instance: the XDG autostart directory and this process's own
-    /// executable path.
+    /// Production instance: the XDG autostart directory, this process's own
+    /// executable path, and the file name that belongs to *this instance kind* -
+    /// kAutostartFileName for an installed copy, kDevelopmentAutostartFileName
+    /// for one running from a build tree. Pass an explicit `StartupOptions` to
+    /// pin a name: the contract test does, and so does a reader that wants the
+    /// *other* copy's entry.
     LinuxStartup();
 
     /// Explicit instance, for a pinned directory and executable path. An empty
@@ -139,11 +182,22 @@ public:
     ///
     /// Idempotent in both directions: enabling twice stores the same bytes, and
     /// disabling an absent entry succeeds.
-    [[nodiscard]] Status set_enabled(bool enabled, bool start_minimized) const;
+    ///
+    /// `override_owner` is the difference between "the user said so" and "the app
+    /// is starting": a write always writes, but *removing* an entry that names a
+    /// different executable is refused unless this flag is set, because that
+    /// entry belongs to another installation. Only an explicit settings change
+    /// passes `true`; a launch-time reconciliation never does. The Windows
+    /// backend refuses in exactly the same cases, so the two platforms keep the
+    /// same ownership rule.
+    [[nodiscard]] Status set_enabled(bool enabled, bool start_minimized, bool override_owner = false) const;
 
     /// Removes the autostart entry. Idempotent: an absent entry is the state the
     /// caller asked for.
-    [[nodiscard]] Status remove_entry() const;
+    ///
+    /// An entry naming a *different* executable is refused (`permission_denied`)
+    /// unless `override_owner` is set - see set_enabled.
+    [[nodiscard]] Status remove_entry(bool override_owner = false) const;
 
     /// The executable this instance would register: the pinned
     /// `StartupOptions::executable_path`, or this process's own image. A failure
@@ -181,6 +235,11 @@ private:
 /// Empty when nothing usable is parsed, so a caller can tell "no entry" from "an
 /// entry naming something else".
 [[nodiscard]] std::string command_line_executable(std::string_view command_line);
+
+/// Whether a stored command line names `executable`: the "is this entry ours"
+/// question. An empty `executable` or a command line that parses to nothing
+/// answers `false`, so a caller can never mistake a missing entry for its own.
+[[nodiscard]] bool command_line_names(std::string_view command_line, std::string_view executable);
 
 /// Whether one process argument is the switch. At least one leading dash is
 /// required (`-start-minimized` and `--start-minimized` are both accepted) and

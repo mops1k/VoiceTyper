@@ -304,6 +304,51 @@ void check_the_prompt_addition_reaches_the_runtime()
         "the user's addition to the prompt reaches the runtime");
 }
 
+void check_the_meaning_of_the_phrase_survives()
+{
+    // The model rephrased the whole phrase away: "перезапустил, выпускай" came back as "Запускай."
+    // Alexander reported it on the small and the medium model (17.10.2026), and the guard must
+    // deliver the rules' text instead of the model's sentence.
+    const std::string rules_text = "перезапустил, выпускай";
+    FixedTranscriptPort engine(rules_text);
+    FakeCleaner cleaner;
+    cleaner.answer = [](std::string) { return std::string("Запускай."); };
+    LlmCleanupPort port(engine, cleaner, [] {
+        return LlmCleanupPort::Settings{CleanupModel::small, "C:/models/small.gguf"};
+    });
+    check_text(run(port), rules_text, "an answer that replaces the phrase is refused silently");
+
+    // The same runtime is asked again: the refusal is not remembered, and the answer that keeps
+    // the speaker's words is delivered.
+    cleaner.answer = [](std::string input) { return input.append("."); };
+    check_text(run(port), "перезапустил, выпускай.",
+        "the next answer, which keeps both words, is delivered");
+}
+
+void check_the_users_own_filler_words_reach_the_guard()
+{
+    // settings.fillerWords is the user's own list. Their word is not the speaker's meaning: the
+    // answer that drops it is delivered, and an answer that drops a word the list does not name
+    // is refused (17.10.2026).
+    FixedTranscriptPort engine("Ну, блин, посмотри код.");
+    FakeCleaner cleaner;
+    cleaner.answer = [](std::string) { return std::string("Посмотри код."); };
+
+    LlmCleanupPort without_the_list(engine, cleaner, [] {
+        return LlmCleanupPort::Settings{
+            CleanupModel::small, "C:/models/small.gguf", "", {}};
+    });
+    check_text(run(without_the_list), "Ну, блин, посмотри код.",
+        "an unknown word counts as meaning and the answer is refused");
+
+    LlmCleanupPort with_the_list(engine, cleaner, [] {
+        return LlmCleanupPort::Settings{
+            CleanupModel::small, "C:/models/small.gguf", "", {"блин"}};
+    });
+    check_text(run(with_the_list), "Посмотри код.",
+        "the user's own filler word may disappear from the answer");
+}
+
 void check_engine_errors_are_not_touched()
 {
     FailingPort engine;
@@ -331,6 +376,8 @@ int main()
     check_the_whole_chain_runs_in_order();
     check_the_runtime_follows_the_choice();
     check_the_prompt_addition_reaches_the_runtime();
+    check_the_meaning_of_the_phrase_survives();
+    check_the_users_own_filler_words_reach_the_guard();
     check_engine_errors_are_not_touched();
 
     if (failures != 0) {

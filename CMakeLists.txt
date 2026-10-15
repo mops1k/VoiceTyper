@@ -730,11 +730,14 @@ if(VOICETYPER_BUILD_TESTS)
     )
 
     # The check that stands between a local language model and the user's text
-    # (plan p_5d68d66503ca): header-only, so it needs nothing but the domain library.
+    # (plan p_5d68d66503ca): header-only, but it reads the filler dictionaries to
+    # know which words of a transcript carry the speaker's meaning (17.10.2026).
     add_executable(voicetyper-cleanup-guard-contract EXCLUDE_FROM_ALL
         tests/contract/cleanup_guard_contract.cpp
     )
-    target_link_libraries(voicetyper-cleanup-guard-contract PRIVATE voicetyper_domain)
+    target_link_libraries(voicetyper-cleanup-guard-contract
+        PRIVATE voicetyper_domain voicetyper_filler_words
+    )
     voicetyper_set_warnings(voicetyper-cleanup-guard-contract)
     add_test(NAME cleanup-guard-contract COMMAND voicetyper-cleanup-guard-contract)
     set_tests_properties(cleanup-guard-contract PROPERTIES

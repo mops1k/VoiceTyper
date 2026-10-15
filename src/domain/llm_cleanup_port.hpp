@@ -9,6 +9,7 @@
 #include <functional>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace voicetyper::domain {
 
@@ -32,6 +33,11 @@ public:
         /// What the user added to the prompt (settings `cleanupPrompt`), or empty. It extends the
         /// built-in instruction and never replaces it.
         std::string prompt_appendix;
+        /// The user's own filler words (settings `fillerWords`, already parsed by
+        /// parse_filler_words), or empty. The guard needs them to tell a word the user asked to
+        /// drop from a word that carries their meaning: without the list, an answer that removed
+        /// the user's own filler would be refused as a lost meaning word (17.10.2026).
+        std::vector<std::string> filler_entries{};
     };
 
     using SettingsProvider = std::function<Settings()>;
@@ -89,7 +95,7 @@ private:
         if (!runtime_.clean(text, current.prompt_appendix, cleaned, error)) {
             return text;
         }
-        if (!check_cleanup_output(text, cleaned).accepted) {
+        if (!check_cleanup_output(text, cleaned, current.filler_entries).accepted) {
             return text;
         }
         return cleaned;

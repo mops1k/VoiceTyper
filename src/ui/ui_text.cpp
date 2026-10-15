@@ -299,12 +299,12 @@ constexpr std::array<Entry, 222> kTexts{{
     Entry{"Не удалось удалить файл модели %1: %2",
         "Could not delete the model file %1: %2"},
     Entry{"Дополнительные требования к модели", "Extra requirements for the model"},
-    Entry{"Например: сделай текст ровнее и убери повторы",
-        "For example: make the text smoother and drop repetitions"},
-    Entry{"Дополняет встроенную инструкцию, а не заменяет её: числа, их порядок и язык ответа "
-          "остаются неизменными.",
-        "It extends the built-in instruction instead of replacing it: the numbers, their order "
-        "and the language of the answer stay as they are."},
+    Entry{"Например: не заменяй слова синонимами и не меняй порядок слов",
+        "For example: do not replace words with synonyms and do not change the word order"},
+    Entry{"Дополняет встроенную инструкцию, а не заменяет её: числа, их порядок, смысл слов и "
+          "язык ответа остаются неизменными.",
+        "It extends the built-in instruction instead of replacing it: the numbers, their order, "
+        "the meaning of the words and the language of the answer stay as they are."},
 }};
 
 } // namespace

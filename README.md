@@ -39,8 +39,8 @@
 - The recognised phrase can be polished further by a small language model that runs **on your machine**: nothing is sent anywhere, and the internet is needed only to download the file.
 - Three sizes: **Qwen2.5 0.5B** (≈491 MB, the fastest), **Qwen2.5 1.5B** (≈1.1 GB, noticeably better on long phrases) and **Llama 3.2 3B** (≈2 GB, the best quality).
 - Downloaded straight from the settings, switched on the fly (the previous model is unloaded from memory) and deleted with one button.
-- The built-in instruction can be **extended, not replaced**: add a requirement of your own (up to 400 bytes), for example "make the text smoother and drop the repetitions".
-- Safety first: an answer is rejected if it loses a number or changes their order, switches language, or is not a rewrite of what you said — then the result of the rules above is used, so an error never reaches your text.
+- The built-in instruction can be **extended, not replaced**: add a requirement of your own (up to 400 bytes), for example "do not replace words with synonyms".
+- Safety first: an answer is rejected if it loses a number or changes their order, switches language, loses a third of the meaning words of what you said, or talks about something else entirely — then the result of the rules above is used, so an error never reaches your text. The model cleans the phrase, it does not retell it: "перезапустил, выпускай" will not come back as "Запускай.".
 
 **Microphone**
 - Device selection, a sensitivity slider, and a **microphone test** right in the settings: the application tells you whether it hears you and what it heard.

@@ -1,9 +1,13 @@
 #pragma once
 
+#include "domain/filler_words.hpp"
+#include "domain/utf8_text.hpp"
+
 #include <algorithm>
 #include <cstddef>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace voicetyper::domain {
@@ -49,6 +53,26 @@ inline constexpr std::size_t kCleanupMinWordsForNovelty = 6;
 /// (Alexander, 14.10.2026: "нельзя менять базовый промпт"). The bound is loose on purpose - a
 /// model that rephrases strongly must still pass.
 inline constexpr std::size_t kCleanupMaxNovelWordPercent = 70;
+
+/// How many of the source's meaning-bearing words an answer may lose, in percent of them.
+///
+/// A rephrasing that keeps every number, stays in the language and even keeps the length can still
+/// say what the speaker did not. Alexander dictated "перезапустил, выпускай" and the model answered
+/// "Запускай." or "Перезапустить.": both verbs of the phrase were replaced by one, and the second
+/// half of what he said was gone (17.10.2026). Counting words cannot see that - two words out of
+/// two are above the length floor - and the novelty rule does not look at answers shorter than six
+/// words.
+///
+/// A third of the meaning words is where an answer stops being the speaker's sentence: losing one
+/// word of a long phrase (a repaired term, a smoothed ending, a form that inflected differently)
+/// still passes, while "перезапустил, выпускай" -> "Запускай." and "Сегодня хорошая погода, но
+/// завтра будет дождь." -> "Завтра будет дождь." do not.
+inline constexpr std::size_t kCleanupMaxMissingMeaningPercent = 30;
+
+/// Code points two words must share from the start before they count as one word in two forms:
+/// "код" and "кода" are, "надо" and "нужно" are not. Four is what the guard can defend without a
+/// dictionary - enough for Russian inflection, too little to join two unrelated words.
+inline constexpr std::size_t kCleanupWordMatchPrefix = 4;
 
 namespace detail {
 
@@ -260,16 +284,87 @@ struct CleanupScriptCounts {
     return novel * 100 / answer_stems.size() > kCleanupMaxNovelWordPercent;
 }
 
+/// The answer's words, lower-cased. The same notion of a word that meaning_words() uses for the
+/// transcript, so both sides of the meaning check are read the same way.
+[[nodiscard]] inline std::vector<std::string> cleanup_lower_words(std::string_view text)
+{
+    std::vector<std::string> words;
+    std::string current;
+    for (const char32_t point : text::decode(text)) {
+        if (text::is_word_character(point)) {
+            text::append_utf8(current, text::to_lower(point));
+            continue;
+        }
+        if (!current.empty()) {
+            words.push_back(std::move(current));
+            current.clear();
+        }
+    }
+    if (!current.empty()) {
+        words.push_back(std::move(current));
+    }
+    return words;
+}
+
+/// True when the two lower-cased words are one word in two forms. Whole code points are compared,
+/// never halves of a Cyrillic letter, so the byte-based stem of the novelty rule is not reused
+/// here: it cannot lower-case Cyrillic and it splits "код"/"кода" apart.
+[[nodiscard]] inline bool cleanup_same_word(std::string_view left, std::string_view right)
+{
+    const std::vector<char32_t> left_points = text::decode(left);
+    const std::vector<char32_t> right_points = text::decode(right);
+    const std::size_t shortest = std::min(left_points.size(), right_points.size());
+    std::size_t shared = 0;
+    while (shared < shortest && left_points[shared] == right_points[shared]) {
+        ++shared;
+    }
+    return shared >= std::min(kCleanupWordMatchPrefix, shortest);
+}
+
+/// True when the answer lost so many of the speaker's meaning words that it is no longer the
+/// speaker's sentence. Filler words may disappear - that is what the cleaner is for - and so may a
+/// word whose form changed; everything else is what the speaker said.
+[[nodiscard]] inline bool cleanup_lost_meaning(std::string_view source, std::string_view cleaned,
+    const std::vector<std::string>& user_filler_words)
+{
+    const std::vector<std::string> source_words = meaning_words(source, user_filler_words);
+    if (source_words.empty()) {
+        // Nothing but fillers: the length rule below still refuses an invented replacement.
+        return false;
+    }
+    const std::vector<std::string> answer_words = cleanup_lower_words(cleaned);
+    std::size_t missing = 0;
+    for (const auto& word : source_words) {
+        bool found = false;
+        for (const auto& answer : answer_words) {
+            if (cleanup_same_word(word, answer)) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            ++missing;
+        }
+    }
+    return missing * 100 > source_words.size() * kCleanupMaxMissingMeaningPercent;
+}
+
 } // namespace detail
 
 /// Checks one model answer. Everything here is offline and pure: no model, no file, no clock.
 ///
+/// `user_filler_words` is the user's own filler list (settings `fillerWords`, already parsed): such
+/// a word is not the speaker's meaning and may disappear from the answer. The built-in lists of
+/// every level count as well, so an answer that only removes fillers is never refused for that.
+///
 /// Refused when: the answer is empty or blank, it contains a code fence (the model wrapped the
-/// text in markdown), it adds a line break to a single-line transcript, a digit run of the
-/// source is missing or out of order, it lost more than two thirds of the words, it grew by
-/// more than kCleanupExtraCharacters, or it changed the language of the transcript.
-[[nodiscard]] inline CleanupVerdict check_cleanup_output(
-    std::string_view source, std::string_view cleaned)
+/// text in markdown), it adds a line break to a single-line transcript, a digit run of the source
+/// is missing or out of order, it lost more than two thirds of the words, it grew by more than
+/// kCleanupExtraCharacters, it changed the language of the transcript, it lost more than
+/// kCleanupMaxMissingMeaningPercent of the transcript's meaning words, or it is not a rewrite of
+/// the transcript at all.
+[[nodiscard]] inline CleanupVerdict check_cleanup_output(std::string_view source,
+    std::string_view cleaned, const std::vector<std::string>& user_filler_words = {})
 {
     if (detail::cleanup_blank(cleaned)) {
         return {false, "empty answer"};
@@ -298,6 +393,9 @@ struct CleanupScriptCounts {
     const CleanupVerdict language = detail::cleanup_language_verdict(source, cleaned);
     if (!language.accepted) {
         return language;
+    }
+    if (detail::cleanup_lost_meaning(source, cleaned, user_filler_words)) {
+        return {false, "a meaning-bearing word was dropped or replaced"};
     }
     if (detail::cleanup_mostly_new_words(source, cleaned)) {
         return {false, "the answer is not a rewrite of the transcript"};

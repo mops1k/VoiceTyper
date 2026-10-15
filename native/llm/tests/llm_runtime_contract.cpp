@@ -181,6 +181,19 @@ int main()
     std::cout << "  language instruction: ru " << ru_prompt.size() << " bytes, en "
               << en_prompt.size() << " bytes\n";
 
+    // The invariant the guards measure has to be stated in the built-in instruction itself: the
+    // models rephrased Alexander's phrase on 17.10.2026 while the same requirement sat only in
+    // his own addition to the prompt, which a model may ignore. The bounds of the wording are the
+    // runtime's business; that it forbids replacing the speaker's words is not.
+    const std::string base_instruction(voicetyper::llm::LlamaCleanupRuntime::system_prompt());
+    if (base_instruction.find("синоним") == std::string::npos) {
+        return fail("the built-in instruction must forbid replacing words with synonyms");
+    }
+    if (base_instruction.find("смысловые слова") == std::string::npos) {
+        return fail("the built-in instruction must forbid dropping the speaker's meaning words");
+    }
+    std::cout << "  instruction: " << base_instruction.size() << " bytes, rephrasing forbidden\n";
+
     std::string error;
     if (!cleaner.load(model_path.string(), error)) {
         return fail("CleanupRuntime::load failed: " + error);

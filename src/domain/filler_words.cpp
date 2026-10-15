@@ -517,4 +517,52 @@ std::string apply_filler_words(const std::string& text, FillerWordsLevel level,
     return encode(result);
 }
 
+std::vector<std::string> meaning_words(std::string_view text,
+    const std::vector<std::string>& user_entries)
+{
+    const std::vector<char32_t> points = decode(text);
+    const std::vector<Word> words = split_words(points);
+    if (words.empty()) {
+        return {};
+    }
+
+    // Every level, everywhere: this is not the removal pass. A word that is a filler at all may
+    // disappear from the model's answer, whatever position it stood in.
+    std::vector<Entry> entries = entries_of(soft_words(), Entry::Position::anywhere);
+    const auto hard = entries_of(hard_words(), Entry::Position::anywhere);
+    entries.insert(entries.end(), hard.begin(), hard.end());
+    const auto extreme = entries_of(extreme_words(), Entry::Position::anywhere);
+    entries.insert(entries.end(), extreme.begin(), extreme.end());
+    const auto user = entries_of(user_entries, Entry::Position::anywhere);
+    entries.insert(entries.end(), user.begin(), user.end());
+
+    std::vector<bool> filler(words.size(), false);
+    for (const auto& entry : entries) {
+        for (std::size_t index = 0; index + entry.words.size() <= words.size(); ++index) {
+            bool match = true;
+            for (std::size_t offset = 0; offset < entry.words.size(); ++offset) {
+                if (words[index + offset].lower != entry.words[offset]) {
+                    match = false;
+                    break;
+                }
+            }
+            if (!match) {
+                continue;
+            }
+            for (std::size_t offset = 0; offset < entry.words.size(); ++offset) {
+                filler[index + offset] = true;
+            }
+        }
+    }
+
+    std::vector<std::string> result;
+    result.reserve(words.size());
+    for (std::size_t index = 0; index < words.size(); ++index) {
+        if (!filler[index]) {
+            result.push_back(words[index].lower);
+        }
+    }
+    return result;
+}
+
 } // namespace voicetyper::domain

@@ -128,6 +128,45 @@ int main()
         check(once == twice, "the pass is idempotent");
     }
 
+    // --- meaning words: what the cleanup guard may not see disappear -----------
+    // The guard above the local model asks the opposite question: which words carry the speaker's
+    // meaning, so an answer that lost them can be refused (Alexander, 17.10.2026: "перезапустил,
+    // выпускай" was answered with "Запускай."). Every level's entries count, and the position rules
+    // are deliberately not applied: a word the filter kept may be an insertion the model removes.
+    {
+        const auto words = meaning_words("Ну, посмотри код.", {});
+        check(words.size() == 2 && words[0] == "посмотри" && words[1] == "код",
+            "a leading filler is not a meaning word and the rest is lower-cased");
+    }
+    {
+        const auto words = meaning_words("Это значит, что код готов.", {});
+        check(words.size() == 3 && words[0] == "что" && words[1] == "код" && words[2] == "готов",
+            "entries of the extreme and hard levels are not meaning words either");
+    }
+    {
+        // The filter keeps "как бы" in the middle without commas; the guard still lets it go.
+        const auto words = meaning_words("Данные как бы уже загружены.", {});
+        check(words.size() == 3 && words[0] == "данные" && words[1] == "уже"
+                && words[2] == "загружены",
+            "the guard reads fillers without the position rules");
+    }
+    {
+        const auto words = meaning_words("Um, I mean, it works.", {});
+        check(words.size() == 2 && words[0] == "it" && words[1] == "works",
+            "a two-word English entry is dropped whole");
+    }
+    {
+        const auto words = meaning_words("Ну, блин, опять.", {"блин"});
+        check(words.size() == 1 && words[0] == "опять",
+            "the user's own filler word is not a meaning word");
+    }
+    {
+        const auto words = meaning_words("Повтори 100, 100.", {});
+        check(words.size() == 3 && words[0] == "повтори" && words[1] == "100" && words[2] == "100",
+            "digits stay words: they are the speaker's meaning, not fillers");
+    }
+    check(meaning_words("  \n ", {}).empty(), "a blank transcript has no meaning words");
+
     if (failures != 0) {
         std::cout << "filler-words-contract: " << failures << " check(s) failed\n";
         return 1;

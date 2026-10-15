@@ -766,9 +766,12 @@ int run(int argc, char** argv)
     auto cleanup_runtime = app::make_cleanup_runtime();
     domain::LlmCleanupPort cleanup_port(filler_port, *cleanup_runtime, [&presenter, &paths] {
         const auto chosen = presenter.settings().cleanup_model;
+        // The user's own filler words travel with the choice: the guard must not refuse an answer
+        // for dropping a word the user asked to drop (17.10.2026).
         return domain::LlmCleanupPort::Settings{
             chosen, app::cleanup_model_path(chosen, models_directory(paths)),
-            presenter.settings().cleanup_prompt};
+            presenter.settings().cleanup_prompt,
+            domain::parse_filler_words(presenter.settings().filler_words)};
     });
     domain::RecordingStateMachine machine(
         logged_capture, cleanup_port, output, worker, machine_options, &segmenter);

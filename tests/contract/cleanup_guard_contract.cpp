@@ -154,6 +154,53 @@ void check_the_answer_is_a_rewrite()
         "an ordinary cleanup passes the novelty rule as well");
 }
 
+// The model must not rewrite what the speaker said. Alexander dictated "перезапустил, выпускай"
+// and the small and medium models answered "Запускай." / "Перезапустить.": the second half of the
+// phrase and one of its two verbs were gone, and the meaning with them (17.10.2026). Counting
+// words cannot see it (two words out of two are above the length floor) and the novelty rule only
+// looks at answers of six words or more, so the guard asks a narrower question: which words of the
+// transcript carry the speaker's meaning, and did the answer keep them? Fillers may go - they are
+// what the cleaner is for.
+void check_the_speakers_meaning_survives()
+{
+    check_refused("перезапустил, выпускай", "Запускай.",
+        "a two-word phrase replaced by one verb is refused");
+    check_refused("перезапустил, выпускай", "Перезапустить.",
+        "the phrase merged into a single infinitive is refused");
+    check_refused("перезапустил, выпускай", "Запустил, выпускай.",
+        "a synonym swapped into the first verb is refused");
+    check_refused("перезапустил, выпускай", "запустил, выпускай",
+        "the same swap in lower case is refused too");
+    check_accepted("перезапустил, выпускай", "Перезапустил, выпускай.",
+        "a repaired full stop keeps the whole phrase");
+    check_accepted("перезапустил, выпускай", "Перезапустил и выпускай.",
+        "an added conjunction keeps the whole phrase");
+    check_accepted("перезапустил, выпускай", "Выпускай после перезапуска.",
+        "the same words in another order are still the speaker's sentence");
+
+    // Summarising is the same failure one phrase longer: half of the sentence disappeared.
+    check_refused("Сегодня хорошая погода, но завтра будет дождь.", "Завтра будет дождь.",
+        "an answer that keeps only the second half is refused");
+    // A word that changed its form is the same word: the boundary is a third of the meaning words.
+    check_accepted("Ну, короче, надо посмотреть код, а потом уже что-то менять.",
+        "Нужно посмотреть код, а потом уже что-то менять.",
+        "\"надо\" replaced by \"нужно\" is the same meaning, not a lost word");
+    check_accepted("один два три четыре пять шесть семь восемь девять десять",
+        "Один два три четыре пять шесть семь.",
+        "losing exactly a third of the meaning words is still accepted");
+    check_refused("один два три четыре пять шесть семь восемь девять десять",
+        "Один два три четыре пять шесть.",
+        "losing more than a third of the meaning words is refused");
+
+    // The user's own filler list is settings, so it arrives as an argument: their word may go.
+    check(!check_cleanup_output("Ну, блин, посмотри код.", "Посмотри код.").accepted,
+        "without the user's list, an unknown word counts as meaning");
+    check(check_cleanup_output("Ну, блин, посмотри код.", "Посмотри код.", {"блин"}).accepted,
+        "a word from the user's own filler list may disappear");
+    check(check_cleanup_output("Ну, блин, посмотри код.", "Ну, блин, посмотри код.", {"блин"}).accepted,
+        "an answer that keeps everything the user wrote is accepted as well");
+}
+
 } // namespace
 
 int main()
@@ -164,6 +211,7 @@ int main()
     check_digit_runs_helper();
     check_the_language_is_kept();
     check_the_answer_is_a_rewrite();
+    check_the_speakers_meaning_survives();
 
     if (failures != 0) {
         std::cout << "cleanup-guard-contract: " << failures << " check(s) failed\n";

@@ -53,4 +53,15 @@ namespace voicetyper::domain {
 [[nodiscard]] std::string apply_filler_words(const std::string& text, FillerWordsLevel level,
     const std::vector<std::string>& user_entries);
 
+/// The words of `text` that carry the speaker's meaning: every word except the filler entries,
+/// lower-cased, in order. Entries of ALL levels count - both the built-in lists and the user's own
+/// - and the position rules are deliberately ignored.
+///
+/// The lenient reading is what the guard above the local cleanup model needs (Alexander,
+/// 17.10.2026): the guard must know which words MAY disappear before a sentence stops meaning
+/// what the speaker said. A word the rules kept because of its position can still be an insertion
+/// the model is right to remove, and refusing that answer would cost the user the cleanup itself.
+[[nodiscard]] std::vector<std::string> meaning_words(std::string_view text,
+    const std::vector<std::string>& user_entries);
+
 } // namespace voicetyper::domain

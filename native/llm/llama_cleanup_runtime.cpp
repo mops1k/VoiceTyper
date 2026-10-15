@@ -22,10 +22,22 @@ namespace {
 /// the cleanup models are 0.5-3B instruct models, and a long prompt costs
 /// seconds of CPU per transcript. It states the four things the port's guards
 /// rely on - only the rewritten text, no commentary, no markdown, numbers
-/// untouched.
+/// untouched - and, since 17.10.2026, the invariant the guards measure: the
+/// answer is the speaker's sentence, not a new one.
+///
+/// The ban on paraphrasing is written out because the model did exactly that
+/// without it. Alexander dictated "перезапустил, выпускай" and the small and
+/// medium models answered "Запускай." or "Перезапустить." - one verb instead of
+/// two, and the meaning of the phrase gone. "Оговорки" used to be in the list of
+/// things to remove; deciding that a word was a slip is deciding what the
+/// speaker meant, which is the rephrasing this instruction now forbids, so the
+/// word is gone from the list on purpose.
 constexpr std::string_view kSystemPrompt =
-    "Ты редактор расшифровок речи. Убери из текста слова-паразиты, повторы и оговорки, "
+    "Ты редактор расшифровок речи. Твоя правка минимальна: убери слова-паразиты и повторы, "
     "исправь очевидные ошибки распознавания и расставь знаки препинания. "
+    "Запрещено: перефразировать, заменять слова синонимами, менять их форму и порядок, "
+    "выбрасывать и добавлять смысловые слова, склеивать и разбивать предложения. "
+    "Каждое смысловое слово сказанного остаётся в ответе, смысл не меняется. "
     "Верни ТОЛЬКО переписанный текст, без пояснений, без кавычек и без разметки. "
     "Числа и их порядок не меняй. Язык ответа не меняй.";
 
@@ -104,7 +116,8 @@ constexpr std::size_t kMaxPromptAppendixBytes = 400;
 /// Adds the user's requirements after the built-in instruction. An empty (or whitespace-only)
 /// addition adds nothing at all, and the reminder at the end keeps the hierarchy explicit: the
 /// addition may ask for more (tidier wording, fewer repetitions), it cannot lift the invariants
-/// the guard enforces (digits and their order, language of the answer).
+/// the guard enforces (digits and their order, the meaning words of the transcript, language of
+/// the answer).
 void append_user_prompt(std::string& prompt, std::string_view appendix)
 {
     std::size_t first = 0;
@@ -122,10 +135,13 @@ void append_user_prompt(std::string& prompt, std::string_view appendix)
     // Phrased as requirements on the RESULT, and deliberately silent about prompts, instructions
     // and base rules: small models answer that wording with a sentence about not being allowed to
     // change the prompt instead of cleaning the transcript, and that sentence used to reach the
-    // text (Alexander, 14.10.2026).
+    // text (Alexander, 14.10.2026). The meaning words joined the digits on 17.10.2026, when a
+    // dictation came back rephrased: a model that follows a contradictory addition costs quality,
+    // never correctness, because the guard refuses the answer on its own.
     prompt.append("\nТребования к результату: ");
     prompt.append(appendix.substr(first, length));
-    prompt.append("\nСохрани все числа и их порядок, ответ дай на языке исходного текста.");
+    prompt.append("\nСохрани все числа и их порядок, не заменяй смысловые слова другими "
+                  "и не выбрасывай их, ответ дай на языке исходного текста.");
 }
 
 } // namespace

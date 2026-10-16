@@ -107,7 +107,10 @@ TrayController::TrayController(QSystemTrayIcon& icon, QObject* parent)
     // Только запас справа: текст упирался в правый край, а всё остальное в меню
     // устраивало (уточнение Александра, 06.10.2026 - вертикальные отступы он просил
     // не в меню трея, а в списке разделов внутри окна настроек).
-    menu_->setStyleSheet(QStringLiteral("QMenu::item { padding-right: 26px; }"));
+    // Александр, 16.10.2026: пункты и разделители прижаты к рамке меню - нужен запас
+    // около шести пикселей по краям. QMenu::padding даёт его всей рамке, а padding-right
+    // пункта остаётся: это запас под текст, а не отступ рамки.
+    menu_->setStyleSheet(QStringLiteral("QMenu { padding: 6px; } QMenu::item { padding-right: 26px; }"));
     show_action_ = menu_->addAction(ui_text(UiKey::k80, language_));
     QObject::connect(show_action_, &QAction::triggered, this, &TrayController::show_requested);
     menu_->addSeparator();
@@ -122,6 +125,9 @@ TrayController::TrayController(QSystemTrayIcon& icon, QObject* parent)
             emit show_requested();
         }
     });
+    // A tray icon with no tooltip answers a hover with an empty box (reported by
+    // Alexander, 16.10.2026), so the first text is set here and not only by the poll.
+    refresh_tooltip();
 }
 
 void TrayController::set_language(domain::AppLanguage language)
@@ -130,6 +136,9 @@ void TrayController::set_language(domain::AppLanguage language)
     show_action_->setText(ui_text(UiKey::k80, language_));
     record_action_->setText(ui_text(recording_ ? UiKey::k82 : UiKey::k81, language_));
     quit_action_->setText(ui_text(UiKey::k83, language_));
+    // The tooltip is a sentence of its own: it is rebuilt, not stored, so a language
+    // change cannot leave the previous language's status behind.
+    refresh_tooltip();
 }
 
 void TrayController::set_recording(bool recording)
@@ -139,9 +148,33 @@ void TrayController::set_recording(bool recording)
     record_action_->setEnabled(true);
 }
 
-void TrayController::set_status(const QString& text)
+void TrayController::set_status(TrayStatus status)
 {
-    icon_.setToolTip(text);
+    if (status_ == status) {
+        return;
+    }
+    status_ = status;
+    refresh_tooltip();
+}
+
+void TrayController::refresh_tooltip()
+{
+    const QString state_text = [this] {
+        switch (status_) {
+        case TrayStatus::recording:
+            return ui_text(UiKey::k180, language_);
+        case TrayStatus::processing:
+            return ui_text(UiKey::k78, language_);
+        case TrayStatus::engine_not_ready:
+            return ui_text(UiKey::k8, language_);
+        case TrayStatus::ready:
+            break;
+        }
+        return ui_text(UiKey::k222, language_);
+    }();
+    // The product name travels in the tooltip too: a hover over an icon in a row of
+    // icons has to say whose status it is before it says what the status is.
+    icon_.setToolTip(ui_text(UiKey::k223, language_).arg(state_text));
 }
 
 TrayController::~TrayController()

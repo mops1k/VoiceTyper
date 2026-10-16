@@ -142,6 +142,20 @@ struct WindowServices {
     /// Downloads the installer, verifies it and starts it. `percent` below zero means
     /// "unknown size"; `stage` is "download" or "done"; a non-empty `error` failed.
     std::function<void(std::function<void(int percent, QString stage, QString error)>)> update_install;
+    /// The result of the quiet check the composition runs at startup (VT-UI-606). The
+    /// About page renders it, so a found update is visible without the user pressing
+    /// «Проверить обновления»; `answered` stays false until the check replies.
+    struct StartupUpdate {
+        bool answered = false;
+        bool available = false;
+        QString version;
+        QString notes;
+        QString error;
+    };
+    /// Owned by the composition, written and read on the interface thread (the check
+    /// marshals its reply there). Unset on a platform without an updater, and then the
+    /// About page keeps its «Обновления ещё не проверялись» line.
+    std::shared_ptr<StartupUpdate> startup_update;
     /// One report from a running model download.
     struct ModelTransfer {
         /// Share received, 0..100; below zero while the size is still unknown.
@@ -218,6 +232,18 @@ public:
     [[nodiscard]] QWidget* page_scroll(int index) const;
     /// Switches the visible page, exactly as clicking the navigation entry does.
     void show_page(int index);
+
+    /// Renders the startup check's report (services().startup_update) once it has an
+    /// answer: what the composition calls when the check finishes, and what the window
+    /// itself calls when the About page is opened. A no-op while the check is silent, so
+    /// the page keeps its «Обновления ещё не проверялись» line until there is something
+    /// to say.
+    void refresh_update_state();
+
+    /// Opens «О программе» and brings the window to the front. This is where a click on the
+    /// «доступно обновление» notification lands on both platforms, so the update is one
+    /// press of «Скачать и установить» away (Alexander, 16.10.2026).
+    void open_about_page();
 
     /// Brings the window to the front and gives it the focus: what a click on the tray
     /// icon must do. `show()` alone leaves the window behind whatever is active, which is
@@ -337,6 +363,11 @@ private:
 
     /// Wires the update controls on the About page.
     void bind_update_controls();
+
+    /// Draws one answer of the check - manual or the startup one - onto the About page.
+    /// The single place the three outcomes are rendered, so both paths cannot drift.
+    void apply_update_report(bool available, const QString& version, const QString& notes,
+        const QString& error);
 
     void resizeEvent(QResizeEvent* event) override;
     /// Handles the focus-loss hiding (the "hide on focus loss" setting).
@@ -462,6 +493,12 @@ private:
     QProgressBar* update_progress_ = nullptr;
     /// Set when a check found something installable; the install button appears then.
     bool update_available_ = false;
+    /// True once the user pressed «Проверить обновления»: their answer is newer than the
+    /// startup report and must not be overwritten when the About page is shown again.
+    bool manual_update_check_ = false;
+    /// Stack index of the About page, so its update block can be refreshed when the page
+    /// is opened. -1 until finalize_pages() has placed it.
+    int about_page_index_ = -1;
     /// The hero of the About page: the brand wave and the tick of the privacy line.
     /// Both are painted by apply_theme, which owns the palette.
     QLabel* about_hero_logo_ = nullptr;

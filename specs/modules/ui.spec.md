@@ -26,7 +26,7 @@ roots, the settings presenter and the Qt HTTP client.
   `Win32FileSystem`, `FileLogger` → filesystem write probe → settings load → autostart service →
   output chain → microphone enumeration and capture warm-up → overlay → VAD segmenter → engine
   registry and host → engine readiness timer → recording machine and decorators → hotkeys →
-  `WindowServices` → Qt message handler → silent startup update check → autostart reconciliation →
+  `WindowServices` → Qt message handler → startup update check → autostart reconciliation →
   window/tray → `exec()`.
 - **VT-UI-104.** Recognized arguments:
   `--selftest` (assemble every service, print JSON diagnostics, exit without `exec()`, take no
@@ -174,6 +174,7 @@ roots, the settings presenter and the Qt HTTP client.
 - **VT-UI-221.** **About** MUST offer the version chip, the description, the privacy note, three
   links (Licences, Privacy policy, Report an issue), and the update block: check button, status
   line, notes, install button and progress bar (the last three hidden until an update is found).
+  Opening the page MUST render the startup check's report when it has one (VT-UI-605).
 - **VT-UI-222.** The **Gamepad** card of the Hotkeys page MUST carry the same read-only record and
   cancel readouts and capture buttons as the hotkey rows, plus one «Очистить» button per row
   (`recordGamepadClear`, `cancelGamepadClear`, text `UiKey::k141`). Clearing MUST write the empty
@@ -324,7 +325,24 @@ roots, the settings presenter and the Qt HTTP client.
   перезапустится».
 - **VT-UI-604.** The install path MUST refuse an installer URL without the `win64` marker with the
   dedicated message (VT-SYS-085).
-- **VT-UI-605.** The startup check MUST be silent: the result goes only to the log.
+- **VT-UI-605.** The startup check MUST run on start and MUST NOT stay silent: its answer
+  (`WindowServices::startup_update`) MUST be published on the UI thread, and the About page MUST
+  render an available update from it without the user pressing «Проверить обновления».
+- **VT-UI-606.** When the startup check finds an update, the application MUST announce it (title
+  «Доступно обновление VoiceTyper», body «Доступна версия %1»); a start-minimized launch has no
+  visible window, and a user who never opens About MUST still learn about the update. Clicking the
+  announcement MUST open the settings window on «О программе» (`MainWindow::open_about_page()`,
+  which also shows a window that was never shown), so «Скачать и установить» is one press away.
+  On Windows the announcement is the tray balloon and the click arrives through
+  `QSystemTrayIcon::messageClicked`. On Linux the tray balloon cannot report a click at all
+  (VT-PLT-1313), so the notification is sent over `org.freedesktop.Notifications` with a
+  `default` action; a session without a notification service MUST fall back to the tray balloon
+  (VT-PLT-1314). Installing stays the user's decision: nothing is downloaded or installed by
+  itself.
+- **VT-UI-607.** A check the user started themselves MUST outrank the startup report: once
+  «Проверить обновления» has been pressed, returning to the About page MUST NOT overwrite that
+  answer with the older startup one. A startup report that has not answered yet MUST leave the
+  page on «Обновления ещё не проверялись».
 
 ---
 
@@ -342,11 +360,23 @@ roots, the settings presenter and the Qt HTTP client.
 - **VT-UI-706.** `set_language()` MUST rewrite all three items (the record item according to the
   current recording state), and it MUST be called at startup and on every language change.
 - **VT-UI-707.** The menu style MUST include right padding on items so the text does not touch the
-  right edge.
-- **VT-UI-708.** ⚠ gap G-1: `set_recording()` / `set_status()` are **never called in production**,
-  so the tooltip is empty and the menu item does not change to "Stop" for a recording started by
-  hotkey. The requirement "the tray shows readiness and offers the right action" is therefore only
-  partially met.
+  right edge, and 6 px of padding around the menu itself so items and separators are not flush
+  against its frame (Alexander, 16.10.2026).
+- **VT-UI-708.** `set_recording()` MUST be called in production, so the record item reads
+  «Остановить» for a recording started by the hotkey or the gamepad, not only for one started from
+  the window.
+- **VT-UI-709.** The tray tooltip MUST show the current state, in the interface language, for every
+  state the application can be in: «Готово»/«Ready» when nothing runs and the engine is ready,
+  «идёт запись»/«recording» while the microphone is open, «Распознавание»/«Recognizing» while the
+  engine works, and «Движок распознавания ещё не готов»/«The recognition engine is not ready yet»
+  while it cannot transcribe. The text MUST be built by `TrayController` from a state the
+  composition polls (`TrayStatus`), so a language change re-letters it and the tooltip can never be
+  left in the previous language. The format is «VoiceTyper — <state>».
+- **VT-UI-710.** The tooltip MUST never promise readiness the application does not have: before the
+  first poll the state is `engine_not_ready`.
+- **VT-UI-711.** The status poll MUST read the recording machine and the engine's readiness and
+  MUST NOT touch a widget from a worker thread; it runs on the interface thread (500 ms interval),
+  which is shorter than any user-visible transition.
 
 ---
 
@@ -528,7 +558,7 @@ consequences are:
 
 | Suite | What it pins |
 |---|---|
-| `ui-settings-test` (42 slots) | edit → file → restart round-trips; theme tiles and reset; engine/threshold/best-of reaching the services; microphone persistence across device-less and different-device launches; per-page navigation binding in both languages (including «Распознавание», VT-UI-1109); the heading of every page fitting the band and the page column filling its width (VT-UI-1110); footer and control fit at 980×640 and 820×560; hotkey capture; model list exclusivity and per-engine keys; noise reduction placement; downloaded models offer delete; log scroll retention; in-place language switch; every key non-empty; About update controls; hide-on-focus-loss; status pill theme; tray show restores the window; tray menu padding; overlay and tray language; model page language; exact tail of the string table; percentage + cancel; navigation icons; every navigation entry opens its own page; record button disabled without a backend; gamepad readouts read-only with the clear buttons following the binding (VT-UI-222); update reports delivered from a worker thread applied on the interface thread (VT-UI-315); the filler-word card's level and word list round-trip (VT-UI-1108); the cleanup-model card's four rows, its exclusive choice, the delete button of a downloaded model and the round-trip of the chosen size (VT-UI-1111); the prompt-addition field's round-trip and its two-language strings (VT-UI-1112) |
+| `ui-settings-test` (44 slots) | edit → file → restart round-trips; theme tiles and reset; engine/threshold/best-of reaching the services; microphone persistence across device-less and different-device launches; per-page navigation binding in both languages (including «Распознавание», VT-UI-1109); the heading of every page fitting the band and the page column filling its width (VT-UI-1110); footer and control fit at 980×640 and 820×560; hotkey capture; model list exclusivity and per-engine keys; noise reduction placement; downloaded models offer delete; log scroll retention; in-place language switch; every key non-empty; About update controls; the startup report filling the About page without a manual check and the pending report leaving it untouched (VT-UI-605/607); the notification click opening the About page on a hidden window (VT-UI-606); hide-on-focus-loss; status pill theme; tray show restores the window; tray menu padding at the edges; the tray tooltip state in both languages (VT-UI-709/710); overlay and tray language; model page language; exact tail of the string table; percentage + cancel; navigation icons; every navigation entry opens its own page; record button disabled without a backend; gamepad readouts read-only with the clear buttons following the binding (VT-UI-222); update reports delivered from a worker thread applied on the interface thread (VT-UI-315); the filler-word card's level and word list round-trip (VT-UI-1108); the cleanup-model card's four rows, its exclusive choice, the delete button of a downloaded model and the round-trip of the chosen size (VT-UI-1111); the prompt-addition field's round-trip and its two-language strings (VT-UI-1112) |
 | `ui-status-overlay-test` (8 slots) | idempotent create; frameless/topmost/no-input pill; frozen 350 ms pulse; processing accent and stopped pulse; an error hides the overlay; hide/idle; geometry (centred, 26 px above the bottom); worker-thread `post_state()` and terminal `destroy()` |
 | `ui-snapshot` (tool) | renders all 8 pages to PNG offscreen for visual review (not an assertion) |
 
@@ -536,10 +566,11 @@ consequences are:
 
 ## 13. Known gaps
 
-- **G-1.** `TrayController::set_recording()` / `set_status()` are never called in production, so
-  the tray tooltip and the record menu item are not updated at runtime.
+- **G-1 (closed 2026-10-16).** `TrayController::set_recording()` / `set_status()` are now called by
+  the composition's status poll, so the tray tooltip states the current status and the record item
+  follows a recording started by the hotkey or the gamepad (VT-UI-708/709).
 - **G-2.** The `processing` footer text uses the "Recognition engine" string instead of
-  "Recognizing" (see VT-UI-909).
+  "Recognizing" (see VT-UI-909). The tray tooltip uses the right wording (VT-UI-709).
 - **G-3.** With no system tray available the window can be hidden with no way back except a second
   launch.
 - **G-4.** No `closeEvent` is defined; Alt+F4 behavior relies on Qt defaults and is untested.

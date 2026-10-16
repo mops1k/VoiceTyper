@@ -31,6 +31,9 @@
 #if defined(VOICETYPER_HAS_KGLOBALACCEL)
 #include "platform/linux/linux_kglobalaccel.hpp"
 #endif
+#if defined(VOICETYPER_HAS_DBUS_NOTIFICATIONS)
+#include "platform/linux/linux_notification.hpp"
+#endif
 #include "platform/linux/linux_gamepad.hpp"
 #include "platform/linux/linux_microphone.hpp"
 #include "platform/linux/linux_microphone_level.hpp"
@@ -633,6 +636,22 @@ int run(int argc, char** argv)
     /// language change reaches it through this hook (the same pattern used for the
     /// window before the language was applied in place).
     std::function<void(domain::AppLanguage)> apply_language_to_tray;
+    /// Set once the tray exists: the check of the launch announces a found update through
+    /// this hook. The tray is created much later in this function, so the check cannot
+    /// capture it, and the announcement has to happen on the interface thread anyway.
+    std::function<void(const QString& version)> announce_update;
+    /// Set once the window exists: the check of the launch hands its answer to the
+    /// About page through this hook, which is created much later in this function
+    /// (VT-UI-606), so the check cannot capture the window itself.
+    std::function<void()> notify_window_of_update;
+#if defined(VOICETYPER_HAS_DBUS_NOTIFICATIONS)
+    // The notification that reports its own click. Qt's tray balloon cannot do it here:
+    // QDBusTrayIcon passes an action to the daemon only for Critical messages, so a click
+    // on an Information balloon is a plain dismissal and messageClicked() never fires
+    // (verified in the Qt sources). Created before the tray, because the announcement hook
+    // captures it; it talks to the session bus lazily, on the first show().
+    platform::linuxos::DesktopNotification update_notification;
+#endif
     // The pill has to be readable in both themes; the global stylesheet made it white
     // with light grey text in the light one.
     status_overlay.set_theme(presenter.settings().theme);
@@ -1054,6 +1073,11 @@ int run(int argc, char** argv)
     }
 
     ui::WindowServices services;
+    // One report, written by the check of the launch and read by the About page: the page
+    // shows a found update without the user pressing anything (VT-UI-606). Both writes and
+    // reads happen on the interface thread - the check marshals its answer there.
+    auto startup_update = std::make_shared<ui::WindowServices::StartupUpdate>();
+    services.startup_update = startup_update;
     // The footer dot is green only when the engine can really work: a missing model, a load
     // in progress or a failed start all keep it red (Alexander, 08.10.2026).
     services.engine_ready = [&engine_host] {
@@ -1299,8 +1323,12 @@ int run(int argc, char** argv)
         }));
     };
 
-    // The quiet check on start, exactly like the .NET build.
-    static_cast<void>(update_executor.post([&logger] {
+    // The check on start. It used to be silent - the result went only to the log - so an
+    // available update stayed invisible until the user thought of pressing «Проверить
+    // обновления» (reported by Alexander, 16.10.2026). Now it is announced and the About
+    // page is filled in, while the user is left to decide when to install.
+    static_cast<void>(update_executor.post(
+        [&logger, post_to_ui, startup_update, &announce_update, &notify_window_of_update] {
         app::QtHttpClient http;
         const auto version = domain::version();
         core::support::UpdateService service(http, std::string(version));
@@ -1313,6 +1341,29 @@ int run(int argc, char** argv)
                 + (result.is_available() && result.update.has_value()
                         ? "available=" + result.update->version
                         : result.is_failed() ? result.error : std::string("up to date"))));
+        const bool available = result.is_available() && result.update.has_value();
+        const QString version_text = available ? QString::fromStdString(result.update->version) : QString();
+        const QString notes = available && result.update->release_notes.has_value()
+            ? QString::fromStdString(*result.update->release_notes).left(600)
+            : QString();
+        const QString error = result.is_failed() ? QString::fromStdString(result.error) : QString();
+        static_cast<void>(post_to_ui([available, version_text, notes, error, startup_update,
+                                         &announce_update, &notify_window_of_update] {
+            startup_update->answered = true;
+            startup_update->available = available;
+            startup_update->version = version_text;
+            startup_update->notes = notes;
+            startup_update->error = error;
+            if (available && announce_update) {
+                // At minimum a system notification: on a start minimized launch the window
+                // is not on screen, and a user who never opens About would learn about the
+                // update only by chance.
+                announce_update(version_text);
+            }
+            if (notify_window_of_update) {
+                notify_window_of_update();
+            }
+        }));
     }));
 
     // The microphone test runs its own capture: the dictation machine owns its session
@@ -1841,6 +1892,49 @@ int run(int argc, char** argv)
     wire_tray_window();
     // The tray menu is built once, so it is told the language now and on every change.
     apply_language_to_tray = [&tray](domain::AppLanguage language) { tray.set_language(language); };
+    // The tray is the only thing that can announce the update while the window is hidden
+    // (a start minimized launch). The notification is sent over D-Bus so the click is ours
+    // to handle; the tray balloon is the fallback for a session without a notification
+    // service, and it is logged as click-through-then-nothing instead of pretending.
+    announce_update = [&logger, &tray_icon
+#if defined(VOICETYPER_HAS_DBUS_NOTIFICATIONS)
+        , &update_notification
+#endif
+    ](const QString& version) {
+        const QString title = localized(ui::UiKey::k224);
+        const QString body = localized(ui::UiKey::k67).arg(version);
+#if defined(VOICETYPER_HAS_DBUS_NOTIFICATIONS)
+        if (update_notification.show(title, body, localized(ui::UiKey::k225))) {
+            static_cast<void>(logger.write(platform::LogLevel::info, "update notification",
+                "sent through org.freedesktop.Notifications; a click opens the About page"));
+            return;
+        }
+#endif
+        if (!QSystemTrayIcon::isSystemTrayAvailable()) {
+            return;
+        }
+        tray_icon.showMessage(title, body, QSystemTrayIcon::Information, 10000);
+        static_cast<void>(logger.write(platform::LogLevel::info, "update notification",
+            "sent as a tray balloon: this session has no notification service, so the click "
+            "opens nothing"));
+    };
+#if defined(VOICETYPER_HAS_DBUS_NOTIFICATIONS)
+    // A click on the notification opens the settings window on «О программе», where «Скачать
+    // и установить» is one press away (Alexander, 16.10.2026).
+    QObject::connect(&update_notification, &platform::linuxos::DesktopNotification::clicked,
+        &application, [weak = std::weak_ptr<ui::MainWindow>(window)] {
+            if (auto current = weak.lock()) {
+                current->open_about_page();
+            }
+        });
+#endif
+    // The check of the launch may answer before or after this point; either way the About
+    // page is refreshed through the hook (and reads the report itself when it is opened).
+    notify_window_of_update = [weak = std::weak_ptr<ui::MainWindow>(window)] {
+        if (auto current = weak.lock()) {
+            current->refresh_update_state();
+        }
+    };
 
     // A second launch asks this instance to come to the front. The window exists from here on;
     // a request that arrived while it was still being built is honoured right away.
@@ -1861,6 +1955,36 @@ int run(int argc, char** argv)
     if (QSystemTrayIcon::isSystemTrayAvailable()) {
         tray_icon.show();
     }
+    // The tray tooltip is the only place this application states its state outside the
+    // window, and a hover has to answer with what is true at that moment: it used to be
+    // empty (reported by Alexander, 16.10.2026). A poll rather than two callbacks - the
+    // engine's readiness changes without a signal of its own, and the recording handler
+    // above only fires on a transition.
+    QTimer tray_status_timer;
+    auto tray_recording = std::make_shared<bool>(false);
+    const auto refresh_tray_status = [&tray, &machine, &engine_host, tray_recording] {
+        const auto state = machine.state();
+        const bool recording_now = state != domain::RecordingState::idle;
+        if (*tray_recording != recording_now) {
+            *tray_recording = recording_now;
+            tray.set_recording(recording_now);
+        }
+        if (state == domain::RecordingState::recording) {
+            tray.set_status(ui::TrayStatus::recording);
+            return;
+        }
+        if (state == domain::RecordingState::processing) {
+            tray.set_status(ui::TrayStatus::processing);
+            return;
+        }
+        tray.set_status(engine_host.state().readiness == asr::EngineReadiness::ready
+                ? ui::TrayStatus::ready
+                : ui::TrayStatus::engine_not_ready);
+    };
+    QObject::connect(&tray_status_timer, &QTimer::timeout, &tray, refresh_tray_status);
+    tray_status_timer.setInterval(500);
+    tray_status_timer.start();
+    refresh_tray_status();
     // «Start minimized creates/assigns the window without showing it»
     // (compatibility-contracts.md §2). The window object still exists - it owns
     // the clipboard buffer and the tray - and the tray icon is still up, so the

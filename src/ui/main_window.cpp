@@ -3147,6 +3147,12 @@ void MainWindow::build_tabs()
     });
     connect(pages_, &QStackedWidget::currentChanged, this, [this](int index) {
         refresh_page_title(index);
+        if (index == about_page_index_) {
+            // «О программе» opened: if the quiet check of the launch has already answered,
+            // the available update is here without the user pressing «Проверить
+            // обновления» (VT-UI-606).
+            refresh_update_state();
+        }
     });
     refresh_page_title(nav_->currentRow());
     setCentralWidget(central);
@@ -3237,6 +3243,12 @@ void MainWindow::finalize_pages()
             box->addStretch(1);
         }
         pages_->addWidget(scroll);
+        // The About page is where the update block lives; the index is remembered because
+        // every switch to that page refreshes it from the startup check's report
+        // (VT-UI-606). Matched by the .NET page key, not by the visible label.
+        if (QString::fromUtf8(entry.key) == QStringLiteral("About")) {
+            about_page_index_ = pages_->count() - 1;
+        }
 
         // The item shows the label in the interface language; the Russian label stays
         // in UserRole as the stable identifier the page lookup and the tests use.
@@ -4203,6 +4215,9 @@ void MainWindow::bind_update_controls()
     // request may be in flight, so the reply is guarded.
     connect(update_check_, &QPushButton::clicked, this, [this] {
         QPointer<MainWindow> self(this);
+        // The user's own check outranks the startup report from here on: a later visit to
+        // the page must show this answer, not the one the composition made at launch.
+        manual_update_check_ = true;
         update_check_->setEnabled(false);
         update_status_->setText(ui_text(UiKey::k65, language_));
         services_.update_check([self](bool available, QString version, QString notes, QString error) {
@@ -4221,34 +4236,7 @@ void MainWindow::bind_update_controls()
             }
             self->update_check_->setEnabled(true);
             self->update_available_ = available;
-            if (!error.isEmpty()) {
-                self->update_status_->setText(ui_text(UiKey::k71, self->language_)
-                    + QStringLiteral(": ") + error);
-                return;
-            }
-            if (!available) {
-                self->update_status_->setText(ui_text(UiKey::k66, self->language_));
-                set_inset_visible(self->update_notes_, false);
-                set_inset_visible(self->update_progress_, false);
-                if (self->update_row_ != nullptr) {
-                    self->update_row_->setVisible(false);
-                }
-                return;
-            }
-            self->update_status_->setText(ui_text(UiKey::k67, self->language_).arg(version));
-            // The release body is markdown and the card is plain text: the emphasis markers
-            // are dropped instead of shown raw ("**Full Changelog**:").
-            QString shown_notes = notes;
-            shown_notes.remove(QStringLiteral("**"));
-            self->update_notes_->setText(shown_notes);
-            set_inset_visible(self->update_notes_, !notes.isEmpty());
-            if (self->update_row_ != nullptr) {
-                self->update_row_->setVisible(true);
-            }
-            self->update_install_->setVisible(true);
-            // The height comes from WrappingLabel now: the deferred setMinimumHeight that
-            // used to stand here only ever grew, so every check added a little more blank
-            // space to the block (Alexander, 08.10.2026).
+            self->apply_update_report(available, version, notes, error);
             }, Qt::QueuedConnection);
         });
     });
@@ -4291,6 +4279,77 @@ void MainWindow::bind_update_controls()
     } else {
         update_install_->setEnabled(false);
     }
+    // The launch check may already have answered while the window was being built: the page
+    // shows it now instead of waiting for the user to come back to it.
+    refresh_update_state();
+}
+
+void MainWindow::refresh_update_state()
+{
+    if (update_status_ == nullptr || manual_update_check_ || !services_.startup_update) {
+        return;
+    }
+    const auto& report = *services_.startup_update;
+    if (!report.answered) {
+        // The startup check has not replied yet: the page keeps its "not checked yet" line
+        // instead of claiming an answer that does not exist.
+        return;
+    }
+    // Never set through the check button, so a later visit to the page cannot resurrect the
+    // startup answer over the user's own, newer one (manual_update_check_ above).
+    update_available_ = report.available;
+    apply_update_report(report.available, report.version, report.notes, report.error);
+}
+
+void MainWindow::open_about_page()
+{
+    if (about_page_index_ >= 0) {
+        show_page(about_page_index_);
+    }
+    // Explicit, not left to the page switch: switching to a page that is already current
+    // emits nothing, and the click can come long after the window was built - the update
+    // report may have arrived in the meantime.
+    refresh_update_state();
+    // bring_to_front() also shows a window that was never shown (a start minimized launch),
+    // which is exactly the case a notification click comes from.
+    bring_to_front();
+}
+
+void MainWindow::apply_update_report(bool available, const QString& version, const QString& notes,
+    const QString& error)
+{
+    if (update_status_ == nullptr) {
+        return;
+    }
+    if (!error.isEmpty()) {
+        // A failed check says so and leaves everything else as it was: an update found
+        // earlier must not disappear because the network dropped afterwards.
+        update_status_->setText(ui_text(UiKey::k71, language_) + QStringLiteral(": ") + error);
+        return;
+    }
+    if (!available) {
+        update_status_->setText(ui_text(UiKey::k66, language_));
+        set_inset_visible(update_notes_, false);
+        set_inset_visible(update_progress_, false);
+        if (update_row_ != nullptr) {
+            update_row_->setVisible(false);
+        }
+        return;
+    }
+    update_status_->setText(ui_text(UiKey::k67, language_).arg(version));
+    // The release body is markdown and the card is plain text: the emphasis markers are
+    // dropped instead of shown raw ("**Full Changelog**:").
+    QString shown_notes = notes;
+    shown_notes.remove(QStringLiteral("**"));
+    update_notes_->setText(shown_notes);
+    set_inset_visible(update_notes_, !notes.isEmpty());
+    if (update_row_ != nullptr) {
+        update_row_->setVisible(true);
+    }
+    update_install_->setVisible(true);
+    // The height comes from WrappingLabel now: the deferred setMinimumHeight that used to
+    // stand here only ever grew, so every check added a little more blank space to the
+    // block (Alexander, 08.10.2026).
 }
 
 void MainWindow::bind_microphone_controls()

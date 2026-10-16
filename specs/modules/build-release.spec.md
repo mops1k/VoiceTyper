@@ -306,13 +306,16 @@ verification, portable header audit), `installer/`, `.github/workflows/`, `tests
   present, declared `audioFormat`).
 - **VT-BLD-606.** There MUST be no test or script that downloads a model or loads a native model,
   because that would break the offline contract (VT-ASR-804).
-- **VT-BLD-606a.** On Linux the suite MUST include the seven Linux contract tests —
+- **VT-BLD-606a.** On Linux the suite MUST include the eight Linux contract tests —
   `linux-platform-contract` (paths, `/proc/self/exe`, executor, freedesktop autostart),
   `linux-clipboard-contract`, `linux-audio-contract` (libpulse, skipping with 77 when there is no
   sound server), `linux-hotkeys-contract` (evdev key map and capture grammar, skipping without
   readable devices), `linux-kglobalaccel-contract` (the WPF→Qt key map, the unreachable-bus
   refusal, the press-only release model; the real registration runs only with
-  `VOICETYPER_KGLOBALACCEL_LIVE=1`), `linux-gamepad-contract` (the evdev poll loop through the
+  `VOICETYPER_KGLOBALACCEL_LIVE=1`), `linux-notification-contract` (the `default` action of the
+  update notification, the id matching of `ActionInvoked` and the refusal on an unreachable bus;
+  the stub runs under `dbus-run-session` where that tool exists, and never takes the name from a
+  running notification daemon), `linux-gamepad-contract` (the evdev poll loop through the
   injected reader seam) and `linux-engines-contract` (the `dlopen` search path and the
   `native_library_missing` diagnostic) — plus the shared UI suites.
 - **VT-BLD-606b.** The Linux contract tests MUST NOT require the `input` group or a running sound

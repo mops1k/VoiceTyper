@@ -12,7 +12,7 @@ struct Entry {
 };
 
 /// One row per UiKey, in the same order as the enum.
-constexpr std::array<Entry, 222> kTexts{{
+constexpr std::array<Entry, 226> kTexts{{
     Entry{" мс", " ms"},
     Entry{"%1 (недоступен)", "%1 (unavailable)"},
     Entry{"%1 · Скорость: %2 · Качество: %3", "%1 · Speed: %2 · Quality: %3"},
@@ -305,6 +305,10 @@ constexpr std::array<Entry, 222> kTexts{{
           "язык ответа остаются неизменными.",
         "It extends the built-in instruction instead of replacing it: the numbers, their order, "
         "the meaning of the words and the language of the answer stay as they are."},
+    Entry{"Готово", "Ready"},
+    Entry{"VoiceTyper — %1", "VoiceTyper — %1"},
+    Entry{"Доступно обновление VoiceTyper", "A VoiceTyper update is available"},
+    Entry{"Открыть", "Open"},
 }};
 
 } // namespace

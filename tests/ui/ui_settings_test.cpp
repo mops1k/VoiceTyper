@@ -1268,6 +1268,166 @@ private slots:
         std::filesystem::remove(path);
     }
 
+    // Проверка обновлений при запуске молчала: результат уходил только в журнал, и
+    // найденное обновление оставалось невидимым, пока пользователь сам не нажмёт
+    // «Проверить обновления» (Александр, 16.10.2026). Теперь отчёт стартовой проверки
+    // заполняет страницу «О программе», а кнопка установки доступна сразу.
+    void the_startup_check_fills_the_about_page()
+    {
+        voicetyper::platform::PortableClock clock;
+        voicetyper::platform::PortableFileSystem file_system;
+        const auto path = std::filesystem::temp_directory_path() / "voicetyper-ui-startup-update-test.json";
+        std::filesystem::remove(path);
+        voicetyper::app::SettingsPresenter presenter(path, file_system, clock);
+        static_cast<void>(presenter.load());
+
+        voicetyper::ui::WindowServices services;
+        services.application_version = [] { return QStringLiteral("1.2.3"); };
+        int checks = 0;
+        services.update_check = [&checks](std::function<void(bool, QString, QString, QString)> report) {
+            ++checks;
+            report(false, QString(), QString(), QString());
+        };
+        auto startup = std::make_shared<voicetyper::ui::WindowServices::StartupUpdate>();
+        startup->answered = true;
+        startup->available = true;
+        startup->version = QStringLiteral("9.9.9");
+        startup->notes = QStringLiteral("Заметки к выпуску");
+        services.startup_update = startup;
+
+        voicetyper::ui::MainWindow window(presenter, std::move(services));
+        window.resize(980, 640);
+        window.show();
+
+        int about_row = -1;
+        for (int i = 0; i < window.page_count(); ++i) {
+            if (window.tab_title(i) == QStringLiteral("О программе")) {
+                about_row = i;
+            }
+        }
+        QVERIFY(about_row >= 0);
+        window.show_page(about_row);
+        QCoreApplication::processEvents();
+
+        auto* status = window.findChild<QLabel*>(QStringLiteral("updateStatus"));
+        QVERIFY(status != nullptr);
+        QVERIFY2(status->text().contains(QStringLiteral("9.9.9")),
+            qPrintable(QStringLiteral("на странице нет найденной версии: %1").arg(status->text())));
+        auto* install = window.findChild<QPushButton*>(QStringLiteral("updateInstallButton"));
+        QVERIFY(install != nullptr);
+        QVERIFY2(install->isVisible(), "кнопка «Скачать и установить» не появилась без нажатия проверки");
+        QCOMPARE(checks, 0);
+        window.hide();
+        std::filesystem::remove(path);
+    }
+
+    // Отчёт, который ещё не пришёл, не выдумывает ответ: страница остаётся на
+    // «Обновления ещё не проверялись» (VT-UI-606).
+    void the_about_page_waits_for_the_startup_check()
+    {
+        voicetyper::platform::PortableClock clock;
+        voicetyper::platform::PortableFileSystem file_system;
+        const auto path = std::filesystem::temp_directory_path() / "voicetyper-ui-pending-update-test.json";
+        std::filesystem::remove(path);
+        voicetyper::app::SettingsPresenter presenter(path, file_system, clock);
+        static_cast<void>(presenter.load());
+
+        voicetyper::ui::WindowServices services;
+        services.application_version = [] { return QStringLiteral("1.2.3"); };
+        auto startup = std::make_shared<voicetyper::ui::WindowServices::StartupUpdate>();
+        services.startup_update = startup;
+        int checks = 0;
+        services.update_check = [&checks](std::function<void(bool, QString, QString, QString)> report) {
+            ++checks;
+            report(false, QString(), QString(), QString());
+        };
+
+        voicetyper::ui::MainWindow window(presenter, std::move(services));
+        window.resize(980, 640);
+        window.show();
+
+        int about_row = -1;
+        for (int i = 0; i < window.page_count(); ++i) {
+            if (window.tab_title(i) == QStringLiteral("О программе")) {
+                about_row = i;
+            }
+        }
+        QVERIFY(about_row >= 0);
+        window.show_page(about_row);
+        QCoreApplication::processEvents();
+
+        auto* status = window.findChild<QLabel*>(QStringLiteral("updateStatus"));
+        QVERIFY(status != nullptr);
+        QCOMPARE(status->text(), QStringLiteral("Обновления ещё не проверялись"));
+        auto* install = window.findChild<QPushButton*>(QStringLiteral("updateInstallButton"));
+        QVERIFY(install != nullptr);
+        QVERIFY2(!install->isVisible(), "кнопка установки появилась без ответа проверки");
+
+        // Пришедший позже ответ всё равно попадает на страницу через refresh_update_state():
+        // композиция дёргает его из post_to_ui, а страница уже открыта.
+        startup->answered = true;
+        startup->available = true;
+        startup->version = QStringLiteral("9.9.9");
+        window.refresh_update_state();
+        QVERIFY2(status->text().contains(QStringLiteral("9.9.9")),
+            qPrintable(QStringLiteral("поздний ответ проверки не дошёл: %1").arg(status->text())));
+        QVERIFY2(install->isVisible(), "кнопка установки не появилась после позднего ответа");
+        QCOMPARE(checks, 0);
+        window.hide();
+        std::filesystem::remove(path);
+    }
+
+    // Клик по уведомлению об обновлении должен приводить в «О программе» и поднимать окно,
+    // чтобы «Скачать и установить» было в одном нажатии (Александр, 16.10.2026).
+    void the_notification_click_opens_the_about_page()
+    {
+        voicetyper::platform::PortableClock clock;
+        voicetyper::platform::PortableFileSystem file_system;
+        const auto path = std::filesystem::temp_directory_path() / "voicetyper-ui-about-click-test.json";
+        std::filesystem::remove(path);
+        voicetyper::app::SettingsPresenter presenter(path, file_system, clock);
+        static_cast<void>(presenter.load());
+
+        voicetyper::ui::WindowServices services;
+        services.application_version = [] { return QStringLiteral("1.2.3"); };
+        services.update_check = [](std::function<void(bool, QString, QString, QString)> report) {
+            report(true, QStringLiteral("9.9.9"), QString(), QString());
+        };
+        auto startup = std::make_shared<voicetyper::ui::WindowServices::StartupUpdate>();
+        startup->answered = true;
+        startup->available = true;
+        startup->version = QStringLiteral("9.9.9");
+        services.startup_update = startup;
+
+        voicetyper::ui::MainWindow window(presenter, std::move(services));
+        window.resize(980, 640);
+        window.show();
+        // Some other page, and the window in the tray: exactly the state a start-minimized
+        // launch leaves, which is where the notification click arrives.
+        window.show_page(0);
+        window.hide();
+        QCoreApplication::processEvents();
+        QVERIFY2(!window.isVisible(), "окно должно быть скрыто перед кликом по уведомлению");
+        auto* status = window.findChild<QLabel*>(QStringLiteral("updateStatus"));
+        QVERIFY(status != nullptr);
+        QVERIFY2(!status->isVisible(), "страница «О программе» не должна быть видимой заранее");
+
+        window.open_about_page();
+        QCoreApplication::processEvents();
+
+        QVERIFY2(window.isVisible(), "окно не появилось по клику на уведомление");
+        // The About page is the current one: a page that is not current has no visible
+        // children, so this is what proves the click landed on the right tab.
+        QVERIFY2(status->isVisible(), "открылась не страница «О программе»");
+        QVERIFY2(status->text().contains(QStringLiteral("9.9.9")),
+            qPrintable(QStringLiteral("на открытой странице нет версии обновления: %1").arg(status->text())));
+        auto* install = window.findChild<QPushButton*>(QStringLiteral("updateInstallButton"));
+        QVERIFY(install != nullptr);
+        QVERIFY2(install->isVisible(), "кнопка «Скачать и установить» не видна на открытой странице");
+        window.hide();
+        std::filesystem::remove(path);
+    }
+
     // «Скрывать при потере фокуса» did nothing at all: the value was stored and never
     // used (Alexander, 2026-10-06). It now sends the window to the tray.
     void hide_on_focus_loss_hides_the_window()
@@ -1385,7 +1545,8 @@ private slots:
     }
 
     // В контекстном меню трея текст упирался в правый край: у пунктов должен быть
-    // запас справа (замечание Александра, 06.10.2026).
+    // запас справа (замечание Александра, 06.10.2026). Александр, 16.10.2026: пункты и
+    // разделители прижаты к рамке — нужен запас около шести пикселей по краям меню.
     void the_tray_menu_keeps_room_on_the_right()
     {
         QSystemTrayIcon icon;
@@ -1396,6 +1557,40 @@ private slots:
             qPrintable(QStringLiteral("меню без правил для пунктов: %1").arg(sheet)));
         QVERIFY2(sheet.contains(QStringLiteral("padding")),
             qPrintable(QStringLiteral("у пунктов нет отступов: %1").arg(sheet)));
+        QVERIFY2(sheet.contains(QStringLiteral("QMenu { padding: 6px; }")),
+            qPrintable(QStringLiteral("у меню нет запаса по краям: %1").arg(sheet)));
+    }
+
+    // Подсказка трея была пустой: set_status() существует, но в проде не вызывался, и
+    // наведение на иконку показывало пустую рамку (Александр, 16.10.2026). Теперь
+    // контроллер сам строит текст состояния и переводит его вместе с меню.
+    void the_tray_tooltip_shows_the_current_status()
+    {
+        using voicetyper::domain::AppLanguage;
+        using voicetyper::ui::TrayStatus;
+        QSystemTrayIcon icon;
+        voicetyper::ui::TrayController tray(icon);
+        // До первого опроса движок считается неготовым: обещать готовность, пока
+        // модель грузится, подсказка не имеет права.
+        QVERIFY2(icon.toolTip().contains(QStringLiteral("не готов")),
+            qPrintable(QStringLiteral("подсказка без честного стартового состояния: %1").arg(icon.toolTip())));
+
+        tray.set_status(TrayStatus::ready);
+        QCOMPARE(icon.toolTip(), QStringLiteral("VoiceTyper — Готово"));
+        tray.set_status(TrayStatus::recording);
+        QCOMPARE(icon.toolTip(), QStringLiteral("VoiceTyper — идёт запись"));
+        tray.set_status(TrayStatus::processing);
+        QCOMPARE(icon.toolTip(), QStringLiteral("VoiceTyper — Распознавание"));
+
+        // Смена языка перестраивает и состояние, а не только пункты меню.
+        tray.set_language(AppLanguage::en);
+        QCOMPARE(icon.toolTip(), QStringLiteral("VoiceTyper — Recognizing"));
+        tray.set_status(TrayStatus::ready);
+        QCOMPARE(icon.toolTip(), QStringLiteral("VoiceTyper — Ready"));
+        tray.set_status(TrayStatus::engine_not_ready);
+        QCOMPARE(icon.toolTip(), QStringLiteral("VoiceTyper — The recognition engine is not ready yet"));
+        tray.set_language(AppLanguage::ru);
+        QCOMPARE(icon.toolTip(), QStringLiteral("VoiceTyper — Движок распознавания ещё не готов"));
     }
 
     // Оверлей и меню трея не переводились вообще: их строки были заданы прямо в

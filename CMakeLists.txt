@@ -1788,6 +1788,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
             target_sources(voicetyper_platform_linux_gui
                 PRIVATE
                     src/platform/linux/linux_kglobalaccel.cpp
+                    src/platform/linux/linux_notification.cpp
             )
             target_link_libraries(voicetyper_platform_linux_gui
                 PUBLIC
@@ -1798,6 +1799,10 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
             target_compile_definitions(voicetyper_platform_linux_gui
                 PUBLIC
                     VOICETYPER_HAS_KGLOBALACCEL=1
+                    # The clickable update notification (VT-UI-606). Qt's own tray balloon
+                    # cannot report a click on Linux - QDBusTrayIcon passes an action only
+                    # for Critical messages - so the notification is sent over D-Bus.
+                    VOICETYPER_HAS_DBUS_NOTIFICATIONS=1
             )
         else()
             message(STATUS
@@ -1825,6 +1830,41 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
                 )
                 if(TARGET voicetyper-tests)
                     add_dependencies(voicetyper-tests voicetyper-linux-kglobalaccel-contract)
+                endif()
+
+                # The click of the update notification (VT-UI-606): a stub
+                # org.freedesktop.Notifications service proves the "default" action and the
+                # id matching without a desktop session. Without a session bus the contract
+                # says so and skips, like the other session-dependent Linux contracts.
+                add_executable(voicetyper-linux-notification-contract EXCLUDE_FROM_ALL
+                    tests/contract/linux_notification_contract.cpp
+                )
+                target_link_libraries(voicetyper-linux-notification-contract
+                    PRIVATE
+                        Qt6::DBus
+                        voicetyper_platform_linux_gui
+                )
+                voicetyper_set_warnings(voicetyper-linux-notification-contract)
+                # The stub never takes org.freedesktop.Notifications from a running daemon,
+                # so a private session bus is what makes the stub half deterministic here.
+                find_program(VOICETYPER_DBUS_RUN_SESSION dbus-run-session)
+                if(VOICETYPER_DBUS_RUN_SESSION)
+                    add_test(NAME linux-notification-contract
+                        COMMAND ${VOICETYPER_DBUS_RUN_SESSION} --
+                            $<TARGET_FILE:voicetyper-linux-notification-contract>
+                    )
+                else()
+                    add_test(NAME linux-notification-contract
+                        COMMAND voicetyper-linux-notification-contract
+                    )
+                endif()
+                set_tests_properties(linux-notification-contract PROPERTIES
+                    LABELS "linux;platform;notification;qt"
+                    PASS_REGULAR_EXPRESSION "linux-notification-contract: OK"
+                    TIMEOUT 120
+                )
+                if(TARGET voicetyper-tests)
+                    add_dependencies(voicetyper-tests voicetyper-linux-notification-contract)
                 endif()
             endif()
 

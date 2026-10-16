@@ -605,6 +605,24 @@ branches of the shared runtime loaders. The Windows rules above are unchanged.
   `libggml*.so.0` soname, so two shared copies cannot coexist in one process
   ([CMakeLists.txt](../../CMakeLists.txt), target `voicetyper_parakeet_cpp`).
 
+### Desktop notification that reports its click (Linux)
+
+- **VT-PLT-1313.** The "an update is available" notification MUST report a click to the
+  application on Linux, so the settings window can open on «О программе» (VT-UI-606). Because
+  `QDBusTrayIcon::showMessage()` puts an action into the freedesktop `Notify` call only for
+  `MessageIcon::Critical` - and `actionInvoked()`, the only writer of `messageClicked()`, is
+  reached solely through that action - the notification MUST be sent over
+  `org.freedesktop.Notifications` from
+  [src/platform/linux/linux_notification.cpp](../../src/platform/linux/linux_notification.cpp)
+  with `actions = {"default", <label>}`, and `ActionInvoked` MUST be matched against the id the
+  service returned (another application's id MUST NOT raise the window).
+- **VT-PLT-1314.** A session without a notification service MUST make `show()` report false, and
+  the composition MUST then fall back to the tray balloon and log that a click opens nothing
+  there, instead of silently losing the announcement.
+- **VT-PLT-1315.** The notification path MUST be compiled in only when Qt's D-Bus module is
+  present (`VOICETYPER_HAS_DBUS_NOTIFICATIONS`, the same `Qt6DBus_FOUND` gate as the KGlobalAccel
+  fallback), so a build without Qt6DBus still configures.
+
 ## 12. Known gaps
 
 - **G-1.** `platform::AudioCapture` and `platform::AudioConverter` have **no implementation** in

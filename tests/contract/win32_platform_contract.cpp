@@ -1034,13 +1034,15 @@ void take_foreground(HWND frame)
     if (attached) {
         ::AttachThreadInput(other, self, FALSE);
     }
-    if (::GetForegroundWindow() != frame) {
+    const HWND lost = ::GetForegroundWindow();
+    if (lost != frame && (lost == nullptr || ::IsWindow(lost) == 0)) {
         // SetForegroundWindow is also refused when the previous foreground window no longer
-        // exists (a destroyed probe frame) or when the shell holds the foreground lock. The
-        // shell's own switch entry point is what Alt+Tab uses and it still works there;
-        // measured 2026-10-19, the reader section could not take the foreground after the
-        // paste section destroyed its window without this fallback.
-        ::SwitchToThisWindow(frame, TRUE);
+        // exists (a destroyed probe frame). The shell's own switch entry point still works
+        // there, and it must be the plain one: fAltTab = TRUE emulates Alt+Tab and measured
+        // 2026-10-19 it never returns on a CI runner, which hung this test for the whole
+        // 120 s timeout (the release build and its installer were unaffected - the red job
+        // is this contract test only).
+        ::SwitchToThisWindow(frame, FALSE);
     }
 }
 
@@ -1248,10 +1250,9 @@ void test_field_reader()
                 readback.join();
             }
             if (!tail_readable && !value_readable) {
-                voicetyper::platform::Win32TextTargetProbe probe;
-                const auto info = probe.probe();
-                note(("reader retry: probe says " + std::string(voicetyper::platform::text_target_kind_name(info.kind))
-                    + "/" + std::string(info.reason)).c_str());
+                // No probe() here on purpose: every query costs up to a few seconds on a
+                // slow provider, and this loop is a retry, not a diagnosis. The foreground
+                // note printed below says who holds the focus, which is what a red run needs.
                 ::Sleep(120);
             }
         }

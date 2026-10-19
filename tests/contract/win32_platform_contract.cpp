@@ -1226,6 +1226,39 @@ void test_field_reader()
         }
         // The caret sits where the target put it; the reader asks for the tail before
         // the caret, so the check compares against what the control itself reports.
+        // The reader runs on its own short-lived thread, as in production, and THIS thread
+        // keeps pumping messages while it works. UI Automation asks the control's owning
+        // thread for its provider, so a plain join() waits for work the owner must do:
+        // measured 2026-10-19 on a CI runner, the section sat in the 120 s test timeout
+        // instead of answering. The direct typing section below pumps for the same reason.
+        const auto pump_messages = [] {
+            MSG message {};
+            while (::PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE) != 0) {
+                ::TranslateMessage(&message);
+                ::DispatchMessageW(&message);
+            }
+        };
+        const auto read_field = [&](std::string* tail_out, std::string* value_out,
+                                    bool* tail_ok, bool* value_ok) {
+            *tail_out = std::string();
+            *value_out = std::string();
+            *tail_ok = false;
+            *value_ok = false;
+            std::atomic<bool> finished {false};
+            std::thread readback([&] {
+                *tail_ok = reader.read_caret_tail(kPasteReaderUnits, tail_out);
+                if (!*tail_ok) {
+                    *value_ok = reader.read_value(value_out);
+                }
+                finished = true;
+            });
+            while (!finished.load()) {
+                pump_messages();
+                ::Sleep(5);
+            }
+            readback.join();
+        };
+
         std::string tail;
         std::string whole;
         bool tail_readable = false;
@@ -1239,20 +1272,12 @@ void test_field_reader()
                 take_foreground(frame);
                 ::SetFocus(edit);
                 for (int spin = 0; spin < 10 && ::GetForegroundWindow() != frame; ++spin) {
+                    pump_messages();
                     ::Sleep(20);
                 }
             }
-            {
-                std::thread readback([&] {
-                    tail_readable = reader.read_caret_tail(kPasteReaderUnits, &tail);
-                    value_readable = !tail_readable && reader.read_value(&whole);
-                });
-                readback.join();
-            }
+            read_field(&tail, &whole, &tail_readable, &value_readable);
             if (!tail_readable && !value_readable) {
-                // No probe() here on purpose: every query costs up to a few seconds on a
-                // slow provider, and this loop is a retry, not a diagnosis. The foreground
-                // note printed below says who holds the focus, which is what a red run needs.
                 ::Sleep(120);
             }
         }
@@ -1302,15 +1327,9 @@ void test_field_reader()
         ::SetFocus(frame);
         std::string frame_tail;
         std::string frame_value;
-        bool frame_tail_readable = true;
-        bool frame_value_readable = true;
-        {
-            std::thread readback([&] {
-                frame_tail_readable = reader.read_caret_tail(kPasteReaderUnits, &frame_tail);
-                frame_value_readable = reader.read_value(&frame_value);
-            });
-            readback.join();
-        }
+        bool frame_tail_readable = false;
+        bool frame_value_readable = false;
+        read_field(&frame_tail, &frame_value, &frame_tail_readable, &frame_value_readable);
         check(!frame_tail_readable && !frame_value_readable,
             "a window with no text capability cannot confirm a paste");
 

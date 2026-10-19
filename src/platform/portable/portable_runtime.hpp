@@ -1,15 +1,21 @@
 #pragma once
 
-// Portable fallbacks for the two platform seams the UI needs immediately:
-// a FileSystem over <filesystem> and a Clock over <chrono>.
+// Portable fallbacks for the platform seams the UI needs on any host, including
+// CI: a FileSystem over <filesystem>, a Clock over <chrono>, and the no-op
+// direct-delivery backend.
 //
 // They exist so the settings window and the composition root can be built and
 // launched on any host, including a CI box with no Windows backends. On Windows
 // the Win32 backends take over; these remain the correct choice for a portable
 // contract build and for Linux, where std::filesystem is the native API anyway.
+//
+// The no-op text-target pair is what keeps VT-DOM-617 true on a host without a
+// probe: `probe()` answers `unknown` and `insert()` refuses, so the delivery
+// stays on the clipboard-then-paste path without special-casing in the caller.
 
 #include "platform/api/clock.hpp"
 #include "platform/api/file_system.hpp"
+#include "platform/api/text_target.hpp"
 
 #include <memory>
 #include <vector>
@@ -43,6 +49,38 @@ public:
     Status remove_file(const std::filesystem::path& path) override;
     Result<std::vector<std::filesystem::path>> list_directory(const std::filesystem::path& path) const override;
     Result<std::uint64_t> available_space(const std::filesystem::path& path) const override;
+};
+
+/// No-op direct-delivery backend (VT-PLT-512). `probe()` cannot answer, which is
+/// reported as `unknown` - never as `none`, because "we cannot ask" and "focus is
+/// provably not in a text field" are different states.
+class PortableTextTargetProbe final : public TextTargetProbe {
+public:
+    [[nodiscard]] TextTargetInfo probe() override;
+    [[nodiscard]] bool is_supported() const noexcept override { return false; }
+};
+
+/// No-op typer: reports `unavailable` with `typed = 0`, so a caller that tries the
+/// direct path first falls straight back to the clipboard with no partial
+/// delivery to worry about.
+class PortableDirectTextInjector final : public DirectTextInjector {
+public:
+    [[nodiscard]] InsertResult insert(
+        std::string_view utf8, const CancellationToken& cancellation) override;
+    [[nodiscard]] bool is_supported() const noexcept override { return false; }
+};
+
+/// No-op field reader (VT-PLT-516). `is_supported()` is false, so the domain keeps
+/// its pre-existing behaviour instead of reporting every paste as unconfirmed: this
+/// host has no accessibility reader yet, and a verdict it cannot make is not a
+/// verdict.
+class PortableFocusedTextField final : public FocusedTextField {
+public:
+    [[nodiscard]] bool read_caret_tail(std::size_t units, std::string* utf8) override;
+    [[nodiscard]] bool read_value(std::string* utf8) override;
+    /// Cannot answer here, so the caller stays silent (VT-PLT-518).
+    [[nodiscard]] bool has_text_input_in_foreground_window() override { return true; }
+    [[nodiscard]] bool is_supported() const noexcept override { return false; }
 };
 
 } // namespace voicetyper::platform

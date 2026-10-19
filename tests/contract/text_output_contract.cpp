@@ -88,6 +88,86 @@ public:
     int calls = 0;
 };
 
+/// The direct-delivery pair (VT-DOM-613). The defaults describe the state every
+/// pre-existing check in this file assumes: no probe backend, so the delivery is
+/// the clipboard-then-paste path and `probe.calls` stays 0.
+class FakeProbe final : public platform::TextTargetProbe {
+public:
+    platform::TextTargetInfo probe() override
+    {
+        ++calls;
+        return info;
+    }
+    bool is_supported() const noexcept override { return supported; }
+
+    bool supported = true;
+    platform::TextTargetInfo info{};
+    int calls = 0;
+};
+
+class FakeDirect final : public platform::DirectTextInjector {
+public:
+    platform::InsertResult insert(std::string_view text, const CancellationToken&) override
+    {
+        ++calls;
+        last = std::string(text);
+        platform::InsertResult result;
+        result.typed = typed;
+        result.status = fail_code == ErrorCode::ok
+            ? platform::Status::success()
+            : platform::Status::failure(fail_code, "typing refused");
+        return result;
+    }
+    bool is_supported() const noexcept override { return supported; }
+
+    bool supported = false;
+    ErrorCode fail_code = ErrorCode::ok;
+    std::size_t typed = 0;
+    std::string last;
+    int calls = 0;
+};
+
+/// VT-DOM-618: the reader the paste check uses. `supported = false` is the default
+/// on purpose - those are the platforms (and the older expectations) where the check
+/// cannot run and the paste keeps its historical verdict.
+class FakeFocusedField final : public platform::FocusedTextField {
+public:
+    bool read_caret_tail(std::size_t, std::string* utf8) override
+    {
+        ++tail_reads;
+        if (!tail_readable) {
+            return false;
+        }
+        *utf8 = tail;
+        return true;
+    }
+    bool read_value(std::string* utf8) override
+    {
+        ++value_reads;
+        if (!value_readable) {
+            return false;
+        }
+        *utf8 = value;
+        return true;
+    }
+    bool is_supported() const noexcept override { return supported; }
+    bool has_text_input_in_foreground_window() override
+    {
+        ++window_queries;
+        return window_has_text_input;
+    }
+
+    bool supported = false;
+    bool window_has_text_input = true;
+    int window_queries = 0;
+    bool tail_readable = false;
+    bool value_readable = false;
+    std::string tail;
+    std::string value;
+    int tail_reads = 0;
+    int value_reads = 0;
+};
+
 /// Executor that runs inline (on_this_thread() == true) or marshals, so both
 /// affinity paths are covered deterministically.
 class RecordingExecutor final : public platform::Executor {
@@ -147,7 +227,10 @@ void check_delivery_paths()
     FakePaste paste;
     FakeClock clock;
     RecordingExecutor executor;
-    TextOutputService service(clipboard, paste, clock, executor);
+    FakeProbe probe;
+    FakeDirect direct;
+    FakeFocusedField field;
+    TextOutputService service(clipboard, paste, probe, direct, field, clock, executor);
     std::vector<OutputReport> reports;
     service.set_report_sink([&](const OutputReport& report) { reports.push_back(report); });
 
@@ -194,7 +277,10 @@ void check_paste_refused_is_success()
     FakePaste paste;
     FakeClock clock;
     RecordingExecutor executor;
-    TextOutputService service(clipboard, paste, clock, executor);
+    FakeProbe probe;
+    FakeDirect direct;
+    FakeFocusedField field;
+    TextOutputService service(clipboard, paste, probe, direct, field, clock, executor);
     std::vector<OutputReport> reports;
     service.set_report_sink([&](const OutputReport& report) { reports.push_back(report); });
 
@@ -220,7 +306,10 @@ void check_suspension_and_executor()
     FakePaste paste;
     FakeClock clock;
     RecordingExecutor executor;
-    TextOutputService service(clipboard, paste, clock, executor);
+    FakeProbe probe;
+    FakeDirect direct;
+    FakeFocusedField field;
+    TextOutputService service(clipboard, paste, probe, direct, field, clock, executor);
     std::vector<OutputReport> reports;
     service.set_report_sink([&](const OutputReport& report) { reports.push_back(report); });
 
@@ -250,7 +339,10 @@ void check_cancellation_rules()
     FakePaste paste;
     FakeClock clock;
     RecordingExecutor executor;
-    TextOutputService service(clipboard, paste, clock, executor);
+    FakeProbe probe;
+    FakeDirect direct;
+    FakeFocusedField field;
+    TextOutputService service(clipboard, paste, probe, direct, field, clock, executor);
 
     CancellationSource pre;
     pre.request_cancellation();
@@ -264,6 +356,99 @@ void check_cancellation_rules()
     check(during.is_error() && during.code() == ErrorCode::cancelled, "cancelling during the delay fails the call");
     check(clipboard.last == "hello", "but the clipboard keeps the text");
     check(paste.calls == 0, "and no paste is attempted");
+}
+
+void check_direct_delivery()
+{
+    FakeClipboard clipboard;
+    FakePaste paste;
+    FakeClock clock;
+    RecordingExecutor executor;
+    FakeProbe probe;
+    FakeDirect direct;
+    FakeFocusedField field;
+    TextOutputService service(clipboard, paste, probe, direct, field, clock, executor);
+    std::vector<OutputReport> reports;
+    service.set_report_sink([&](const OutputReport& report) { reports.push_back(report); });
+
+    // A recognised text field: the transcript is typed and the clipboard is never
+    // touched — the whole point of the direct path (VT-DOM-613/614).
+    direct.supported = true;
+    direct.typed = 5;
+    probe.info.kind = platform::TextTargetKind::editable;
+    probe.info.reason = "control_type_edit";
+    const auto typed = service.output("hello", true, {});
+    check(typed.is_ok() && typed.value(), "a typed delivery counts as delivered");
+    check(direct.calls == 1 && direct.last == "hello", "the transcript was typed into the field");
+    check(clipboard.writes == 0, "a typed delivery never writes the clipboard");
+    check(paste.calls == 0, "a typed delivery never sends Ctrl+V");
+    check(reports.back().outcome == platform::TextOutputOutcome::direct, "the outcome is direct");
+    check(reports.back().delivered, "direct is a delivered state");
+    check(!reports.back().paste.has_value(), "a typed delivery carries no paste diagnostics");
+
+    // A partial typing (VT-DOM-615): the clipboard gets the whole transcript and
+    // the paste chord stays unsent, because pasting would duplicate the prefix.
+    direct.fail_code = ErrorCode::cancelled;
+    direct.typed = 3;
+    clipboard.writes = 0;
+    paste.calls = 0;
+    reports.clear();
+    const auto partial = service.output("hello", true, {});
+    check(partial.is_ok() && partial.value(), "a partial typing still delivers");
+    check(clipboard.last == "hello", "the clipboard holds the whole transcript after a partial typing");
+    check(paste.calls == 0, "a partial typing does not paste over its own prefix");
+    check(reports.back().outcome == platform::TextOutputOutcome::clipboard_only,
+        "a partial typing is reported as clipboard_only");
+    check(reports.back().paste.has_value() && reports.back().paste->reason == "direct_partial",
+        "the reason names the partial typing");
+    check(reports.back().paste->direct == "partial", "the direct note names the partial typing");
+
+    // Nothing was typed: the ordinary clipboard-then-paste path runs, and the note
+    // says the typer refused rather than the field never being recognised.
+    direct.fail_code = ErrorCode::permission_denied;
+    direct.typed = 0;
+    paste.calls = 0;
+    reports.clear();
+    const auto refused = service.output("hello", true, {});
+    check(refused.is_ok() && refused.value() && paste.calls == 1, "a refused typing falls back to the paste");
+    check(reports.back().paste->direct == "refused", "the direct note names the refusal");
+
+    // A target that is provably not a text field: nothing is typed, and the note
+    // says why the direct attempt never happened.
+    direct.fail_code = ErrorCode::ok;
+    const int inserts_before = direct.calls;
+    probe.info.kind = platform::TextTargetKind::none;
+    reports.clear();
+    const auto desktop = service.output("hello", true, {});
+    check(desktop.is_ok() && desktop.value(), "a non-text target still delivers through the clipboard");
+    check(direct.calls == inserts_before, "nothing is typed into a non-text target");
+    check(reports.back().paste->direct == "skipped_no_target", "the direct note names the non-text target");
+
+    // An unknown verdict falls back too, and says so: VT-PLT-506 keeps `unknown` a
+    // different state from `none`.
+    probe.info.kind = platform::TextTargetKind::unknown;
+    probe.info.reason = "document_without_value_pattern";
+    reports.clear();
+    const auto unknown = service.output("hello", true, {});
+    check(unknown.is_ok() && unknown.value(), "an unknown target still delivers");
+    check(reports.back().paste->direct == "skipped_unknown", "the direct note names the unknown verdict");
+
+    // The setting off (VT-DOM-617): the probe is not consulted at all.
+    service.set_direct_insert(false);
+    check(!service.direct_insert(), "the direct setting is observable");
+    const int probes_before = probe.calls;
+    reports.clear();
+    const auto off = service.output("hello", true, {});
+    check(off.is_ok() && probe.calls == probes_before, "direct delivery off never probes");
+    check(reports.back().paste->direct == "not_attempted", "the direct note stays not_attempted");
+    check(reports.back().paste->reason == "pasted", "the clipboard path is unchanged when the setting is off");
+
+    // Auto-paste off means the user asked for the clipboard only: no probe either.
+    service.set_direct_insert(true);
+    const int probes_after = probe.calls;
+    const auto clipboard_only = service.output("hello", false, {});
+    check(clipboard_only.is_ok() && clipboard_only.value(), "auto-paste off still delivers");
+    check(probe.calls == probes_after, "auto-paste off never probes");
 }
 
 class BlockingClipboard final : public platform::Clipboard {
@@ -291,7 +476,10 @@ void check_single_writer()
     FakePaste paste;
     FakeClock clock;
     RecordingExecutor executor;
-    TextOutputService service(blocking, paste, clock, executor);
+    FakeProbe probe;
+    FakeDirect direct;
+    FakeFocusedField field;
+    TextOutputService service(blocking, paste, probe, direct, field, clock, executor);
 
     std::thread worker([&] { static_cast<void>(service.output("hello", false, {})); });
     while (!blocking.entered.load()) {
@@ -305,6 +493,168 @@ void check_single_writer()
     check(service.output("hello", false, {}).is_ok(), "a later delivery works once the first finished");
 }
 
+
+void check_paste_confirmation()
+{
+    // A field that can be read but never shows the text: the chord was accepted,
+    // the delivery did not happen, and the outcome must say so instead of "pasted"
+    // (the Windows Terminal case of 2026-10-19).
+    {
+        FakeClipboard clipboard;
+        FakePaste paste;
+        FakeClock clock;
+        RecordingExecutor executor;
+        FakeProbe probe;
+        FakeDirect direct;
+        FakeFocusedField field;
+        field.supported = true;
+        field.tail_readable = true;
+        field.tail = "some older text";
+        TextOutputService service(clipboard, paste, probe, direct, field, clock, executor);
+        std::vector<OutputReport> reports;
+        service.set_report_sink([&](const OutputReport& report) { reports.push_back(report); });
+
+        const auto result = service.output("hello world", true, {});
+        check(result.is_ok() && result.value(), "an unobservable paste is still a delivered outcome");
+        check(clipboard.last == "hello world", "the transcript stays on the clipboard");
+        // A readable field that holds other text proves nothing: the reader may be
+        // looking at another element (measured 2026-10-19 in a JetBrains plugin, where
+        // the paste worked and an alarm was raised anyway). Unverifiable is not failed.
+        check(reports.back().outcome == platform::TextOutputOutcome::pasted,
+            "an unverifiable paste is reported as pasted, not as a failure");
+        check(reports.back().paste.has_value() && reports.back().paste->reason == "pasted_unverified",
+            "the log names the paste as unverified");
+        check(field.tail_reads >= voicetyper::domain::kPasteConfirmAttempts,
+            "the check keeps looking for the bounded number of attempts");
+        // One 80 ms paste delay plus one gap between the confirmation attempts, and
+        // no gap after the last attempt.
+        check(clock.sleeps.size() == static_cast<std::size_t>(voicetyper::domain::kPasteConfirmAttempts),
+            "the check waits between attempts and not after the last one");
+        check(clock.sleeps.front() == 80, "the paste delay comes first");
+    }
+
+    // A field that can be read and stays empty: the chord demonstrably did nothing, and
+    // that is the only case worth telling the user about (VT-DOM-618).
+    {
+        FakeClipboard clipboard;
+        FakePaste paste;
+        FakeClock clock;
+        RecordingExecutor executor;
+        FakeProbe probe;
+        FakeDirect direct;
+        FakeFocusedField field;
+        field.supported = true;
+        field.tail_readable = true;
+        field.tail = "";
+        TextOutputService service(clipboard, paste, probe, direct, field, clock, executor);
+        std::vector<OutputReport> reports;
+        service.set_report_sink([&](const OutputReport& report) { reports.push_back(report); });
+
+        static_cast<void>(service.output("hello world", true, {}));
+        check(reports.back().outcome == platform::TextOutputOutcome::clipboard_only,
+            "an empty readable field proves the paste failed, so the outcome is clipboard_only");
+        check(reports.back().paste.has_value() && reports.back().paste->reason == "paste_unconfirmed",
+            "the proven failure is named paste_unconfirmed");
+    }
+
+    // A window with no text-capable element at all cannot have received the paste
+    // (VT-PLT-518): dictating on the desktop must warn the user, not stay silent.
+    {
+        FakeClipboard clipboard;
+        FakePaste paste;
+        FakeClock clock;
+        RecordingExecutor executor;
+        FakeProbe probe;
+        FakeDirect direct;
+        FakeFocusedField field;
+        field.supported = true;
+        field.tail_readable = false;
+        field.value_readable = false;
+        field.window_has_text_input = false;
+        TextOutputService service(clipboard, paste, probe, direct, field, clock, executor);
+        std::vector<OutputReport> reports;
+        service.set_report_sink([&](const OutputReport& report) { reports.push_back(report); });
+
+        static_cast<void>(service.output("hello world", true, {}));
+        check(field.window_queries == 1, "the window search runs once, and only when the paste is unreadable");
+        check(reports.back().outcome == platform::TextOutputOutcome::clipboard_only,
+            "a window without any text field proves the paste failed");
+        check(reports.back().paste.has_value() && reports.back().paste->reason == "paste_unconfirmed",
+            "the desktop case is named paste_unconfirmed");
+    }
+
+    // The same unreadable paste in a window that does hold a field must stay silent:
+    // that is the JetBrains-plugin case, where the paste worked (2026-10-19).
+    {
+        FakeClipboard clipboard;
+        FakePaste paste;
+        FakeClock clock;
+        RecordingExecutor executor;
+        FakeProbe probe;
+        FakeDirect direct;
+        FakeFocusedField field;
+        field.supported = true;
+        field.tail_readable = false;
+        field.value_readable = false;
+        field.window_has_text_input = true;
+        TextOutputService service(clipboard, paste, probe, direct, field, clock, executor);
+        std::vector<OutputReport> reports;
+        service.set_report_sink([&](const OutputReport& report) { reports.push_back(report); });
+
+        static_cast<void>(service.output("hello world", true, {}));
+        check(reports.back().outcome == platform::TextOutputOutcome::pasted,
+            "an unreadable paste in a window that has a field stays pasted");
+        check(reports.back().paste.has_value() && reports.back().paste->reason == "pasted_unverified",
+            "and is logged as unverified");
+    }
+
+    // A console wraps the pasted text with CRLF and pads the line: whitespace must
+    // not turn a real delivery into a false alarm.
+    {
+        FakeClipboard clipboard;
+        FakePaste paste;
+        FakeClock clock;
+        RecordingExecutor executor;
+        FakeProbe probe;
+        FakeDirect direct;
+        FakeFocusedField field;
+        field.supported = true;
+        field.tail_readable = true;
+        field.tail = "C:\\Users> hello   \r\nworld\r\n";
+        TextOutputService service(clipboard, paste, probe, direct, field, clock, executor);
+        std::vector<OutputReport> reports;
+        service.set_report_sink([&](const OutputReport& report) { reports.push_back(report); });
+
+        const auto result = service.output("hello world", true, {});
+        check(result.is_ok(), "a wrapped console line still delivers");
+        check(reports.back().outcome == platform::TextOutputOutcome::pasted,
+            "a wrapped console line is confirmed as pasted");
+    }
+
+    // A field without a text pattern but with a value: the check reads the value,
+    // which is how a classic edit control confirms a paste.
+    {
+        FakeClipboard clipboard;
+        FakePaste paste;
+        FakeClock clock;
+        RecordingExecutor executor;
+        FakeProbe probe;
+        FakeDirect direct;
+        FakeFocusedField field;
+        field.supported = true;
+        field.tail_readable = false;
+        field.value_readable = true;
+        field.value = "before hello world";
+        TextOutputService service(clipboard, paste, probe, direct, field, clock, executor);
+        std::vector<OutputReport> reports;
+        service.set_report_sink([&](const OutputReport& report) { reports.push_back(report); });
+
+        static_cast<void>(service.output("hello world", true, {}));
+        check(reports.back().outcome == platform::TextOutputOutcome::pasted,
+            "a value pattern confirms the paste");
+    }
+}
+
 } // namespace
 
 int main()
@@ -315,6 +665,8 @@ int main()
     check_paste_refused_is_success();
     check_suspension_and_executor();
     check_cancellation_rules();
+    check_direct_delivery();
+    check_paste_confirmation();
     check_single_writer();
 
     if (failures != 0) {

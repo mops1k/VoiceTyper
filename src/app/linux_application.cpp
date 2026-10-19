@@ -533,6 +533,14 @@ int run(int argc, char** argv)
     // --- text output ---------------------------------------------------------
     platform::linuxos::LinuxClipboard clipboard;
     platform::linuxos::LinuxPasteSimulator paste;
+    // Direct delivery has no Linux backend in this stage (VT-PLT-512), so the
+    // portable pair answers `unknown`/`unavailable` and the delivery stays exactly
+    // the clipboard-then-paste path it has always been.
+    platform::PortableTextTargetProbe focus_probe;
+    platform::PortableDirectTextInjector direct_injector;
+    // VT-PLT-516: no accessibility reader on this stage, so the reader reports that
+    // it cannot answer and the paste keeps its pre-existing verdict.
+    platform::PortableFocusedTextField field_reader;
     platform::LinuxExecutor ui_executor;
     // Work that touches widgets must run on the Qt thread: a widget read or written
     // from a worker is a data race and, in Qt's own words, a hard error. This
@@ -544,7 +552,7 @@ int run(int argc, char** argv)
             &application, [task = std::move(task)] { task(); }, Qt::QueuedConnection);
     };
     domain::RetryingClipboard retrying(clipboard, clock);
-    domain::TextOutputService output(retrying, paste, clock, ui_executor);
+    domain::TextOutputService output(retrying, paste, focus_probe, direct_injector, field_reader, clock, ui_executor);
     // Why the text did or did not reach the document. "Pasted" and "only on the
     // clipboard because the focused window refused it" look identical in the UI,
     // and the target machine reported "it did not paste into the input" without
@@ -553,7 +561,8 @@ int run(int argc, char** argv)
         const std::string_view outcome = platform::text_output_outcome_name(report.outcome);
         const std::string detail = report.paste.has_value()
             ? (std::string(report.paste->reason) + " (injection_supported="
-                  + (report.paste->injection_supported ? "true" : "false") + ")")
+                  + (report.paste->injection_supported ? "true" : "false")
+                  + ", direct=" + std::string(report.paste->direct) + ")")
             : std::string();
         platform::LogLevel level = platform::LogLevel::info;
         if (report.outcome == platform::TextOutputOutcome::clipboard_failed) {
@@ -924,8 +933,12 @@ int run(int argc, char** argv)
         status_channel->post(localized(ui::UiKey::k86));
     });
 
-    machine.set_options_provider([&presenter] {
+    machine.set_options_provider([&presenter, &output] {
         const auto& current = presenter.settings();
+        // Direct delivery is a live setting too (VT-DOM-617). On Linux the portable
+        // backend refuses, so this only keeps the switch honest for the day the
+        // Linux probe lands.
+        output.set_direct_insert(current.direct_insert);
         audio::SessionOptions options;
         // The setting the Models page calls "noise reduction".
         options.noise_suppression = presenter.settings().noise_reduction_enabled;

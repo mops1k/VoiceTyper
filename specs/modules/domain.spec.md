@@ -107,6 +107,7 @@ engine_unavailable=15, model_not_ready=16, invalid_state=17, internal=18`.
 | 25 | `fillerWords` | string | `` (empty) *(C++-only)* |
 | 26 | `cleanupModel` | `CleanupModel` {`off`\|`small`\|`medium`\|`large`} | `off` *(C++-only)* |
 | 27 | `cleanupPrompt` | string | `` (empty) *(C++-only)* |
+| 28 | `directInsert` | bool | `true` *(C++-only, VT-DOM-613)* |
 
 - **VT-DOM-204.** `gigaamModelSize`, `bestOf`, `fillerWordsLevel`, `fillerWords`,
   `cleanupModel` and `cleanupPrompt` MUST be
@@ -453,6 +454,9 @@ Contracts: [src/domain/text_output.hpp](../../src/domain/text_output.hpp),
   `0x2000..0x200A,0x2028,0x2029,0x202F,0x205F,0x3000`) and MUST tolerate broken UTF-8.
 - **VT-DOM-602.** A non-empty transcript MUST always be written to the clipboard. The clipboard
   is authoritative and MUST be written **before** the paste delay and before any injection.
+  One exception, VT-DOM-613: a transcript that was typed straight into the focused field MUST NOT
+  write the clipboard at all — the clipboard belongs to the user, and a dictation must not clobber
+  it when it does not have to.
 - **VT-DOM-603.** Automatic pasting MUST wait `kPasteDelay = 80 ms` and then inject the
   `Ctrl+V` chord once.
 - **VT-DOM-604.** Clipboard writes MUST be retried up to `kClipboardMaxAttempts = 5` times with
@@ -464,11 +468,12 @@ Contracts: [src/domain/text_output.hpp](../../src/domain/text_output.hpp),
   injection support, or when the sleep before the paste is cancelled. A paste failure after a
   successful clipboard write MUST also end as `clipboard_only`, never as a failed dictation.
 - **VT-DOM-607.** `OutputReport` MUST be published with the outcome
-  (`pasted | clipboard_only | skipped_empty | clipboard_failed`), `delivered`, and optional
-  `PasteDiagnostics{reason, injection_supported, clipboard_holds_text}`.
+  (`direct | pasted | clipboard_only | skipped_empty | clipboard_failed`), `delivered`, and
+  optional `PasteDiagnostics{reason, injection_supported, clipboard_holds_text, direct}`.
   Known `reason` values: `pasted`, `suspended_for_hotkey_capture`, `no_injection_backend`,
   `cancelled_before_paste`, `executor_unavailable`, `integrity_level`,
-  `window_rejected_input`, default `paste_failed`.
+  `window_rejected_input`, `direct_partial`, default `paste_failed`. The `direct` field says what
+  the direct-delivery attempt did (VT-DOM-616) and MUST default to `not_attempted`.
 - **VT-DOM-608.** The paste MUST run on the GUI/input thread: inline when already on it,
   otherwise through `Executor::invoke(..., 2000 ms)`; an executor failure MUST degrade to
   `clipboard_only` with reason `executor_unavailable`.
@@ -480,6 +485,49 @@ Contracts: [src/domain/text_output.hpp](../../src/domain/text_output.hpp),
   MUST be reported as `integrity_level` and the text MUST still be on the clipboard
   (VT-SYS-004).
 - **VT-DOM-612.** Exceptions thrown by a report sink MUST be swallowed.
+- **VT-DOM-613.** With `directInsert` on (`true` by default) the delivery order MUST be: probe the
+  focused target (`TextTargetProbe`) → on `editable`, attempt `DirectTextInjector::insert()` → on
+  `read_only`, `none`, `unknown`, an unsupported probe, or a failed insertion, continue with the
+  unchanged clipboard-then-paste path of VT-DOM-602..612. The clipboard path MUST stay the
+  fallback for every outcome, so no transcript can be lost; the direct path MUST NOT raise a
+  user-visible error of its own.
+- **VT-DOM-614.** A direct insertion that delivered the whole text MUST be reported as
+  `TextOutputOutcome::direct`: a success in which the clipboard was not touched and
+  `OutputReport.paste` stays empty. `is_delivered(direct)` MUST be true.
+- **VT-DOM-615.** A partial direct insertion (`InsertResult::is_partial()`) MUST write the
+  clipboard, MUST NOT inject the paste chord (a paste would duplicate the typed prefix) and MUST
+  end as `clipboard_only` with reason `direct_partial`. An insertion that typed no character MUST
+  fall back to the normal paste path.
+- **VT-DOM-616.** The direct path MUST be observable, because "the text did not land in the field"
+  and "the field was never recognised" otherwise look the same in the log. A partial delivery adds
+  the `reason` value `direct_partial`; every report that carries diagnostics MUST also carry the
+  `direct` note, one of `not_attempted`, `refused`, `partial`, `skipped_no_target`,
+  `skipped_read_only`, `skipped_unknown`, `probe_timeout`, `executor_unavailable`. A report with
+  automatic pasting off keeps `direct = not_attempted` and MUST NOT run the probe (VT-DOM-617).
+- **VT-DOM-617.** With `directInsert` off, and whenever automatic pasting is off, the probe MUST
+  NOT be consulted and the behaviour MUST be exactly VT-DOM-602..612.
+- **VT-DOM-618.** A paste chord MUST be confirmed by reading the focused field back
+  (`platform::FocusedTextField`, VT-PLT-516), never by the return value of the injection: measured
+  2026-10-19, a Windows Terminal window accepted `Ctrl+V` and showed nothing while the delivery
+  still reported `pasted`, and the user was told nothing. When the field can be read, the transcript
+  (its whitespace-insensitive tail, `kPasteConfirmTailUnits` characters, retried
+  `kPasteConfirmAttempts` times `kPasteConfirmInterval` apart) MUST be seen there. "Not seen" is not
+  "failed": the check MUST distinguish three states, because an unreadable field (a plugin editor UI
+  Automation cannot see - measured 2026-10-19 in a JetBrains plugin) is not evidence that the chord
+  did nothing, and an alarm there would fire on a working paste. Only a field that was read more than
+  once and stayed empty is a proven failure: it MUST end as `clipboard_only` with reason
+  `paste_unconfirmed` and the user MUST be told the transcript is on the clipboard (Windows: a tray
+  notification, `ui_text` keys `k228`/`k229` in both languages). Everything else MUST stay
+  `pasted`, with the reason `pasted_unverified` when the confirmation could not be observed, so the
+  log keeps the distinction without alarming the user. One refinement belongs to the unobservable
+  case: when the foreground window holds no text-capable element at all
+  (`FocusedTextField::has_text_input_in_foreground_window()`, VT-PLT-518), nothing could have
+  received the paste, so that IS a proven failure and MUST be reported like one (reason
+  `paste_unconfirmed`, the user told the transcript is on the clipboard). Measured 2026-10-19: a
+  dictation on the desktop was silently lost, while a JetBrains plugin - which does hold a field, just
+  an unreadable one - must stay silent. A platform whose reader reports `is_supported() == false` MUST keep the pre-existing
+  behaviour: the domain MUST NOT invent an unconfirmed verdict it cannot observe (the Linux stage has
+  no accessibility reader — AT-SPI2 is researched, not implemented).
 - **G-2.** `clipboard_busy` is declared but never produced; `paste_failed` is only a default.
   Which reasons are contractual is not pinned by a test.
 

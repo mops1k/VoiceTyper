@@ -12,7 +12,7 @@ struct Entry {
 };
 
 /// One row per UiKey, in the same order as the enum.
-constexpr std::array<Entry, 226> kTexts{{
+constexpr std::array<Entry, 230> kTexts{{
     Entry{" мс", " ms"},
     Entry{"%1 (недоступен)", "%1 (unavailable)"},
     Entry{"%1 · Скорость: %2 · Качество: %3", "%1 · Speed: %2 · Quality: %3"},
@@ -309,6 +309,14 @@ constexpr std::array<Entry, 226> kTexts{{
     Entry{"VoiceTyper — %1", "VoiceTyper — %1"},
     Entry{"Доступно обновление VoiceTyper", "A VoiceTyper update is available"},
     Entry{"Открыть", "Open"},
+    Entry{"Писать текст прямо в поле", "Type straight into the field"},
+    Entry{"Если поле ввода распознано, текст печатается в него, а буфер обмена не меняется. "
+          "Иначе используется вставка через буфер.",
+        "When the text field is recognised, the transcript is typed into it and the clipboard keeps "
+        "its content. Otherwise the clipboard paste is used."},
+    Entry{"Текст в буфере обмена", "The transcript is on the clipboard"},
+    Entry{"Вставка не подтвердилась: нажмите %1 в нужном окне.",
+        "The paste was not confirmed: press %1 in the target window."},
 }};
 
 } // namespace

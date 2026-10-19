@@ -270,4 +270,33 @@ Result<std::uint64_t> PortableFileSystem::available_space(const std::filesystem:
     return static_cast<std::uint64_t>(space.available);
 }
 
+TextTargetInfo PortableTextTargetProbe::probe()
+{
+    // VT-PLT-512: no platform probe exists here, and the honest answer is
+    // `unknown` rather than `none` - the caller falls back to the clipboard and
+    // the transcript cannot be lost.
+    TextTargetInfo info;
+    info.kind = TextTargetKind::unknown;
+    info.reason = "unsupported_platform";
+    return info;
+}
+
+InsertResult PortableDirectTextInjector::insert(std::string_view, const CancellationToken&)
+{
+    InsertResult result;
+    result.status = Status::failure(ErrorCode::unavailable,
+                                   "direct insertion has no backend on this platform");
+    return result;
+}
+
+bool PortableFocusedTextField::read_caret_tail(std::size_t, std::string*)
+{
+    return false;
+}
+
+bool PortableFocusedTextField::read_value(std::string*)
+{
+    return false;
+}
+
 } // namespace voicetyper::platform

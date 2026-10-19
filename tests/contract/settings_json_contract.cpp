@@ -13,10 +13,10 @@
 namespace {
 
 static_assert(
-    voicetyper::domain::kAppSettingsPropertyCount == 27,
+    voicetyper::domain::kAppSettingsPropertyCount == 28,
     "settings.json schema changed: the property contract is frozen in settings.hpp "
     "(21 .NET properties + the C++-only gigaamModelSize, bestOf, fillerWordsLevel, "
-    "fillerWords, cleanupModel and cleanupPrompt extensions)");
+    "fillerWords, cleanupModel, cleanupPrompt and directInsert extensions)");
 
 int failures = 0;
 
@@ -69,11 +69,16 @@ std::string with_cpp_only_lines(const std::string& legacy, std::string_view giga
         "  \"gigaamModelSize\": \"" + std::string(gigaam_value) + "\",\r\n");
     const auto with_best_of = insert_line_after(with_gigaam, "\"temperature\":",
         "  \"bestOf\": " + std::to_string(best_of_value) + ",\r\n");
+    // directInsert sits right after hideOnFocusLoss in the serializer's order, and
+    // the legacy documents never carry it, so every expectation built by this
+    // helper gains the default line here.
+    const auto with_direct_insert = insert_line_after(with_best_of, "\"hideOnFocusLoss\":",
+        "  \"directInsert\": true,\r\n");
 
     // microphoneDeviceId is the fixture's last property and therefore carries no
     // trailing comma; the appended tail starts with one, and is inserted before
     // the CR of that line's CRLF so the closing brace keeps its own line.
-    auto text = with_best_of;
+    auto text = with_direct_insert;
     const auto anchor_pos = text.find("\"microphoneDeviceId\":");
     if (anchor_pos == std::string::npos) {
         return text;
@@ -132,6 +137,8 @@ void check_defaults()
         "a legacy document without the C++-only property keeps the default GigaAM quant");
     check(loaded.settings.best_of == kDefaultBestOf,
         "a legacy document without bestOf keeps the default candidate count");
+    check(loaded.settings.direct_insert,
+        "a legacy document without directInsert keeps direct delivery on");
     check(!loaded.settings.microphone_device_id.has_value(), "default microphone id is null");
 }
 
@@ -158,6 +165,8 @@ void check_all_fields()
     check(value.start_with_windows && value.start_minimized, "startup flags round-trip");
     check(value.theme == AppTheme::dark, "theme round-trips");
     check(value.hide_on_focus_loss, "hide on focus loss round-trips");
+    check(value.direct_insert,
+        "the C++-only directInsert defaults to on when the .NET fixture lacks it");
     check(value.app_language == AppLanguage::en, "app language round-trips");
     check(value.noise_reduction_enabled, "noise reduction round-trips");
     check(value.temperature == 0.7, "temperature round-trips");

@@ -6,7 +6,7 @@
 
 <p align="center"><b>Speech to text on a hotkey — entirely on your own computer.</b></p>
 
-<p align="center">Press the hotkey, speak, and the text lands in the clipboard and pastes itself into the active field.</p>
+<p align="center">Press the hotkey, speak, and the text is typed into the field your caret is in. The clipboard is left alone — it stays yours, and pasting through it is the fallback for the fields that cannot be recognised.</p>
 
 <p align="center"><a href="README.ru.md">Русский</a> · <b>English</b></p>
 
@@ -25,7 +25,7 @@
 **Dictation**
 - A global hotkey that works in any application, even when the window is not focused.
 - Three recording modes: hold (push-to-talk), toggle, and automatic stop on silence with a configurable threshold.
-- The recognised text is pasted into the active field — or you can turn that off and use the clipboard only.
+- The recognised text is typed straight into the input field, leaving the clipboard untouched; when the field cannot be recognised, the text goes to the clipboard and is pasted. Direct typing can be switched off to use the clipboard only.
 - The combination is captured by clicking: press "Record" and type the gesture you want; Escape cancels.
 
 **Recognition**

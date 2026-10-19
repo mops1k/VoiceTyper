@@ -998,6 +998,26 @@ if(VOICETYPER_BUILD_TESTS)
         PASS_REGULAR_EXPRESSION "platform-contract-smoke: OK"
     )
 
+    # Direct delivery (VT-PLT-506..513): the Windows probe predicate table as
+    # measured on 2026-10-16 (tools/focus-spike.md), plus the portable no-op that
+    # keeps a probe-less host on the clipboard-then-paste path (VT-PLT-512). It is
+    # deliberately portable: the predicate is standard C++ and the header carries
+    # no <windows.h>, so the table is checked on every host, not only on Windows.
+    add_executable(voicetyper-text-target-contract EXCLUDE_FROM_ALL
+        tests/contract/text_target_contract.cpp
+    )
+    target_link_libraries(voicetyper-text-target-contract
+        PRIVATE
+            voicetyper_domain
+            voicetyper_platform
+            voicetyper_portable_runtime
+    )
+    voicetyper_set_warnings(voicetyper-text-target-contract)
+    add_test(NAME text-target-contract COMMAND voicetyper-text-target-contract)
+    set_tests_properties(text-target-contract PROPERTIES
+        PASS_REGULAR_EXPRESSION "text-target-contract: OK"
+    )
+
     add_executable(voicetyper-executor-contract EXCLUDE_FROM_ALL
         tests/contract/executor_contract.cpp
     )
@@ -1346,8 +1366,8 @@ endif()
 # Appended and WIN32-only, so a Linux/macOS configure never sees these sources
 # and the file's existing target order is untouched. src/platform/windows is the
 # backend layer behind src/platform/api/{clock,clipboard,paste,executor,
-# file_system,logger}.hpp: every one of the six classes implements an interface
-# that already exists and is already contract-tested portably, so this block
+# file_system,logger,text_target}.hpp: every one of the classes implements an
+# interface that already exists and is contract-tested portably, so this block
 # adds a platform binding and no new contract surface.
 #
 # The headers stay standard-C++20 with no <windows.h>, exactly like
@@ -1358,7 +1378,15 @@ endif()
 #                OpenInputDesktop/CloseDesktop for the paste capability probe;
 #   * advapi32 - OpenProcessToken/GetTokenInformation for the read-only paste
 #                integrity probe that turns the UAC case into permission_denied
-#                instead of an opaque SendInput failure.
+#                instead of an opaque SendInput failure (win32_text_target.cpp
+#                reads the same integrity levels before it types);
+#   * ole32, oleaut32, uuid - COM behind Win32TextTargetProbe: CoCreateInstance
+#                for CLSID_CUIAutomation, the VARIANT marshalling of the
+#                property reads, and the interface/class GUIDs (uuid). The UI
+#                Automation *import* library is deliberately not linked: the
+#                IUIAutomation interfaces are pure vtables and the GUIDs come
+#                from uuid, while the Qt-bundled MinGW 13.1 does not ship
+#                libuiautomationcore.a at all (verified 2026-10-16).
 # kernel32 (QPC, FILETIME, MoveFileExW, GetDiskFreeSpaceExW) is linked by default.
 # ---------------------------------------------------------------------------
 if(WIN32)
@@ -1369,6 +1397,7 @@ if(WIN32)
         src/platform/windows/win32_file_system.cpp
         src/platform/windows/win32_logger.cpp
         src/platform/windows/win32_paste.cpp
+        src/platform/windows/win32_text_target.cpp
     )
     target_link_libraries(voicetyper_platform_win32
         PUBLIC
@@ -1378,7 +1407,10 @@ if(WIN32)
             voicetyper_core_support
         PRIVATE
             advapi32
+            ole32
+            oleaut32
             user32
+            uuid
     )
     voicetyper_set_warnings(voicetyper_platform_win32)
 
@@ -1626,6 +1658,7 @@ add_custom_target(voicetyper-tests
         voicetyper-ui-status-overlay-test
         voicetyper-settings-presenter-contract
         voicetyper-text-output-contract
+        voicetyper-text-target-contract
         voicetyper-asr-lifecycle-contract
         voicetyper-native-engine-registry-contract
         voicetyper-model-store-contract

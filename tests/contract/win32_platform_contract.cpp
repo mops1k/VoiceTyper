@@ -46,6 +46,7 @@
 #include "platform/windows/win32_file_system.hpp"
 #include "platform/windows/win32_logger.hpp"
 #include "platform/windows/win32_paste.hpp"
+#include "platform/windows/win32_text_target.hpp"
 
 #if !defined(_WIN32)
 #error "this contract test is Windows-only; the CMake target is guarded on WIN32"
@@ -79,11 +80,14 @@ using voicetyper::domain::ErrorCode;
 using voicetyper::domain::Status;
 using voicetyper::platform::Win32Clipboard;
 using voicetyper::platform::Win32Clock;
+using voicetyper::platform::Win32DirectTextInjector;
 using voicetyper::platform::Win32Executor;
 using voicetyper::platform::Win32FileSystem;
 using voicetyper::platform::Win32FileWriteStream;
+using voicetyper::platform::Win32FocusedTextField;
 using voicetyper::platform::Win32Logger;
 using voicetyper::platform::Win32PasteSimulator;
+using voicetyper::platform::Win32TextTargetProbe;
 
 int failures = 0;
 int checks = 0;
@@ -1011,6 +1015,39 @@ void test_clipboard_and_paste()
 /// and turns "the transcript reached the clipboard but nothing was pasted" into an
 /// assertion - that report came from the target machine, and a focused edit
 /// control is the only way to see it in a test.
+/// Windows refuses `SetForegroundWindow` while another process owns the foreground, and the typing
+/// sections cannot run without a focused control we own. Attaching to that thread's input queue is
+/// documented for exactly this. This is test scaffolding: the production path takes the foreground
+/// as it finds it.
+void take_foreground(HWND frame)
+{
+    const HWND current = ::GetForegroundWindow();
+    const DWORD other = (current != nullptr && current != frame)
+        ? ::GetWindowThreadProcessId(current, nullptr)
+        : 0;
+    const DWORD self = ::GetCurrentThreadId();
+    const bool attached =
+        other != 0 && other != self && ::AttachThreadInput(other, self, TRUE) != 0;
+    ::ShowWindow(frame, SW_SHOW);
+    ::BringWindowToTop(frame);
+    ::SetForegroundWindow(frame);
+    if (attached) {
+        ::AttachThreadInput(other, self, FALSE);
+    }
+    if (::GetForegroundWindow() != frame) {
+        // SetForegroundWindow is also refused when the previous foreground window no longer
+        // exists (a destroyed probe frame) or when the shell holds the foreground lock. The
+        // shell's own switch entry point is what Alt+Tab uses and it still works there;
+        // measured 2026-10-19, the reader section could not take the foreground after the
+        // paste section destroyed its window without this fallback.
+        ::SwitchToThisWindow(frame, TRUE);
+    }
+}
+
+/// How much of the field the paste confirmation asks for. The test uses the shipped
+/// constant's value so a change of the bound at least gets noticed here.
+constexpr std::size_t kPasteReaderUnits = 32;
+
 void test_paste_injection()
 {
     section("paste injection");
@@ -1052,8 +1089,7 @@ void test_paste_injection()
     check(edit != nullptr, "the probe edit control exists");
 
     if (edit != nullptr) {
-        ::ShowWindow(frame, SW_SHOW);
-        ::SetForegroundWindow(frame);
+        take_foreground(frame);
         ::SetFocus(edit);
         bool foreground = false;
         for (int attempt = 0; attempt < 40 && !foreground; ++attempt) {
@@ -1098,11 +1134,485 @@ void test_paste_injection()
             "the pasted text really landed in the focused edit control");
         note(observed.empty() ? "the edit control stayed empty after SendInput"
                               : "the edit control received the clipboard text");
+
         ::DestroyWindow(frame);
         pump();
     }
 
     section_done("paste injection");
+}
+
+/// The field reader that confirms a paste (VT-PLT-516, VT-DOM-618). It gets its own
+/// section and its own thread: production calls it on the delivery thread, and a UI
+/// Automation client left on this thread would talk to the same provider the direct
+/// typing section reads through minutes later.
+void test_field_reader()
+{
+    section("field reader");
+    Win32FocusedTextField reader;
+    check(reader.is_supported(), "the field reader is present on Windows");
+
+    const wchar_t* class_name = L"VoiceTyperReaderProbeFrame";
+    WNDCLASSW window_class {};
+    window_class.lpfnWndProc = ::DefWindowProcW;
+    window_class.hInstance = ::GetModuleHandleW(nullptr);
+    window_class.lpszClassName = class_name;
+    if (::RegisterClassW(&window_class) == 0 && ::GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
+        skip("field reader", "the probe window class could not be registered");
+        section_done("field reader");
+        return;
+    }
+
+    HWND frame = ::CreateWindowExW(WS_EX_TOOLWINDOW, class_name, L"VoiceTyper reader probe",
+        WS_OVERLAPPEDWINDOW, 120, 120, 420, 180, nullptr, nullptr, window_class.hInstance, nullptr);
+    if (frame == nullptr) {
+        skip("field reader", "the probe window could not be created");
+        section_done("field reader");
+        return;
+    }
+    // A RichEdit, like the direct typing section: it exposes a text pattern, so the
+    // reader is exercised through the caret-anchored tail it uses in production.
+    if (::LoadLibraryW(L"Msftedit.dll") == nullptr) {
+        ::DestroyWindow(frame);
+        skip("field reader", "Msftedit.dll is not available for the RichEdit target");
+        section_done("field reader");
+        return;
+    }
+    HWND edit = ::CreateWindowExW(0, L"RICHEDIT50W", L"",
+        WS_CHILD | WS_VISIBLE | ES_LEFT | ES_MULTILINE | ES_AUTOVSCROLL | WS_VSCROLL, 10, 10, 380, 120,
+        frame, nullptr, window_class.hInstance, nullptr);
+    check(edit != nullptr, "the probe rich edit control exists");
+
+    if (edit != nullptr) {
+        take_foreground(frame);
+        ::SetFocus(edit);
+        bool foreground = false;
+        for (int attempt = 0; attempt < 40 && !foreground; ++attempt) {
+            MSG message {};
+            while (::PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE) != 0) {
+                ::TranslateMessage(&message);
+                ::DispatchMessageW(&message);
+            }
+            if (::GetForegroundWindow() == frame) {
+                foreground = true;
+                break;
+            }
+            ::Sleep(25);
+        }
+        if (!foreground) {
+            ::DestroyWindow(frame);
+            skip("field reader", "the probe window could not take the foreground");
+            section_done("field reader");
+            return;
+        }
+
+        // Set the text directly: this section is about the reader, not about delivery.
+        // The caret then has to be put after the text, because the reader asks for what
+        // stands BEFORE the caret - a fresh control leaves it at the start, which reads as
+        // an empty tail and would test nothing.
+        const std::wstring sample = L"Хвост проверки поля: reader tail 123";
+        ::SetWindowTextW(edit, sample.c_str());
+        ::SendMessageW(edit, EM_SETSEL, static_cast<WPARAM>(sample.size()),
+            static_cast<LPARAM>(sample.size()));
+        for (int attempt = 0; attempt < 20; ++attempt) {
+            MSG message {};
+            while (::PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE) != 0) {
+                ::TranslateMessage(&message);
+                ::DispatchMessageW(&message);
+            }
+            ::Sleep(20);
+        }
+        // The caret sits where the target put it; the reader asks for the tail before
+        // the caret, so the check compares against what the control itself reports.
+        std::string tail;
+        std::string whole;
+        bool tail_readable = false;
+        bool value_readable = false;
+        for (int attempt = 0; attempt < 6 && !tail_readable && !value_readable; ++attempt) {
+            if (attempt > 0) {
+                // The foreground can move while the section runs (measured 19.10.2026 on a
+                // live desktop: it was taken by a DWM window in the middle of a run), and
+                // the reader reads the *focused* element, so the target is brought back
+                // instead of assuming it never left.
+                take_foreground(frame);
+                ::SetFocus(edit);
+                for (int spin = 0; spin < 10 && ::GetForegroundWindow() != frame; ++spin) {
+                    ::Sleep(20);
+                }
+            }
+            {
+                std::thread readback([&] {
+                    tail_readable = reader.read_caret_tail(kPasteReaderUnits, &tail);
+                    value_readable = !tail_readable && reader.read_value(&whole);
+                });
+                readback.join();
+            }
+            if (!tail_readable && !value_readable) {
+                voicetyper::platform::Win32TextTargetProbe probe;
+                const auto info = probe.probe();
+                note(("reader retry: probe says " + std::string(voicetyper::platform::text_target_kind_name(info.kind))
+                    + "/" + std::string(info.reason)).c_str());
+                ::Sleep(120);
+            }
+        }
+        // Decisive for a red run: whose window does the system consider focused.
+        {
+            char line[160] {};
+            const HWND focus = ::GetFocus();
+            GUITHREADINFO info {};
+            info.cbSize = sizeof(info);
+            const DWORD thread = ::GetWindowThreadProcessId(::GetForegroundWindow(), nullptr);
+            const bool gui_ok = thread != 0 && ::GetGUIThreadInfo(thread, &info) != 0;
+            const HWND foreground = ::GetForegroundWindow();
+            wchar_t foreground_class[64] {};
+            ::GetClassNameW(foreground, foreground_class, static_cast<int>(std::size(foreground_class)));
+            DWORD foreground_pid = 0;
+            ::GetWindowThreadProcessId(foreground, &foreground_pid);
+            char foreground_class_utf8[128] {};
+            ::WideCharToMultiByte(CP_UTF8, 0, foreground_class, -1, foreground_class_utf8,
+                static_cast<int>(std::size(foreground_class_utf8)), nullptr, nullptr);
+            std::snprintf(line, std::size(line), "focus: GetFocus=%s hwndFocus=%s fg=%s pid=%lu us=%d",
+                focus == edit ? "edit" : (focus == frame ? "frame" : "other"),
+                gui_ok ? (info.hwndFocus == edit ? "edit" : (info.hwndFocus == frame ? "frame" : "other"))
+                       : "unread",
+                foreground_class_utf8, static_cast<unsigned long>(foreground_pid),
+                foreground_pid == ::GetCurrentProcessId() ? 1 : 0);
+            note(line);
+        }
+        const bool seen = (tail_readable && tail.find("reader tail 123") != std::string::npos)
+            || (value_readable && whole.find("reader tail 123") != std::string::npos);
+        if (!seen && ::GetForegroundWindow() != frame) {
+            // The reader reads the *focused* element, so a desktop that keeps the foreground
+            // elsewhere makes the section unable to observe anything - skipping is honest,
+            // failing would claim the reader is broken (measured 19.10.2026: a DWM window
+            // held the foreground on a live desktop).
+            ::DestroyWindow(frame);
+            skip("field reader", "another window held the foreground while the reader ran");
+            section_done("field reader");
+            return;
+        }
+        check(seen, "the reader sees the text a control holds");
+        note(tail_readable ? ("reader tail: " + tail).c_str()
+                           : (value_readable ? ("reader value: " + whole).c_str()
+                                             : "the reader could not read the control"));
+
+        // A window with neither a text nor a value pattern: the honest "cannot tell"
+        // the domain turns into clipboard_only instead of claiming a paste.
+        ::SetFocus(frame);
+        std::string frame_tail;
+        std::string frame_value;
+        bool frame_tail_readable = true;
+        bool frame_value_readable = true;
+        {
+            std::thread readback([&] {
+                frame_tail_readable = reader.read_caret_tail(kPasteReaderUnits, &frame_tail);
+                frame_value_readable = reader.read_value(&frame_value);
+            });
+            readback.join();
+        }
+        check(!frame_tail_readable && !frame_value_readable,
+            "a window with no text capability cannot confirm a paste");
+
+        ::DestroyWindow(frame);
+    }
+
+    section_done("field reader");
+}
+
+/// Wide to UTF-8, so the injector receives the same input the delivery path feeds it.
+std::string to_utf8(std::wstring_view wide)
+{
+    if (wide.empty()) {
+        return {};
+    }
+    const int needed = ::WideCharToMultiByte(CP_UTF8, 0, wide.data(), static_cast<int>(wide.size()),
+        nullptr, 0, nullptr, nullptr);
+    std::string out(static_cast<std::size_t>(needed), '\0');
+    ::WideCharToMultiByte(CP_UTF8, 0, wide.data(), static_cast<int>(wide.size()), out.data(), needed,
+        nullptr, nullptr);
+    return out;
+}
+
+/// Code points of a slice, so a diagnostic note can show what really arrived.
+std::string codepoints(std::wstring_view text, std::size_t from, std::size_t count)
+{
+    std::string out;
+    for (std::size_t index = from; index < text.size() && index < from + count; ++index) {
+        char item[16] {};
+        std::snprintf(item, std::size(item), "%04X ", static_cast<unsigned>(text[index]));
+        out += item;
+    }
+    return out;
+}
+
+/// Direct typing into a real focused control (VT-PLT-510, VT-PLT-511, VT-PLT-514).
+///
+/// The first version of the backend slept 2 ms between characters. Measured on 2026-10-16 that
+/// sleep really cost 15.6 ms - the Windows timer granularity - while one character costs 0.65-0.75
+/// ms as an event pair, so the pause was removed and a transcript now goes out as ordered bursts.
+/// `SendInput`'s return value only counts events it accepted, so the delivery can only be proven by
+/// reading the control's text back: that is exactly what this section does, including the 300-unit
+/// burst the removed pause was supposed to protect.
+void test_direct_typing()
+{
+    section("direct typing");
+    Win32DirectTextInjector injector;
+    if (!injector.is_supported()) {
+        skip("direct typing", "the direct injector reports no support on this host");
+        section_done("direct typing");
+        return;
+    }
+
+    const auto pump = [] {
+        MSG message {};
+        while (::PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE) != 0) {
+            ::TranslateMessage(&message);
+            ::DispatchMessageW(&message);
+        }
+    };
+
+    const wchar_t* class_name = L"VoiceTyperTypingProbeFrame";
+    WNDCLASSW window_class {};
+    window_class.lpfnWndProc = ::DefWindowProcW;
+    window_class.hInstance = ::GetModuleHandleW(nullptr);
+    window_class.lpszClassName = class_name;
+    if (::RegisterClassW(&window_class) == 0 && ::GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
+        skip("direct typing", "the probe window class could not be registered");
+        section_done("direct typing");
+        return;
+    }
+
+    HWND frame = ::CreateWindowExW(WS_EX_TOOLWINDOW, class_name, L"VoiceTyper typing probe",
+        WS_OVERLAPPEDWINDOW, 80, 80, 420, 180, nullptr, nullptr, window_class.hInstance, nullptr);
+    if (frame == nullptr) {
+        skip("direct typing", "the probe window could not be created");
+        section_done("direct typing");
+        return;
+    }
+    // ES_AUTOVSCROLL/WS_VSCROLL are not decoration: an edit control without them silently discards
+    // the text that does not fit its visible area, while SendInput still reports every event as
+    // accepted. Measured 2026-10-16 in this very 380x110 control: a 300-unit burst arrived as 279
+    // units and looked exactly like a backend losing characters, while the same burst into a control
+    // that may scroll arrived complete (300/300, and 800/800 for the long case).
+    // A RichEdit, not a plain EDIT: it is the class Notepad's own editor is built on, it exposes a
+    // text pattern (so the delivery check reads a caret-anchored tail instead of the whole value,
+    // which costs a legacy EDIT about 10 ms per character), and it is the control the 2026-10-16
+    // regression was about.
+    if (::LoadLibraryW(L"Msftedit.dll") == nullptr) {
+        ::DestroyWindow(frame);
+        skip("direct typing", "Msftedit.dll is not available for the RichEdit target");
+        section_done("direct typing");
+        return;
+    }
+    HWND edit = ::CreateWindowExW(0, L"RICHEDIT50W", L"",
+        WS_CHILD | WS_VISIBLE | ES_LEFT | ES_MULTILINE | ES_AUTOVSCROLL | WS_VSCROLL, 10, 10, 380, 110,
+        frame, nullptr, window_class.hInstance, nullptr);
+    check(edit != nullptr, "the typing probe edit control exists");
+
+    if (edit != nullptr) {
+        take_foreground(frame);
+        ::SetFocus(edit);
+        bool foreground = false;
+        for (int attempt = 0; attempt < 40 && !foreground; ++attempt) {
+            pump();
+            if (::GetForegroundWindow() == frame) {
+                foreground = true;
+                break;
+            }
+            ::Sleep(25);
+        }
+
+        if (!foreground) {
+            ::DestroyWindow(frame);
+            skip("direct typing",
+                "the probe window could not take the foreground, so typing has no owned target");
+            section_done("direct typing");
+            return;
+        }
+
+        // Injected input is processed asynchronously by the target's message loop, so the control
+        // is polled until its text stops changing. A single read right after insert() returns can
+        // catch the tail still sitting in the input queue (measured 2026-10-16: one immediate read
+        // reported 279 of 300 units, and the control held all 300 once it had drained its queue).
+        const auto wait_until_stable = [&] {
+            std::wstring previous;
+            int stable = 0;
+            for (int attempt = 0; attempt < 150 && stable < 5; ++attempt) {
+                pump();
+                wchar_t buffer[4096] {};
+                const int length = ::GetWindowTextW(edit, buffer, static_cast<int>(std::size(buffer)));
+                std::wstring current;
+                if (length > 0) {
+                    current.assign(buffer, static_cast<std::size_t>(length));
+                }
+                if (current == previous) {
+                    ++stable;
+                } else {
+                    stable = 0;
+                }
+                previous = std::move(current);
+                ::Sleep(20);
+            }
+            return previous;
+        };
+        const auto clear_edit = [&] {
+            ::SetWindowTextW(edit, L"");
+            pump();
+        };
+
+        // In production the delivery runs on the input-owning thread (the executor's own thread), not
+        // on the thread that owns the window, and the check reads the field through UI Automation.
+        // The test therefore delivers from a worker while the main thread keeps pumping: doing it
+        // inline would make this thread both the provider's owner and its caller.
+        const auto deliver = [&](const std::wstring& text,
+                                 const voicetyper::domain::CancellationToken& token) {
+            voicetyper::platform::InsertResult delivered;
+            std::atomic<bool> finished {false};
+            const auto started = std::chrono::steady_clock::now();
+            std::thread worker([&] {
+                delivered = injector.insert(to_utf8(text), token);
+                finished = true;
+            });
+            while (!finished.load()) {
+                pump();
+                ::Sleep(5);
+            }
+            worker.join();
+            const double elapsed = std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - started).count();
+            {
+                char line[160] {};
+                std::snprintf(line, std::size(line), "delivery of %lu unit(s) took %.1f ms (via %s)",
+                    static_cast<unsigned long>(text.size()), elapsed,
+                    std::string(voicetyper::platform::insert_via_name(delivered.via)).c_str());
+                note(line);
+            }
+            return delivered;
+        };
+
+        // The foreground can move between the wait above and a delivery (a live desktop does
+        // that: 2026-10-19 a DWM window took it mid-section), and a delivery into somebody
+        // else's window is not a measurement. Re-take it, and skip rather than fail if the
+        // desktop refuses.
+        const auto ensure_foreground = [&] {
+            if (::GetForegroundWindow() == frame) {
+                return true;
+            }
+            take_foreground(frame);
+            for (int spin = 0; spin < 20 && ::GetForegroundWindow() != frame; ++spin) {
+                pump();
+                ::Sleep(25);
+            }
+            return ::GetForegroundWindow() == frame;
+        };
+
+        const voicetyper::domain::CancellationToken never_cancelled {};
+        const std::wstring sample = L"Привет, VoiceTyper! 123 — диктовка без паузы.";
+        clear_edit();
+        if (!ensure_foreground()) {
+            ::DestroyWindow(frame);
+            skip("direct typing", "the probe window lost the foreground before the first delivery");
+            section_done("direct typing");
+            return;
+        }
+        const DWORD clipboard_before = ::GetClipboardSequenceNumber();
+        const auto typed = deliver(sample, never_cancelled);
+        check(typed.status.is_ok(),
+            typed.status.is_ok()
+                ? "a real direct insertion reports success"
+                : ("a real direct insertion failed: " + typed.status.error().to_string()).c_str());
+        check(typed.typed == sample.size(), "the injector reports the whole sample as typed");
+        const std::wstring observed = wait_until_stable();
+        check(observed == sample, "the typed burst really landed in the focused edit control");
+        note(observed == sample ? "the edit control holds exactly the sample, Cyrillic and all"
+                                : "the edit control does not hold the sample");
+        check(::GetClipboardSequenceNumber() == clipboard_before, "direct typing leaves the clipboard alone");
+
+        // A token cancelled before the first character: the delivery must not start at all.
+        clear_edit();
+        voicetyper::domain::CancellationSource pre_cancelled;
+        pre_cancelled.request_cancellation();
+        const auto refused = deliver(sample, pre_cancelled.token());
+        check(refused.status.code() == ErrorCode::cancelled,
+            "a pre-cancelled delivery is reported as cancelled");
+        check(refused.typed == 0, "a pre-cancelled delivery types nothing");
+        check(wait_until_stable().empty(), "a pre-cancelled delivery leaves the control empty");
+
+        // The burst the removed pause was meant to protect: 300 units in one call chain.
+        std::wstring long_sample;
+        while (long_sample.size() < 300) {
+            long_sample += L"Проверка burst 0123456789; ";
+        }
+        long_sample.resize(300);
+        clear_edit();
+        if (!ensure_foreground()) {
+            ::DestroyWindow(frame);
+            skip("direct typing", "the probe window lost the foreground before the 300-unit delivery");
+            section_done("direct typing");
+            return;
+        }
+        const auto long_started = std::chrono::steady_clock::now();
+        const auto long_typed = deliver(long_sample, never_cancelled);
+        const double long_ms = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - long_started)
+                                   .count();
+        const std::wstring long_observed = wait_until_stable();
+        check(long_typed.status.is_ok(), "a 300-unit transcript is typed in one go");
+        check(long_observed == long_sample, "all 300 units arrive with no pause between characters");
+        {
+            std::size_t first_diff = 0;
+            while (first_diff < long_observed.size() && first_diff < long_sample.size()
+                && long_observed[first_diff] == long_sample[first_diff]) {
+                ++first_diff;
+            }
+            const bool prefix = long_observed.size() <= long_sample.size()
+                && long_sample.compare(0, long_observed.size(), long_observed) == 0;
+            char line[256] {};
+            std::snprintf(line, std::size(line),
+                "300-unit burst: received %lu, expected %lu, first difference at %lu, prefix=%s, %.1f ms (%.2f ms per unit)",
+                static_cast<unsigned long>(long_observed.size()),
+                static_cast<unsigned long>(long_sample.size()),
+                static_cast<unsigned long>(first_diff), prefix ? "yes" : "no", long_ms,
+                long_ms / 300.0);
+            note(line);
+            note(("received tail: " + codepoints(long_observed, 277, 24)).c_str());
+            note(("expected tail: " + codepoints(long_sample, 277, 24)).c_str());
+        }
+
+        // Cancellation in the middle (VT-PLT-511): whatever stops the delivery, `typed` must equal
+        // what the control really holds - that count is what keeps a fallback paste from
+        // duplicating a prefix.
+        clear_edit();
+        voicetyper::domain::CancellationSource source;
+        std::thread canceller([&source] {
+            std::this_thread::sleep_for(std::chrono::milliseconds{5});
+            source.request_cancellation();
+        });
+        const auto cancelled = deliver(long_sample, source.token());
+        canceller.join();
+        const std::wstring cancelled_observed = wait_until_stable();
+        check(cancelled.typed == cancelled_observed.size(),
+            "the reported 'typed' count equals what the control received");
+        if (cancelled.status.is_ok()) {
+            check(cancelled_observed == long_sample,
+                "the burst finished before the cancellation arrived");
+        } else {
+            // Posting is instant, so a cancellation either arrives before the first character or
+            // after the whole text: both shapes are honest, and neither may claim more than it sent.
+            check(cancelled.status.code() == ErrorCode::cancelled
+                    || cancelled.status.code() == ErrorCode::unavailable,
+                "a stopped delivery is reported as cancelled or unconfirmable");
+            check(cancelled.typed < long_sample.size(),
+                "a stopped delivery does not claim the whole transcript");
+            check(long_sample.compare(0, cancelled.typed, cancelled_observed) == 0,
+                "the control holds exactly the prefix the injector counted");
+        }
+
+        ::DestroyWindow(frame);
+        pump();
+    }
+
+    section_done("direct typing");
 }
 
 } // namespace
@@ -1122,6 +1632,8 @@ int main()
     test_executor();
     test_clipboard_and_paste();
     test_paste_injection();
+    test_field_reader();
+    test_direct_typing();
 
     check(scratch.remove(), "the scratch directory is removed at the end of the run");
 

@@ -827,6 +827,8 @@ SettingsLoadResult SettingsCodec::load(std::string_view json)
                 (void)detail::read_enum(value, field, AppSettings::defaults().theme, result.settings.theme, app_theme_from_wire, 3, result.diagnostics, error);
             } else if (detail::equals_ignore_ascii_case(key, "hideOnFocusLoss")) {
                 (void)detail::read_bool(value, field, result.settings.hide_on_focus_loss, result.diagnostics, error);
+            } else if (detail::equals_ignore_ascii_case(key, "directInsert")) {
+                (void)detail::read_bool(value, field, result.settings.direct_insert, result.diagnostics, error);
             } else if (detail::equals_ignore_ascii_case(key, "appLanguage")) {
                 (void)detail::read_enum(value, field, AppSettings::defaults().app_language, result.settings.app_language, app_language_from_wire, 2, result.diagnostics, error);
             } else if (detail::equals_ignore_ascii_case(key, "noiseReductionEnabled")) {
@@ -933,6 +935,7 @@ std::string SettingsCodec::serialize(const AppSettings& settings, std::string_vi
     detail::append_bool_field(output, "startMinimized", settings.start_minimized, line_ending);
     detail::append_enum_field(output, "theme", to_wire(settings.theme), line_ending);
     detail::append_bool_field(output, "hideOnFocusLoss", settings.hide_on_focus_loss, line_ending);
+    detail::append_bool_field(output, "directInsert", settings.direct_insert, line_ending);
     detail::append_enum_field(output, "appLanguage", to_wire(settings.app_language), line_ending);
     detail::append_bool_field(output, "noiseReductionEnabled", settings.noise_reduction_enabled, line_ending);
     detail::append_double_field(output, "temperature", settings.temperature, line_ending);

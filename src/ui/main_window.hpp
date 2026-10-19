@@ -575,6 +575,8 @@ private:
     ToggleSwitch* start_with_windows_ = nullptr;
     ToggleSwitch* start_minimized_ = nullptr;
     ToggleSwitch* hide_on_focus_loss_ = nullptr;
+    /// VT-DOM-613: type the transcript straight into the focused text field.
+    ToggleSwitch* direct_insert_ = nullptr;
     ToggleSwitch* condition_on_previous_text_ = nullptr;
     QTimer* autosave_ = nullptr;
     QTimer* refresh_ = nullptr;

@@ -16,6 +16,11 @@
 //     integrity than the focused window) makes SendInput fail; the correct
 //     outcome is an explicit clipboard-only state, not an error the user cannot
 //     act on, and never a silent success.
+//   * A transcript can also be typed straight into the focused text field
+//     (platform/api/text_target.hpp). That path — the preferred one when the
+//     probe recognises a text field — leaves the clipboard untouched and reports
+//     TextOutputOutcome::direct; everything above describes the fallback path
+//     (VT-DOM-613..617).
 //
 // Intent-parity note: the Linux branch of the .NET project inherited the same
 // rule — clipboard mandatory, injection best effort with an explicit
@@ -63,6 +68,10 @@ enum class TextOutputOutcome : std::uint8_t {
     clipboard_only = 2,
     /// The clipboard write itself failed; the transcript was not delivered.
     clipboard_failed = 3,
+    /// The transcript was typed straight into the focused text field and the
+    /// clipboard was deliberately not touched (VT-DOM-613/614). A success, and
+    /// the only outcome in which the user's clipboard survives a dictation.
+    direct = 4,
 };
 
 [[nodiscard]] constexpr std::string_view text_output_outcome_name(TextOutputOutcome outcome) noexcept
@@ -72,6 +81,7 @@ enum class TextOutputOutcome : std::uint8_t {
     case TextOutputOutcome::pasted: return "pasted";
     case TextOutputOutcome::clipboard_only: return "clipboard_only";
     case TextOutputOutcome::clipboard_failed: return "clipboard_failed";
+    case TextOutputOutcome::direct: return "direct";
     }
     return "unknown";
 }
@@ -80,7 +90,8 @@ enum class TextOutputOutcome : std::uint8_t {
 /// the condition that makes the operation a success.
 [[nodiscard]] constexpr bool is_delivered(TextOutputOutcome outcome) noexcept
 {
-    return outcome == TextOutputOutcome::pasted || outcome == TextOutputOutcome::clipboard_only;
+    return outcome == TextOutputOutcome::pasted || outcome == TextOutputOutcome::clipboard_only
+        || outcome == TextOutputOutcome::direct;
 }
 
 /// Injects a synthetic paste chord into the focused window.

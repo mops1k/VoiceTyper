@@ -2189,6 +2189,8 @@ void MainWindow::build_tabs()
         condition_on_previous_text_ = new ToggleSwitch(page);
         hide_on_focus_loss_ = new ToggleSwitch(page);
         hide_on_focus_loss_->setObjectName(QStringLiteral("hideOnFocusLossToggle"));
+        direct_insert_ = new ToggleSwitch(page);
+        direct_insert_->setObjectName(QStringLiteral("directInsertToggle"));
         silence_threshold_ = new QSpinBox(page);
         silence_threshold_->setObjectName(QStringLiteral("silenceThresholdSpin"));
         silence_threshold_->setRange(kSilenceThresholdMsMin, kSilenceThresholdMsMax);
@@ -2204,6 +2206,11 @@ void MainWindow::build_tabs()
 
         const auto behaviour_group = settings_group(content, UiKey::k118, UiKey::k119, language_);
         behaviour_group.rows->addWidget(setting_row(UiKey::k6, UiKey::k120, language_, auto_paste_, 0));
+        // Direct delivery sits right under the auto-paste switch it modifies: with
+        // it on, a recognised text field is typed into and the clipboard keeps its
+        // content (VT-DOM-613).
+        behaviour_group.rows->addWidget(
+            setting_row(UiKey::k226, UiKey::k227, language_, direct_insert_, 0));
         behaviour_group.rows->addWidget(setting_row(UiKey::k40, UiKey::k121, language_, condition_on_previous_text_, 0));
         behaviour_group.rows->addWidget(setting_row(UiKey::k28, UiKey::k122, language_, silence_threshold_));
         rows->addWidget(behaviour_group.card);
@@ -3804,6 +3811,7 @@ void MainWindow::bind_settings_to_controls()
     noise_reduction_->setChecked(settings.noise_reduction_enabled);
     condition_on_previous_text_->setChecked(settings.condition_on_previous_text);
     hide_on_focus_loss_->setChecked(settings.hide_on_focus_loss);
+    direct_insert_->setChecked(settings.direct_insert);
     start_with_windows_->setChecked(settings.start_with_windows);
     start_minimized_->setChecked(settings.start_minimized);
     silence_threshold_->setValue(settings.silence_threshold_ms);
@@ -3998,6 +4006,11 @@ void MainWindow::bind_settings_to_controls()
     connect(hide_on_focus_loss_, &QAbstractButton::toggled, this, [this](bool value) {
         presenter_.update(voicetyper::app::SettingsChange::behaviour, [value](domain::AppSettings& settings) {
             settings.hide_on_focus_loss = value;
+        });
+    });
+    connect(direct_insert_, &QAbstractButton::toggled, this, [this](bool value) {
+        presenter_.update(voicetyper::app::SettingsChange::behaviour, [value](domain::AppSettings& settings) {
+            settings.direct_insert = value;
         });
     });
     connect(start_with_windows_, &QAbstractButton::toggled, this, [this](bool value) {

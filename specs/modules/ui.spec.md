@@ -139,8 +139,10 @@ roots, the settings presenter and the Qt HTTP client.
 
 - **VT-UI-212.** **General** MUST offer: interface language (Русский/English), recognition
   language (Авто/Русский/English), recording mode (Push-to-talk/Toggle/VAD), auto-paste toggle,
-  "consider previous text" toggle, and the VAD silence threshold spin box `300..10000` ms with
-  the ` мс` suffix and a tooltip — plus a hint bar that substitutes the current record hotkey.
+  a "type straight into the field" toggle (`directInsert`, VT-DOM-613, on by default, with a hint
+  that the clipboard keeps its content), "consider previous text" toggle, and the VAD silence
+  threshold spin box `300..10000` ms with the ` мс` suffix and a tooltip — plus a hint bar that
+  substitutes the current record hotkey.
 - **VT-UI-213.** **Appearance** MUST offer three theme tiles in the order system/light/dark, a
   hide-on-focus-loss toggle, and a reset button that restores `theme` and `hide_on_focus_loss`
   from `AppSettings::defaults()`.

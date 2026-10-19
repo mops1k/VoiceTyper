@@ -53,6 +53,7 @@
 #include "platform/windows/win32_hotkeys.hpp"
 #include "platform/windows/win32_paste.hpp"
 #include "platform/windows/win32_startup.hpp"
+#include "platform/windows/win32_text_target.hpp"
 #include "platform/windows/windows_audio_capture.hpp"
 #include "platform/windows/windows_microphone.hpp"
 
@@ -504,6 +505,14 @@ int run(int argc, char** argv)
     // --- text output ---------------------------------------------------------
     platform::Win32Clipboard clipboard;
     platform::Win32PasteSimulator paste;
+    // Direct delivery (VT-DOM-613): the probe recognises a text field and the
+    // injector types into it, so a dictation leaves the clipboard alone whenever
+    // the field can be recognised.
+    platform::Win32TextTargetProbe focus_probe;
+    platform::Win32DirectTextInjector direct_injector;
+    // VT-PLT-516: the paste chord is only a request, so the reader is what lets the
+    // service tell a real paste from a window that accepted the chord and ignored it.
+    platform::Win32FocusedTextField field_reader;
     platform::Win32Executor ui_executor;
     // Every report a service hands back to the window must run on the interface
     // thread: the progress of an update download is delivered on a worker, and
@@ -516,18 +525,27 @@ int run(int argc, char** argv)
             &application, [task = std::move(task)] { task(); }, Qt::QueuedConnection);
     };
     domain::RetryingClipboard retrying(clipboard, clock);
-    domain::TextOutputService output(retrying, paste, clock, ui_executor);
+    domain::TextOutputService output(retrying, paste, focus_probe, direct_injector, field_reader, clock, ui_executor);
     // Why the text did or did not reach the document. "Pasted" and "only on the
     // clipboard because the focused window refused it" look identical in the UI,
     // and the target machine reported "it did not paste into the input" without
     // this line there was nothing to check it against.
-    output.set_report_sink([&logger](const domain::OutputReport& report) {
+    /// VT-DOM-618: tells the user the transcript is on the clipboard because the app
+    /// could not confirm the paste. Assigned once the tray exists.
+    std::function<void()> announce_clipboard_only;
+    output.set_report_sink([&logger, post_to_ui, &announce_clipboard_only](
+                               const domain::OutputReport& report) {
         const std::string_view outcome = platform::text_output_outcome_name(report.outcome);
         const std::string detail = (report.paste.has_value()
             ? (std::string(report.paste->reason) + " (injection_supported="
-                  + (report.paste->injection_supported ? "true" : "false") + ")")
+                  + (report.paste->injection_supported ? "true" : "false")
+                  + ", direct=" + std::string(report.paste->direct) + ")")
             : std::string())
-            + " duration_ms=" + std::to_string(report.duration_ms);
+            + " duration_ms=" + std::to_string(report.duration_ms)
+            + " probe_ms=" + std::to_string(report.probe_ms)
+            + " insert_ms=" + std::to_string(report.insert_ms)
+            + " paste_ms=" + std::to_string(report.paste_ms)
+            + " confirm_ms=" + std::to_string(report.confirm_ms);
         platform::LogLevel level = platform::LogLevel::info;
         if (report.outcome == platform::TextOutputOutcome::clipboard_failed) {
             level = platform::LogLevel::error;
@@ -535,6 +553,17 @@ int run(int argc, char** argv)
             level = platform::LogLevel::warn;
         }
         static_cast<void>(logger.write(level, "text output " + std::string(outcome), detail));
+        // VT-DOM-618: the text is on the clipboard and the app could not see it in
+        // the field, so the user has to be told where it is. Silence here is exactly
+        // what made the Windows Terminal case look like a lost dictation.
+        if (report.outcome == platform::TextOutputOutcome::clipboard_only && report.paste.has_value()
+            && report.paste->reason == "paste_unconfirmed") {
+            post_to_ui([&announce_clipboard_only] {
+                if (announce_clipboard_only) {
+                    announce_clipboard_only();
+                }
+            });
+        }
     });
 
     // --- capture -------------------------------------------------------------
@@ -901,8 +930,11 @@ int run(int argc, char** argv)
         status_channel->post(localized(ui::UiKey::k86));
     });
 
-    machine.set_options_provider([&presenter] {
+    machine.set_options_provider([&presenter, &output] {
         const auto& current = presenter.settings();
+        // Direct delivery is a live setting too (VT-DOM-617): read per delivery so
+        // the switch in the settings window takes effect on the next dictation.
+        output.set_direct_insert(current.direct_insert);
         audio::SessionOptions options;
         // The setting the Models page calls "noise reduction".
         options.noise_suppression = presenter.settings().noise_reduction_enabled;
@@ -1802,6 +1834,15 @@ int run(int argc, char** argv)
         }
         tray_icon.showMessage(localized(ui::UiKey::k224), localized(ui::UiKey::k67).arg(version),
             QSystemTrayIcon::Information, 10000);
+    };
+    // The unconfirmed paste is announced the same way: the transcript is safe, but the
+    // user has to press the chord themselves, so the balloon names the chord.
+    announce_clipboard_only = [&tray_icon] {
+        if (!QSystemTrayIcon::isSystemTrayAvailable()) {
+            return;
+        }
+        tray_icon.showMessage(localized(ui::UiKey::k228),
+            localized(ui::UiKey::k229).arg(QStringLiteral("Ctrl+V")), QSystemTrayIcon::Warning, 8000);
     };
     // A click on the balloon opens the settings window on «О программе», where «Скачать и
     // установить» is one press away (Alexander, 16.10.2026). The Windows tray backend emits

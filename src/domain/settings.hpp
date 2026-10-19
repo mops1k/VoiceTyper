@@ -280,7 +280,7 @@ inline constexpr std::string_view to_wire(CleanupModel value) noexcept
 
 /// Number of persisted properties, in declaration order. Golden fixtures assert
 /// this value; changing it is a schema change.
-inline constexpr std::size_t kAppSettingsPropertyCount = 27;
+inline constexpr std::size_t kAppSettingsPropertyCount = 28;
 
 /// Default hotkey that starts/stops recording.
 inline constexpr std::string_view kDefaultRecordHotkey = "Ctrl+Alt+Space";
@@ -365,6 +365,13 @@ struct AppSettings {
     /// requires an explicit product decision here; this contract only records
     /// that the value must round-trip through save/load unchanged.
     bool hide_on_focus_loss = false;
+    /// JSON: directInsert. Default true. C++-only extension (the legacy .NET
+    /// reader ignores it).
+    ///
+    /// The VT-DOM-613 switch: when on, the transcript is typed straight into the
+    /// focused text field whenever the probe recognises one, and the clipboard is
+    /// left alone; off means the delivery is always the clipboard-then-paste path.
+    bool direct_insert = true;
     /// JSON: appLanguage. Default "ru".
     AppLanguage app_language = AppLanguage::ru;
     /// JSON: noiseReductionEnabled. Default false.

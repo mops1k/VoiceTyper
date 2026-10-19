@@ -36,6 +36,7 @@
 | `PasteSimulator` | [api/paste.hpp](../../src/platform/api/paste.hpp) | `windows/win32_paste.*` | `linux/linux_paste.*` (ydotool) | `portable_runtime` |
 | `Paths` | [api/paths.hpp](../../src/platform/api/paths.hpp) | `domain::AppPaths` | `domain::AppPaths` + `domain::linux_app_path_roots` (XDG) | ✓ |
 | `StatusOverlay` | [api/status_overlay.hpp](../../src/platform/api/status_overlay.hpp) | `ui/status_overlay.*` (Qt) | `ui/status_overlay.*` (Qt, host-window on Wayland) | ✓ (offscreen in tests) |
+| `TextTargetProbe`, `DirectTextInjector` | [api/text_target.hpp](../../src/platform/api/text_target.hpp) | `windows/win32_text_target.*` (UI Automation probe + `SendInput` Unicode typing) | **none** (Windows-first stage, VT-PLT-512) | `portable_runtime` (no-op: probe `unknown`, insert `unavailable`) |
 | `Transcriber` | [api/transcriber.hpp](../../src/platform/api/transcriber.hpp) | `asr::*` | `asr::*` (Whisper, Parakeet, GigaAM) | ✓ (policy) |
 | `Tray` | [api/tray.hpp](../../src/platform/api/tray.hpp) | **none** (⚠ G-3: `ui/tray_controller.*` is a Qt class that does not inherit the port) | **none** (same) | — |
 | `UpdateService` | [api/updater.hpp](../../src/platform/api/updater.hpp) | **none** (⚠ G-3: `core::support::UpdateService` is its own class, not a `platform::UpdateService` subclass) | **none** (same; the install action replaces the running AppImage, VT-SYS-014) | ✓ (policy) |
@@ -270,6 +271,104 @@ implementation: `windows/win32_gamepad.*`.
   input to the foreground window; `is_injection_supported()` MUST report whether the backend can
   inject at all.
 - **VT-PLT-505.** Automatic pasting MUST be preceded by `kPasteDelay = 80 ms` (VT-DOM-603).
+- **VT-PLT-506.** `TextTargetProbe::probe()` MUST classify the focused UI element as
+  `editable | read_only | none | unknown` (`TextTargetKind`) and MUST report the `reason` that
+  produced the verdict (`text_pattern`, `control_type`, `value_pattern`, `password`,
+  `no_text_capability`, `unavailable`, ...). A backend that cannot answer MUST return `unknown`;
+  it MUST NOT report `editable` as a guess, and `unknown` MUST NOT be collapsed into `none`.
+- **VT-PLT-507.** The Windows probe MUST report `editable` only for a shape that was measured to
+  accept typing, and MUST stay conservative everywhere else, because a wrong `editable` types into
+  nothing (and, per VT-DOM-614, leaves the transcript neither in the field nor on the clipboard)
+  while a wrong `unknown` only costs a paste:
+  * `UIA_EditControlTypeId` → `editable`, unless `UIA_ValueIsReadOnlyPropertyId` is true
+    (`read_only`);
+  * `UIA_DocumentControlTypeId` → `editable` only together with a writable value pattern;
+    without one the verdict MUST be `unknown` (a plain page body is a document too);
+  * `UIA_TextControlTypeId` together with a text pattern → `editable` (a terminal);
+  * legacy role `ROLE_SYSTEM_TEXT` → `editable` unless `STATE_SYSTEM_READONLY` is set;
+  * a value pattern **alone** MUST NOT be `editable` and MUST be `none`: Explorer list and tree
+    items, tray buttons and Qt push buttons expose one (measured 2026-10-16,
+    [tools/focus-spike.md](../../tools/focus-spike.md));
+  * a text pattern on any other shape MUST be `unknown`, not `editable`;
+  * `UIA_IsPasswordPropertyId` MUST win over everything else: `read_only`.
+- **VT-PLT-508.** Every Windows probe query MUST be bounded by
+  `kTextTargetProbeTimeout = 2000 ms` (the `IUIAutomation2` connection and transaction timeouts),
+  and the probe MUST re-probe once after `kTextTargetReprobeDelay = 150 ms`, reporting the second
+  verdict when the two disagree: Chromium builds its accessibility tree while answering the first
+  query. The re-probe is a correction for the verdicts the first query cannot be trusted with
+  (`unknown`, `none`, `read_only`); a first verdict of `editable` is a positive answer and MUST NOT
+  pay the wait - measured 2026-10-19, the pause was 150 of the 165-206 ms the probe cost on every
+  dictation, and skipping it exactly where the first answer is already positive brought the probe to
+  15-56 ms without changing a single verdict in the live run (Notepad, Brave page field and
+  omnibox).
+- **VT-PLT-509.** `probe()` MUST be callable from a worker thread and MUST NOT require the
+  input-owning thread.
+- **VT-PLT-510.** `DirectTextInjector::insert(text, cancellation)` MUST deliver the text into the
+  focused element and MUST NOT touch the clipboard. The Windows backend MUST post one `WM_CHAR`
+  message per UTF-16 code unit to the control that owns the keyboard focus
+  (`GetGUIThreadInfo().hwndFocus`), so that no keyboard queue, no keyboard layout and no typematic
+  repeat takes part in the delivery, and a non-Latin transcript (Cyrillic) arrives as text.
+- **VT-PLT-511.** `insert()` MUST run on the input-owning thread, MUST stop on cancellation and
+  MUST report `InsertResult{status, typed}`: `permission_denied` when the focused window sits at a
+  higher integrity level (UIPI), `unavailable` when there is no backend or the target refused the
+  input, `cancelled` when the caller stopped the delivery. A failed status with `typed > 0` is a
+  partial delivery and MUST be reported as such, never as success.
+- **VT-PLT-512.** The portable backend MUST provide both interfaces as no-ops: `probe()` returns
+  `unknown` with reason `unsupported_platform`, `insert()` returns `unavailable` with `typed = 0`,
+  so every non-Windows platform keeps exactly the clipboard-then-paste path of VT-DOM-602..612.
+- **VT-PLT-513.** `TextOutputOutcome` MUST gain `direct` (value `4`): the transcript was typed into
+  the focused field and the clipboard was not touched. `text_output_outcome_name(direct)` MUST be
+  `"direct"` and `is_delivered(direct)` MUST be true (VT-DOM-614).
+- **VT-PLT-514.** A delivery MUST be confirmed by reading the target's text back, never by an API
+  return value: `SendInput` counts events the input stream accepted and `PostMessage` counts messages
+  queued, and neither says that a control stored the characters. Measured 2026-10-16: an `EDIT`
+  without `ES_AUTOVSCROLL` silently dropped 21 of a 300-unit burst, and a console window took all 49
+  posted messages while its buffer never changed. The check MUST read the field before and after and
+  MUST require the delivered text to be present in it.
+- **VT-PLT-515.** When the field cannot be read for the check, when the control refuses a posted
+  character, or when the posted text never appears in the field, `insert()` MUST fail while
+  delivering nothing: the caller's own fallback — the clipboard and a paste (VT-DOM-602..612) — then
+  delivers the transcript. It MUST report the path that carried the text through
+  `InsertResult::via` (VT-PLT-511 keeps `typed` honest). Measured 2026-10-16: posted `WM_CHAR`
+  delivered exactly and instantly in Notepad, in a Chromium page field and in the address bar, while
+  a console window ignored it completely, and the keyboard path alone needed a ~15.6 ms pause after
+  every single character to keep Notepad's editor correct (`sleep_for(2ms)` really sleeps 15.6 ms, a
+  same-process `timeBeginPeriod(1)` did not shorten it, real busy waits of 0.5–2 ms did not help, and
+  `VK_PACKET` re-derived characters through the keyboard layout and turned Cyrillic into Latin).
+
+- **VT-PLT-516.** `FocusedTextField` MUST read the focused element back for a caller that made the
+  delivery itself: `PasteSimulator::paste()` learns only that the input stream accepted the chord, and
+  measured 2026-10-19 a Windows Terminal window accepted `Ctrl+V` and showed nothing. The Windows
+  reader MUST return the bounded caret tail through `TextPattern` (`GetFocusedElement` →
+  `GetSelection` → collapse to the caret → `MoveEndpointByUnit` back over the requested characters) and
+  the whole `ValuePattern` value when no text pattern anchors the read, both as UTF-8, and MUST report
+  `is_supported() == true`; a field without either pattern is reported by the read returning false, not
+  by an empty string. The reader MUST NOT write, select or move the caret. Off Windows the portable
+  reader reports `is_supported() == false`, so the caller keeps its pre-existing verdict instead of
+  inventing one.
+- **VT-PLT-517.** The Windows injector MUST refuse a console target before posting anything: measured
+  2026-10-16 (legacy conhost) and 2026-10-19 (Windows Terminal), a console accepts every posted
+  `WM_CHAR` and changes nothing, so posting costs the whole verification budget (twelve reads over
+  about 240 ms) and can never pass the check. The target is a console when the focused control's window
+  class is `ConsoleWindowClass` or `CASCADIA_HOSTING_WINDOW_CLASS`, or when the UI Automation focused
+  element's class name is `TermControl`. The refusal is `unavailable` with `typed = 0`, so the caller's
+  clipboard path (VT-DOM-618) delivers and confirms.
+
+- **VT-PLT-518.** `FocusedTextField::has_text_input_in_foreground_window()` MUST answer whether the
+  foreground window holds at least one text-capable element, focused or not: the reader walks the
+  window's descendants bounded by `kTextInputSearchLimit = 12` candidates of control types `Edit`,
+  `Document` and `Text`, and reports true as soon as one of them offers a text or value pattern. The
+  search exists only to separate two unreadable cases that look alike - a window that cannot accept
+  text at all (measured 2026-10-19: a dictation on the desktop was lost silently) from a field that a
+  provider hides while the paste still works (the same day, a JetBrains plugin) - and MUST be called
+  only after a paste could not be read back. A backend that cannot answer MUST report true (stay
+  silent) instead of guessing; the portable no-op reports true.
+
+**Stage note (2026-10-16).** `VT-PLT-506..515` are the Windows-first stage of the direct-delivery
+plan: the Windows backend lands as `src/platform/windows/win32_text_target.*`, the no-op as part of
+`portable_runtime`, and there is deliberately no Linux backend in this stage (the Linux mechanisms
+— KWin's `activeClientSupportsTextInput`, AT-SPI2, an IBus engine commit — are researched and
+recorded, not implemented).
 
 ---
 

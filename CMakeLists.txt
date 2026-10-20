@@ -29,7 +29,7 @@ option(VOICETYPER_BUILD_LLM "Build the pinned llama.cpp cleanup runtime (require
 # The product version. It is what the About page shows and what the update check
 # compares against the release tag, so it must be a real version, not the spike
 # default. CI overrides it with the tag being released.
-set(VOICETYPER_VERSION "3.4.0" CACHE STRING "Product version, compared with the release tag")
+set(VOICETYPER_VERSION "3.4.1" CACHE STRING "Product version, compared with the release tag")
 
 # Native dependency contract (task t_c6a6b0ce9685). The manifest is read on
 # every configuration, the Parakeet pin/ABI are cross-checked against the

@@ -80,6 +80,11 @@ constexpr std::string_view kReasonClipboard = "clipboard_busy";
 /// VT-DOM-615: part of the text was typed, so the clipboard gets the rest of the
 /// story but the paste chord is deliberately not sent.
 constexpr std::string_view kReasonDirectPartial = "direct_partial";
+/// VT-DOM-619: the whole burst was posted but the field never confirmed it. The
+/// text may already be there, so the clipboard keeps it and the paste chord stays
+/// unsent - a fallback paste is exactly what duplicated the transcript on
+/// 2026-10-20.
+constexpr std::string_view kReasonDirectUnconfirmed = "direct_unconfirmed";
 /// VT-DOM-618: the paste chord was accepted but the transcript never showed up in
 /// the field the caller could read.
 constexpr std::string_view kReasonPasteUnconfirmed = "paste_unconfirmed";
@@ -165,6 +170,32 @@ bool is_annotation_only(std::string_view text) noexcept
         index = end + 1;
     }
     return saw_annotation;
+}
+
+bool needs_leading_space(std::string_view caret_tail_utf8, std::string_view transcript) noexcept
+{
+    // VT-DOM-620. The caret tail is best effort and may hold several characters; only
+    // the one code point immediately before the caret decides. `next_code_point` walks
+    // forward, so the last code point is decoded from its lead byte.
+    if (caret_tail_utf8.empty() || transcript.empty()) {
+        return false;
+    }
+    std::size_t start = caret_tail_utf8.size() - 1;
+    while (start > 0 && (static_cast<unsigned char>(caret_tail_utf8[start]) & 0xC0U) == 0x80U) {
+        --start;
+    }
+    std::size_t cursor = start;
+    switch (next_code_point(caret_tail_utf8, cursor)) {
+    case U'.':
+    case U'!':
+    case U'?':
+    case U'\u2026':
+        break;
+    default:
+        return false;
+    }
+    std::size_t first = 0;
+    return !is_unicode_space(next_code_point(transcript, first));
 }
 
 // ---------------------------------------------------------------------------
@@ -365,6 +396,8 @@ Result<bool> TextOutputService::output(
     long long insert_ms = 0;
     long long paste_ms = 0;
     long long confirm_ms = 0;
+    /// VT-DOM-620: set when one leading space was added to the delivered text.
+    bool leading_space = false;
     const auto publish = [&](OutputReport report) {
         report.delivered = platform::is_delivered(report.outcome);
         // The delivery cost is stamped here rather than at each call site, so the
@@ -375,6 +408,7 @@ Result<bool> TextOutputService::output(
         report.insert_ms = insert_ms;
         report.paste_ms = paste_ms;
         report.confirm_ms = confirm_ms;
+        report.leading_space = leading_space;
         if (sink) {
             try {
                 sink(report);
@@ -395,32 +429,75 @@ Result<bool> TextOutputService::output(
         return Result<bool>::failure(ErrorCode::cancelled, "cancelled before the clipboard write");
     }
 
+    // VT-DOM-620: continue the sentence instead of gluing the transcript to the
+    // punctuation that sits right before the caret. The field is read before the
+    // delivery - the same reader that confirms a paste (VT-PLT-516) - and only when
+    // the delivery appends: a non-empty selection is about to be replaced, so there is
+    // no text to continue (the user's refinement, 2026-10-20). An unreadable field or an
+    // unreadable selection means no separator, never a guess.
+    const bool injection_wanted = auto_paste && !suspended_.load();
+    std::string spaced;
+    std::string_view delivery = text;
+    bool delivery_ready = false;
+    // The delivery text is decided once. With the direct path on it is decided after the
+    // probe: the probe's own query is what makes Chromium build its accessibility tree, so
+    // reading the caret before it would answer from an empty tree. Without the probe the
+    // read happens right before the clipboard path - still best effort, never a guess.
+    const auto finalize_delivery = [&] {
+        if (delivery_ready) {
+            return;
+        }
+        delivery_ready = true;
+        if (!injection_wanted || !field_.is_supported() || field_.selection_present()) {
+            return;
+        }
+        std::string tail;
+        if (field_.read_caret_tail(1, &tail) && needs_leading_space(tail, text)) {
+            spaced.reserve(text.size() + 1);
+            spaced.push_back(' ');
+            spaced.append(text);
+            delivery = spaced;
+            leading_space = true;
+        }
+    };
+
     // Direct delivery first (VT-DOM-613). It runs *before* the clipboard write on
     // purpose: a transcript that lands in the focused field must not clobber the
     // user's clipboard, and that is only possible if nothing writes it first.
     std::string_view direct_note = "not_attempted";
-    const bool injection_wanted = auto_paste && !suspended_.load();
     if (injection_wanted && direct_insert_.load() && direct_.is_supported()) {
         const auto probe_started = clock_.now();
         const platform::TextTargetInfo target = probe_with_deadline(probe_);
         probe_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
             clock_.elapsed_since(probe_started)).count();
+        finalize_delivery();
         if (target.accepts_typing()) {
             platform::InsertResult injected;
             bool ran = false;
+            bool executor_lost_the_verdict = false;
             const auto insert_started = clock_.now();
             if (ui_executor_.on_this_thread()) {
                 // Already on the input-owning thread: inline, like the paste.
-                injected = direct_.insert(text, cancellation);
+                injected = direct_.insert(delivery, cancellation);
                 ran = true;
             } else {
+                // The result lives in shared state and the payload is captured by value:
+                // an executor timeout does not stop a task that is already running, so
+                // the task must never write into a reference owned by this scope.
+                auto result_state = std::make_shared<platform::InsertResult>();
+                const std::string payload(delivery);
                 const auto invoked = ui_executor_.invoke(
-                    [&] { injected = direct_.insert(text, cancellation); }, kDirectInsertExecutorTimeout);
+                    [this, payload, token = cancellation, result_state] {
+                        *result_state = direct_.insert(payload, token);
+                    },
+                    kDirectInsertExecutorTimeout);
                 if (invoked.is_error()) {
-                    // The typing never ran on the input thread. The transcript
-                    // still has to reach the user, so the clipboard path follows.
-                    direct_note = "executor_unavailable";
+                    // The typing may have run on the input thread without returning a
+                    // verdict. Pasting now could duplicate it, so the transcript goes to
+                    // the clipboard and the paste chord stays unsent (VT-DOM-619).
+                    executor_lost_the_verdict = true;
                 } else {
+                    injected = *result_state;
                     ran = true;
                 }
             }
@@ -433,19 +510,23 @@ Result<bool> TextOutputService::output(
                 publish(OutputReport{platform::TextOutputOutcome::direct, std::nullopt, false});
                 return true;
             }
-            if (ran && injected.is_partial()) {
-                // VT-DOM-615: a prefix is in the field, so the whole transcript
-                // goes to the clipboard and the paste chord stays unsent - a paste
-                // on top of the typed prefix would duplicate it.
-                direct_note = "partial";
-                const auto written = clipboard_.set_text(text, cancellation);
+            if (executor_lost_the_verdict || (ran && injected.is_partial())) {
+                // VT-DOM-615/619: a prefix is in the field, or the whole burst was
+                // posted and the field did not confirm it. Either way the whole
+                // transcript goes to the clipboard and the paste chord stays unsent -
+                // a paste on top of a delivery that may already have happened would
+                // duplicate it.
+                const bool may_have_landed = executor_lost_the_verdict
+                    || injected.via == platform::InsertVia::unconfirmed;
+                direct_note = may_have_landed ? "unconfirmed" : "partial";
+                const auto written = clipboard_.set_text(delivery, cancellation);
                 if (written.is_error()) {
                     publish(OutputReport{platform::TextOutputOutcome::clipboard_failed, std::nullopt, false});
                     return Result<bool>::failure(written.code(), written.message());
                 }
                 PasteDiagnostics partial;
                 partial.injection_supported = paste_.is_injection_supported();
-                partial.reason = kReasonDirectPartial;
+                partial.reason = may_have_landed ? kReasonDirectUnconfirmed : kReasonDirectPartial;
                 partial.direct = direct_note;
                 publish(OutputReport{platform::TextOutputOutcome::clipboard_only, partial, true});
                 return true;
@@ -473,8 +554,12 @@ Result<bool> TextOutputService::output(
         }
     }
 
+    // The direct path was skipped (setting, suspension, no backend): the sentence
+    // separator still applies to the clipboard/paste path (VT-DOM-620).
+    finalize_delivery();
+
     // Clipboard first: nothing below may run before the text is safely stored.
-    const auto written = clipboard_.set_text(text, cancellation);
+    const auto written = clipboard_.set_text(delivery, cancellation);
     if (written.is_error()) {
         publish(OutputReport{platform::TextOutputOutcome::clipboard_failed, std::nullopt, false});
         return Result<bool>::failure(written.code(), written.message());
@@ -530,7 +615,7 @@ Result<bool> TextOutputService::output(
 
     if (pasted.is_ok()) {
         const auto confirm_started = clock_.now();
-        PasteConfirmation confirmation = confirm_paste(text, cancellation);
+        PasteConfirmation confirmation = confirm_paste(delivery, cancellation);
         confirm_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
             clock_.elapsed_since(confirm_started)).count();
         if (confirmation == PasteConfirmation::unverifiable && field_.is_supported()

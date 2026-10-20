@@ -24,11 +24,17 @@
 //   * The blank check is Unicode-aware (IsNullOrWhiteSpace parity): an NBSP or
 //     U+3000 only transcript is not pasted.
 //   * Direct delivery (VT-DOM-613..617): when `directInsert` is on, the focused
-//     field is probed first and an `editable` verdict types the transcript into
+//     field is probed first and an `editable` verdict posts the transcript into
 //     it — then the clipboard is not touched at all and the outcome is `direct`.
-//     Every other verdict, and any refusal by the typer, falls back to exactly
+//     Every other verdict, and any refusal by the injector, falls back to exactly
 //     the clipboard-then-paste behaviour above, so the clipboard remains
 //     authoritative for every path except a successful direct delivery.
+//   * A direct attempt that posted characters and did not confirm them MUST NOT
+//     be followed by the paste chord (VT-DOM-619): the field may have received
+//     the text and only exposed it late, and a fallback paste then inserted the
+//     transcript twice (measured 2026-10-20). Such a delivery writes the
+//     clipboard, ends as `clipboard_only` with reason `direct_unconfirmed` and
+//     sends no `Ctrl+V`.
 //   * The paste is confirmed, not assumed (VT-DOM-618): a synthetic `Ctrl+V` is
 //     accepted by the input stream whether or not the target windows reads it -
 //     measured 2026-10-19, a Windows Terminal window accepted the chord and showed
@@ -72,6 +78,19 @@ protected:
 /// recognized text: a transcript that is only an NBSP must not be pasted.
 [[nodiscard]] bool is_transcript_blank(std::string_view text) noexcept;
 
+/// VT-DOM-620: true when a transcript delivered at this caret must start with one
+/// space, so the dictation continues the sentence instead of gluing itself to the
+/// punctuation in front of the caret. `caret_tail_utf8` is the text immediately
+/// before the caret (UTF-8, the last code point is what counts); `transcript` is the
+/// recognized text as the engine returned it. Pure on purpose: the rule is pinned by
+/// the contract test without a live desktop.
+///
+/// A non-empty selection is NOT this function's business: its caller must ask
+/// `FocusedTextField::selection_present()` first, because a delivery replaces the
+/// selection and has no punctuation to continue.
+[[nodiscard]] bool needs_leading_space(
+    std::string_view caret_tail_utf8, std::string_view transcript) noexcept;
+
 /// Adds the 5 x 120 ms clipboard retry policy as a decorator, so both platforms
 /// get the same behaviour instead of it living in one UI adapter.
 class RetryingClipboard final : public platform::Clipboard {
@@ -99,10 +118,10 @@ struct PasteDiagnostics {
     bool clipboard_holds_text = true;
     /// What the direct-delivery attempt did, so the log can tell "the field was
     /// not recognised" from "the field refused the typing" (VT-DOM-616). One of
-    /// `not_attempted`, `refused`, `partial`, `skipped_no_target`,
-    /// `skipped_read_only`, `skipped_unknown`, `probe_timeout`,
-    /// `executor_unavailable`. A successful direct delivery reports no diagnostics
-    /// at all (VT-DOM-614), which is why `inserted` is not a value here.
+    /// `not_attempted`, `refused`, `partial`, `unconfirmed`,
+    /// `skipped_no_target`, `skipped_read_only`, `skipped_unknown`,
+    /// `probe_timeout`. A successful direct delivery reports no diagnostics at
+    /// all (VT-DOM-614), which is why `inserted` is not a value here.
     std::string_view direct = "not_attempted";
 };
 
@@ -123,6 +142,11 @@ struct OutputReport {
     long long insert_ms = 0;
     long long paste_ms = 0;
     long long confirm_ms = 0;
+
+    /// VT-DOM-620: true when one leading space was added to the delivered text because
+    /// the caret followed a sentence terminator with no space behind it. Diagnostics
+    /// only: the report never carries the text, and the transcript itself is unchanged.
+    bool leading_space = false;
 };
 
 class TextOutputService final : public TextOutputPort {

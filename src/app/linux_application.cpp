@@ -559,11 +559,13 @@ int run(int argc, char** argv)
     // this line there was nothing to check it against.
     output.set_report_sink([&logger](const domain::OutputReport& report) {
         const std::string_view outcome = platform::text_output_outcome_name(report.outcome);
-        const std::string detail = report.paste.has_value()
+        std::string detail = report.paste.has_value()
             ? (std::string(report.paste->reason) + " (injection_supported="
                   + (report.paste->injection_supported ? "true" : "false")
                   + ", direct=" + std::string(report.paste->direct) + ")")
             : std::string();
+        detail += " leading_space=";
+        detail += report.leading_space ? "true" : "false";
         platform::LogLevel level = platform::LogLevel::info;
         if (report.outcome == platform::TextOutputOutcome::clipboard_failed) {
             level = platform::LogLevel::error;

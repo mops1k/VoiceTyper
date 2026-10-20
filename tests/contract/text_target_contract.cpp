@@ -162,6 +162,50 @@ void check_portable_noop()
         "the portable injector reports unavailable instead of pretending to type");
     check(result.typed == 0 && !result.is_partial(),
         "and it never claims a partial delivery, so the fallback cannot duplicate text");
+
+    // VT-DOM-620: a reader that cannot see the selection stays conservative, so no caller
+    // guesses at the characters a selection is about to replace.
+    PortableFocusedTextField reader;
+    check(!reader.is_supported(), "the portable reader declares itself unsupported");
+    check(reader.selection_present(), "the portable reader reports a possible selection");
+    check(reader.has_text_input_in_foreground_window(),
+        "the portable reader stays silent about the window's text capability");
+}
+
+void check_delivery_matching()
+{
+    // VT-PLT-519. The raw comparison keeps the common case exact; the fallback has to
+    // tolerate a target that re-indents the line, stores CRLF where the transcript had
+    // LF or pads the line, because those are layout, not a different delivery.
+    check(verification_tail_matches(L"hello", L"hello"), "an exact caret tail matches");
+    check(verification_tail_matches(L"hello", L"say hello"), "a tail that ends with the text matches");
+    check(!verification_tail_matches(L"hello", L"hello world"),
+        "a tail that only starts with the text does not match");
+    check(!verification_tail_matches(L"hello", L"helo"), "a mistyped tail does not match");
+    check(verification_tail_matches(L"if (x) {\n  y = 1;", L"if (x) {\r\n        y = 1;"),
+        "auto-indent and CRLF are layout, not a failed delivery");
+    check(verification_tail_matches(L"a b", L"  a b  "), "padded whitespace still matches");
+    check(verification_tail_matches(L"a\u00a0b", L"a b"), "a non-breaking space is whitespace");
+    check(!verification_tail_matches(L"", L"x"), "an empty expectation matches only an empty tail");
+    check(verification_tail_matches(L"", L""), "an empty expectation and an empty tail match");
+    check(!verification_tail_matches(L"   ", L""), "a whitespace-only expectation never matches by tolerance");
+
+    check(verification_value_contains(L"prefix hello suffix", L"hello"),
+        "the value check finds the text inside the field");
+    check(verification_value_contains(L"prefix hello world", L"hello world"),
+        "the value check tolerates the field's own whitespace");
+    check(!verification_value_contains(L"hello", L"bye"), "the value check rejects unrelated text");
+    check(verification_value_contains(L"", L""), "an empty text is trivially contained");
+
+    // The unconfirmed path is a partial delivery by contract: `typed > 0` with an error
+    // status is exactly what keeps the caller from pasting a second copy.
+    InsertResult unconfirmed;
+    unconfirmed.status = voicetyper::domain::Status::failure(
+        voicetyper::domain::ErrorCode::unavailable, "not confirmed");
+    unconfirmed.typed = 42;
+    unconfirmed.via = InsertVia::unconfirmed;
+    check(unconfirmed.is_partial(), "an unconfirmed burst is reported as a partial delivery");
+    check(insert_via_name(InsertVia::unconfirmed) == "unconfirmed", "the unconfirmed path is named");
 }
 
 } // namespace
@@ -171,6 +215,7 @@ int main()
     check_predicate();
     check_outcome_contract();
     check_portable_noop();
+    check_delivery_matching();
 
     if (failures != 0) {
         std::cerr << "text-target-contract: " << failures << " check(s) failed\n";

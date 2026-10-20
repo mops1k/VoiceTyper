@@ -78,6 +78,9 @@ class PortableFocusedTextField final : public FocusedTextField {
 public:
     [[nodiscard]] bool read_caret_tail(std::size_t units, std::string* utf8) override;
     [[nodiscard]] bool read_value(std::string* utf8) override;
+    /// Cannot answer here, so the conservative answer is "a selection may be there"
+    /// and no caller guesses at the text before the caret (VT-DOM-620).
+    [[nodiscard]] bool selection_present() override { return true; }
     /// Cannot answer here, so the caller stays silent (VT-PLT-518).
     [[nodiscard]] bool has_text_input_in_foreground_window() override { return true; }
     [[nodiscard]] bool is_supported() const noexcept override { return false; }

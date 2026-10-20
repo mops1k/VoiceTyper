@@ -312,7 +312,10 @@ implementation: `windows/win32_gamepad.*`.
   MUST report `InsertResult{status, typed}`: `permission_denied` when the focused window sits at a
   higher integrity level (UIPI), `unavailable` when there is no backend or the target refused the
   input, `cancelled` when the caller stopped the delivery. A failed status with `typed > 0` is a
-  partial delivery and MUST be reported as such, never as success.
+  partial delivery and MUST be reported as such, never as success. A burst that was fully posted but
+  not confirmed MUST be reported with `typed` equal to the number of posted units and
+  `via = unconfirmed`, NOT with `typed = 0` (VT-PLT-519): the caller's fallback paste would duplicate
+  a delivery the target exposed late.
 - **VT-PLT-512.** The portable backend MUST provide both interfaces as no-ops: `probe()` returns
   `unknown` with reason `unsupported_platform`, `insert()` returns `unavailable` with `typed = 0`,
   so every non-Windows platform keeps exactly the clipboard-then-paste path of VT-DOM-602..612.
@@ -325,11 +328,13 @@ implementation: `windows/win32_gamepad.*`.
   without `ES_AUTOVSCROLL` silently dropped 21 of a 300-unit burst, and a console window took all 49
   posted messages while its buffer never changed. The check MUST read the field before and after and
   MUST require the delivered text to be present in it.
-- **VT-PLT-515.** When the field cannot be read for the check, when the control refuses a posted
-  character, or when the posted text never appears in the field, `insert()` MUST fail while
-  delivering nothing: the caller's own fallback — the clipboard and a paste (VT-DOM-602..612) — then
-  delivers the transcript. It MUST report the path that carried the text through
-  `InsertResult::via` (VT-PLT-511 keeps `typed` honest). Measured 2026-10-16: posted `WM_CHAR`
+- **VT-PLT-515.** A refusal that happens **before any character is posted** (the field cannot be read
+  for the check, the control is a console, the first `PostMessage` fails) MUST fail with `typed = 0`
+  and `via = none`: the caller's own fallback — the clipboard and a paste (VT-DOM-602..612) — then
+  delivers the transcript. A failure **after** at least one character was posted MUST NOT claim that
+  nothing was delivered: it reports the posted units through `typed` and the path through
+  `InsertResult::via` (VT-PLT-511 keeps `typed` honest), and the caller MUST NOT paste over it
+  (VT-PLT-519). Measured 2026-10-16: posted `WM_CHAR`
   delivered exactly and instantly in Notepad, in a Chromium page field and in the address bar, while
   a console window ignored it completely, and the keyboard path alone needed a ~15.6 ms pause after
   every single character to keep Notepad's editor correct (`sleep_for(2ms)` really sleeps 15.6 ms, a
@@ -343,13 +348,17 @@ implementation: `windows/win32_gamepad.*`.
   `GetSelection` → collapse to the caret → `MoveEndpointByUnit` back over the requested characters) and
   the whole `ValuePattern` value when no text pattern anchors the read, both as UTF-8, and MUST report
   `is_supported() == true`; a field without either pattern is reported by the read returning false, not
-  by an empty string. The reader MUST NOT write, select or move the caret. Off Windows the portable
-  reader reports `is_supported() == false`, so the caller keeps its pre-existing verdict instead of
-  inventing one.
+  by an empty string. The reader MUST NOT write, select or move the caret. It MUST also answer
+  `selection_present()`: true when the focused element holds a non-empty text selection, false only
+  when the caret is known to be collapsed. The Windows implementation compares the `TextPattern`
+  selection's own endpoints; a field without a text pattern, or an unreadable selection, reports
+  true, because a caller must not guess at the text a selection is about to replace (VT-DOM-620).
+  The portable reader reports `is_supported() == false` and `selection_present() == true`, so the
+  caller keeps its pre-existing verdict instead of inventing one.
 - **VT-PLT-517.** The Windows injector MUST refuse a console target before posting anything: measured
   2026-10-16 (legacy conhost) and 2026-10-19 (Windows Terminal), a console accepts every posted
-  `WM_CHAR` and changes nothing, so posting costs the whole verification budget (twelve reads over
-  about 240 ms) and can never pass the check. The target is a console when the focused control's window
+  `WM_CHAR` and changes nothing, so posting costs the whole confirmation window (VT-PLT-519) and can
+  never pass the check. The target is a console when the focused control's window
   class is `ConsoleWindowClass` or `CASCADIA_HOSTING_WINDOW_CLASS`, or when the UI Automation focused
   element's class name is `TermControl`. The refusal is `unavailable` with `typed = 0`, so the caller's
   clipboard path (VT-DOM-618) delivers and confirms.
@@ -363,6 +372,20 @@ implementation: `windows/win32_gamepad.*`.
   provider hides while the paste still works (the same day, a JetBrains plugin) - and MUST be called
   only after a paste could not be read back. A backend that cannot answer MUST report true (stay
   silent) instead of guessing; the portable no-op reports true.
+
+- **VT-PLT-519.** The Windows delivery check MUST poll the field until it exposes the posted text or
+  `kDirectDeliveryConfirmationWindow = 1500 ms` expires, not for a fixed small number of attempts:
+  measured 2026-10-20 on the target machine, genuine confirmations arrived 13–360 ms after the post
+  while the previous 12 × 20 ms budget ended at ~350 ms, and every burst that missed it was reported
+  as `typed = 0`, fell back to the clipboard and a paste, and inserted the transcript twice. A
+  confirmation has to tolerate a target that re-indents the line, stores CRLF where the transcript had
+  LF or pads a console line: the caret tail is compared exactly first and whitespace-insensitively
+  as a fallback, and the value-pattern check looks for the text with the same tolerance
+  (`verification_tail_matches` / `verification_value_contains`). When the window expires after the
+  whole burst was posted, `insert()` MUST fail with `typed` = posted units and
+  `via = InsertVia::unconfirmed`; it MUST NOT report `typed = 0`. The poll MUST be sparse after
+  `kDirectDeliveryFastPhase = 400 ms` (20 ms gaps first, then 100 ms), because every UI Automation
+  read occupies the target's UI thread and a dense poll competes with the tree update it waits for.
 
 **Stage note (2026-10-16).** `VT-PLT-506..515` are the Windows-first stage of the direct-delivery
 plan: the Windows backend lands as `src/platform/windows/win32_text_target.*`, the no-op as part of

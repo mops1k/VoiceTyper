@@ -113,6 +113,7 @@ public:
         last = std::string(text);
         platform::InsertResult result;
         result.typed = typed;
+        result.via = via;
         result.status = fail_code == ErrorCode::ok
             ? platform::Status::success()
             : platform::Status::failure(fail_code, "typing refused");
@@ -123,6 +124,7 @@ public:
     bool supported = false;
     ErrorCode fail_code = ErrorCode::ok;
     std::size_t typed = 0;
+    platform::InsertVia via = platform::InsertVia::none;
     std::string last;
     int calls = 0;
 };
@@ -150,6 +152,7 @@ public:
         *utf8 = value;
         return true;
     }
+    bool selection_present() override { return selection; }
     bool is_supported() const noexcept override { return supported; }
     bool has_text_input_in_foreground_window() override
     {
@@ -162,6 +165,7 @@ public:
     int window_queries = 0;
     bool tail_readable = false;
     bool value_readable = false;
+    bool selection = false;
     std::string tail;
     std::string value;
     int tail_reads = 0;
@@ -402,6 +406,52 @@ void check_direct_delivery()
     check(reports.back().paste.has_value() && reports.back().paste->reason == "direct_partial",
         "the reason names the partial typing");
     check(reports.back().paste->direct == "partial", "the direct note names the partial typing");
+
+    // An unconfirmed direct insertion (VT-DOM-619): the whole burst was posted, but the
+    // field never confirmed it. The clipboard gets the transcript and NO Ctrl+V may
+    // follow - the field may already hold the text and expose it late, and the fallback
+    // paste is exactly what inserted it twice on 2026-10-20.
+    direct.fail_code = ErrorCode::unavailable;
+    direct.typed = 5;
+    direct.via = platform::InsertVia::unconfirmed;
+    clipboard.writes = 0;
+    paste.calls = 0;
+    reports.clear();
+    const auto unconfirmed = service.output("hello", true, {});
+    check(unconfirmed.is_ok() && unconfirmed.value(),
+        "an unconfirmed typing still delivers through the clipboard");
+    check(clipboard.writes == 1 && clipboard.last == "hello",
+        "the clipboard holds the transcript of an unconfirmed typing");
+    check(paste.calls == 0, "an unconfirmed typing never sends Ctrl+V over a delivery that may have landed");
+    check(reports.back().outcome == platform::TextOutputOutcome::clipboard_only,
+        "an unconfirmed typing is reported as clipboard_only");
+    check(reports.back().delivered, "clipboard_only stays a delivered state");
+    check(reports.back().paste.has_value() && reports.back().paste->reason == "direct_unconfirmed",
+        "the reason names the unconfirmed typing");
+    check(reports.back().paste->direct == "unconfirmed", "the direct note names the unconfirmed typing");
+
+    // The executor lost the injector's verdict: the task may already be running, so the
+    // paste chord must stay unsent for the same reason (VT-DOM-619).
+    direct.via = platform::InsertVia::none;
+    direct.fail_code = ErrorCode::ok;
+    direct.typed = 5;
+    executor.inline_mode = false;
+    executor.fail = true;
+    clipboard.writes = 0;
+    paste.calls = 0;
+    reports.clear();
+    const auto executor_lost = service.output("hello", true, {});
+    check(executor_lost.is_ok() && executor_lost.value(),
+        "an executor that loses the verdict still delivers through the clipboard");
+    check(clipboard.last == "hello" && clipboard.writes == 1,
+        "the clipboard holds the transcript when the executor loses the verdict");
+    check(paste.calls == 0, "no Ctrl+V follows an executor that lost the direct verdict");
+    check(reports.back().paste.has_value() && reports.back().paste->reason == "direct_unconfirmed",
+        "the lost verdict is reported as an unconfirmed direct delivery");
+    check(reports.back().paste->direct == "unconfirmed",
+        "the direct note names the lost verdict as unconfirmed");
+    executor.fail = false;
+    executor.inline_mode = true;
 
     // Nothing was typed: the ordinary clipboard-then-paste path runs, and the note
     // says the typer refused rather than the field never being recognised.
@@ -655,6 +705,95 @@ void check_paste_confirmation()
     }
 }
 
+/// VT-DOM-620: the one leading space that continues a sentence, and the selection that
+/// must never get it. The predicate is portable; the service cases pin the delivery text
+/// that reaches the injector, the clipboard and the paste.
+void check_leading_space()
+{
+    // The rule itself.
+    check(needs_leading_space(".", "Мир"), "a period right before the caret takes a space");
+    check(needs_leading_space("!", "Мир"), "an exclamation mark right before the caret takes a space");
+    check(needs_leading_space("?", "Мир"), "a question mark right before the caret takes a space");
+    check(needs_leading_space("\xE2\x80\xA6", "Мир"), "an ellipsis right before the caret takes a space");
+    check(needs_leading_space("\xD0\xB0.", "Мир"),
+        "only the code point immediately before the caret counts");
+    check(!needs_leading_space(". ", "Мир"), "a space after the period means the sentence is separated");
+    check(!needs_leading_space(",", "Мир"), "a comma is not a sentence terminator");
+    check(!needs_leading_space("word", "Мир"), "a letter before the caret is not punctuation");
+    check(!needs_leading_space("", "Мир"), "an unreadable tail adds nothing");
+    check(!needs_leading_space(".", " Мир"), "a transcript that already starts with a space gets no second one");
+    check(!needs_leading_space(".", "\nМир"), "a transcript that starts with any whitespace needs no space");
+
+    // Helper: one delivery with the given caret context and target verdict.
+    struct Outcome {
+        OutputReport report;
+        std::string direct_text;
+        std::string clipboard_text;
+        int clipboard_writes = 0;
+        int paste_calls = 0;
+    };
+    const auto run = [](std::string_view tail, bool tail_readable, bool selection,
+                        platform::TextTargetKind kind, bool auto_paste) {
+        FakeClipboard clipboard;
+        FakePaste paste;
+        FakeClock clock;
+        RecordingExecutor executor;
+        FakeProbe probe;
+        FakeDirect direct;
+        FakeFocusedField field;
+        direct.supported = true;
+        direct.typed = 5;
+        probe.info.kind = kind;
+        probe.info.reason = "control_type_edit";
+        field.supported = true;
+        field.tail_readable = tail_readable;
+        field.tail = std::string(tail);
+        field.selection = selection;
+        TextOutputService service(clipboard, paste, probe, direct, field, clock, executor);
+        Outcome outcome;
+        service.set_report_sink([&](const OutputReport& report) { outcome.report = report; });
+        static_cast<void>(service.output("hello", auto_paste, {}));
+        outcome.direct_text = direct.last;
+        outcome.clipboard_text = clipboard.last;
+        outcome.clipboard_writes = clipboard.writes;
+        outcome.paste_calls = paste.calls;
+        return outcome;
+    };
+
+    // Appending after a period: the injected text carries the space and the clipboard
+    // stays untouched (a direct delivery).
+    const Outcome appended = run(".", true, false, platform::TextTargetKind::editable, true);
+    check(appended.direct_text == " hello", "the injector receives the transcript with one leading space");
+    check(appended.clipboard_writes == 0, "a spaced direct delivery still leaves the clipboard alone");
+    check(appended.report.outcome == platform::TextOutputOutcome::direct, "the delivery stays direct");
+    check(appended.report.leading_space, "the report says the space was added");
+
+    // A selection is about to be replaced: the space would land before the replacement
+    // and is wrong (the 2026-10-20 refinement).
+    const Outcome selected = run(".", true, true, platform::TextTargetKind::editable, true);
+    check(selected.direct_text == "hello", "a selection replacement gets no leading space");
+    check(!selected.report.leading_space, "the report says no space was added for a selection");
+
+    // The clipboard path gets the same spaced text, so a fallback does not diverge from
+    // what a direct delivery would have inserted.
+    const Outcome pasted = run(".", true, false, platform::TextTargetKind::none, true);
+    check(pasted.clipboard_text == " hello", "the clipboard holds the spaced transcript on the paste path");
+    check(pasted.paste_calls == 1, "the paste path still runs its chord");
+    check(pasted.report.leading_space, "the paste path reports the leading space");
+
+    // Best effort: no answer from the reader means no space, never a guess.
+    const Outcome unreadable = run(".", false, false, platform::TextTargetKind::editable, true);
+    check(unreadable.direct_text == "hello", "an unreadable caret tail adds no space");
+    check(!unreadable.report.leading_space, "an unreadable caret tail reports no space");
+
+    // Automatic pasting off: the clipboard is the whole delivery, and it is not the
+    // field's continuation, so the transcript is copied verbatim.
+    const Outcome copied = run(".", true, false, platform::TextTargetKind::editable, false);
+    check(copied.clipboard_text == "hello", "a clipboard-only delivery is copied without a leading space");
+    check(copied.paste_calls == 0, "a clipboard-only delivery sends no chord");
+    check(!copied.report.leading_space, "a clipboard-only delivery reports no space");
+}
+
 } // namespace
 
 int main()
@@ -668,6 +807,7 @@ int main()
     check_direct_delivery();
     check_paste_confirmation();
     check_single_writer();
+    check_leading_space();
 
     if (failures != 0) {
         std::cerr << "text-output-contract: " << failures << " check(s) failed\n";

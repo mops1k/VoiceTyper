@@ -1322,6 +1322,33 @@ void test_field_reader()
                            : (value_readable ? ("reader value: " + whole).c_str()
                                              : "the reader could not read the control"));
 
+        // VT-DOM-620: a selection is not a caret. A delivery replaces the selected text,
+        // so the domain must know the difference before it decides whether the transcript
+        // continues the sentence in front of the caret. The read runs on its own thread
+        // for the same reason the tail read does: this thread has to keep pumping.
+        const auto read_selection = [&] {
+            std::atomic<bool> finished {false};
+            bool present = false;
+            std::thread worker([&] {
+                present = reader.selection_present();
+                finished = true;
+            });
+            while (!finished.load()) {
+                pump_messages();
+                ::Sleep(5);
+            }
+            worker.join();
+            return present;
+        };
+        check(!read_selection(), "a collapsed caret reports no selection");
+        ::SendMessageW(edit, EM_SETSEL, 1, 6);
+        pump_messages();
+        check(read_selection(), "a non-empty selection is reported instead of a usable caret");
+        ::SendMessageW(edit, EM_SETSEL, static_cast<WPARAM>(sample.size()),
+            static_cast<LPARAM>(sample.size()));
+        pump_messages();
+        check(!read_selection(), "collapsing the selection again reports a caret");
+
         // A window with neither a text nor a value pattern: the honest "cannot tell"
         // the domain turns into clipboard_only instead of claiming a paste.
         ::SetFocus(frame);
@@ -1363,6 +1390,24 @@ std::string codepoints(std::wstring_view text, std::size_t from, std::size_t cou
         out += item;
     }
     return out;
+}
+
+/// Regression scaffolding for the 2026-10-20 duplicate (VT-PLT-519). A control that
+/// accepts every posted character but only exposes it after the confirmation window is
+/// the exact shape the injector used to misreport as `typed = 0`; the caller's fallback
+/// paste then inserted the transcript a second time. This subclass withholds `WM_CHAR`
+/// and forwards everything else - UI Automation's `WM_GETOBJECT` included - to RichEdit,
+/// so the field stays readable while the characters wait in this vector.
+std::wstring g_withheld_characters;
+WNDPROC g_withheld_original = nullptr;
+
+LRESULT CALLBACK withhold_characters_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
+{
+    if (message == WM_CHAR) {
+        g_withheld_characters.push_back(static_cast<wchar_t>(wparam));
+        return 0;
+    }
+    return ::CallWindowProcW(g_withheld_original, window, message, wparam, lparam);
 }
 
 /// Direct typing into a real focused control (VT-PLT-510, VT-PLT-511, VT-PLT-514).
@@ -1619,13 +1664,49 @@ void test_direct_typing()
         } else {
             // Posting is instant, so a cancellation either arrives before the first character or
             // after the whole text: both shapes are honest, and neither may claim more than it sent.
+            // A cancellation that lands during the confirmation window still leaves the whole
+            // burst posted, and the count above has to match the control either way.
             check(cancelled.status.code() == ErrorCode::cancelled
                     || cancelled.status.code() == ErrorCode::unavailable,
                 "a stopped delivery is reported as cancelled or unconfirmable");
-            check(cancelled.typed < long_sample.size(),
-                "a stopped delivery does not claim the whole transcript");
+            check(cancelled.typed <= long_sample.size(),
+                "a stopped delivery never claims more than the transcript");
             check(long_sample.compare(0, cancelled.typed, cancelled_observed) == 0,
                 "the control holds exactly the prefix the injector counted");
+        }
+
+        // Regression for the 2026-10-20 duplicate (VT-PLT-519). The control accepts the
+        // whole posted burst and exposes nothing until it is released, which is what a
+        // browser does while its accessibility tree catches up. The old injector reported
+        // this as `typed = 0` after twelve quick reads; the caller then pasted the
+        // transcript over the already-posted copy. The delivery must now report the whole
+        // burst as posted-but-unconfirmed, and the text must land exactly once.
+        {
+            clear_edit();
+            std::wstring withheld;
+            while (withheld.size() < 240) {
+                withheld += L"Задержанная вставка 0123456789; ";
+            }
+            withheld.resize(240);
+            g_withheld_characters.clear();
+            g_withheld_original = reinterpret_cast<WNDPROC>(::SetWindowLongPtrW(
+                edit, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(withhold_characters_proc)));
+            const auto withheld_result = deliver(withheld, never_cancelled);
+            ::SetWindowLongPtrW(edit, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(g_withheld_original));
+            check(withheld_result.status.is_error(),
+                "a field that withholds the burst does not confirm the delivery");
+            check(withheld_result.typed == withheld.size(),
+                "a posted burst is never reported as typed = 0 (VT-PLT-519)");
+            check(withheld_result.via == voicetyper::platform::InsertVia::unconfirmed,
+                "an unconfirmed burst reports the unconfirmed path");
+            check(g_withheld_characters == withheld, "the control really received the whole burst");
+            // Release what the control withheld: the text must land exactly once.
+            for (const wchar_t unit : g_withheld_characters) {
+                ::PostMessageW(edit, WM_CHAR, static_cast<WPARAM>(unit), 0);
+            }
+            const std::wstring withheld_observed = wait_until_stable();
+            check(withheld_observed == withheld,
+                "the withheld burst lands exactly once after the control drains it");
         }
 
         ::DestroyWindow(frame);

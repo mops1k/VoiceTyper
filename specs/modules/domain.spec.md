@@ -468,12 +468,14 @@ Contracts: [src/domain/text_output.hpp](../../src/domain/text_output.hpp),
   injection support, or when the sleep before the paste is cancelled. A paste failure after a
   successful clipboard write MUST also end as `clipboard_only`, never as a failed dictation.
 - **VT-DOM-607.** `OutputReport` MUST be published with the outcome
-  (`direct | pasted | clipboard_only | skipped_empty | clipboard_failed`), `delivered`, and
-  optional `PasteDiagnostics{reason, injection_supported, clipboard_holds_text, direct}`.
+  (`direct | pasted | clipboard_only | skipped_empty | clipboard_failed`), `delivered`, the
+  optional `PasteDiagnostics{reason, injection_supported, clipboard_holds_text, direct}`, and the
+  `leading_space` flag (VT-DOM-620).
   Known `reason` values: `pasted`, `suspended_for_hotkey_capture`, `no_injection_backend`,
   `cancelled_before_paste`, `executor_unavailable`, `integrity_level`,
-  `window_rejected_input`, `direct_partial`, default `paste_failed`. The `direct` field says what
-  the direct-delivery attempt did (VT-DOM-616) and MUST default to `not_attempted`.
+  `window_rejected_input`, `direct_partial`, `direct_unconfirmed`, default `paste_failed`. The
+  `direct` field says what the direct-delivery attempt did (VT-DOM-616) and MUST default to
+  `not_attempted`.
 - **VT-DOM-608.** The paste MUST run on the GUI/input thread: inline when already on it,
   otherwise through `Executor::invoke(..., 2000 ms)`; an executor failure MUST degrade to
   `clipboard_only` with reason `executor_unavailable`.
@@ -490,20 +492,22 @@ Contracts: [src/domain/text_output.hpp](../../src/domain/text_output.hpp),
   `read_only`, `none`, `unknown`, an unsupported probe, or a failed insertion, continue with the
   unchanged clipboard-then-paste path of VT-DOM-602..612. The clipboard path MUST stay the
   fallback for every outcome, so no transcript can be lost; the direct path MUST NOT raise a
-  user-visible error of its own.
+  user-visible error of its own. One exception is VT-DOM-619: an insertion that posted characters and
+  did not confirm them MUST NOT be followed by the paste chord.
 - **VT-DOM-614.** A direct insertion that delivered the whole text MUST be reported as
   `TextOutputOutcome::direct`: a success in which the clipboard was not touched and
   `OutputReport.paste` stays empty. `is_delivered(direct)` MUST be true.
 - **VT-DOM-615.** A partial direct insertion (`InsertResult::is_partial()`) MUST write the
   clipboard, MUST NOT inject the paste chord (a paste would duplicate the typed prefix) and MUST
-  end as `clipboard_only` with reason `direct_partial`. An insertion that typed no character MUST
-  fall back to the normal paste path.
+  end as `clipboard_only` with reason `direct_partial`. An insertion that typed no character
+  (`typed = 0`) MUST fall back to the normal paste path.
 - **VT-DOM-616.** The direct path MUST be observable, because "the text did not land in the field"
   and "the field was never recognised" otherwise look the same in the log. A partial delivery adds
-  the `reason` value `direct_partial`; every report that carries diagnostics MUST also carry the
-  `direct` note, one of `not_attempted`, `refused`, `partial`, `skipped_no_target`,
-  `skipped_read_only`, `skipped_unknown`, `probe_timeout`, `executor_unavailable`. A report with
-  automatic pasting off keeps `direct = not_attempted` and MUST NOT run the probe (VT-DOM-617).
+  the `reason` value `direct_partial`, an unconfirmed one `direct_unconfirmed` (VT-DOM-619); every
+  report that carries diagnostics MUST also carry the `direct` note, one of `not_attempted`,
+  `refused`, `partial`, `unconfirmed`, `skipped_no_target`, `skipped_read_only`,
+  `skipped_unknown`, `probe_timeout`. A report with automatic pasting off keeps
+  `direct = not_attempted` and MUST NOT run the probe (VT-DOM-617).
 - **VT-DOM-617.** With `directInsert` off, and whenever automatic pasting is off, the probe MUST
   NOT be consulted and the behaviour MUST be exactly VT-DOM-602..612.
 - **VT-DOM-618.** A paste chord MUST be confirmed by reading the focused field back
@@ -528,6 +532,30 @@ Contracts: [src/domain/text_output.hpp](../../src/domain/text_output.hpp),
   an unreadable one - must stay silent. A platform whose reader reports `is_supported() == false` MUST keep the pre-existing
   behaviour: the domain MUST NOT invent an unconfirmed verdict it cannot observe (the Linux stage has
   no accessibility reader — AT-SPI2 is researched, not implemented).
+- **VT-DOM-619.** An insertion that reported a possible partial delivery (`typed > 0`) MUST NOT be
+  followed by the paste chord, including the case where the injector posted the whole burst and the
+  field did not confirm it within `kDirectDeliveryConfirmationWindow` (`InsertVia::unconfirmed`,
+  VT-PLT-519): the target may have received the text and expose it late, and the 80 ms paste delay
+  was shorter than the target's own update — measured 2026-10-20, the confirmation after `Ctrl+V`
+  arrived within 2–3 ms while the direct check had just failed, so the transcript was inserted
+  twice. That delivery MUST write the clipboard, end as `clipboard_only` with reason
+  `direct_unconfirmed`, carry the direct note `unconfirmed`, and stay `delivered`. An executor
+  failure that leaves the outcome of a direct insertion unknown MUST be treated the same way,
+  because the task may already be running. No user-visible alarm is raised: the field may well hold
+  the text, and "press Ctrl+V" on a working delivery would itself create a duplicate.
+- **VT-DOM-620.** A transcript delivered into a field MUST continue the sentence instead of gluing
+  itself to the punctuation in front of the caret. When automatic delivery is on (`auto_paste` and
+  not suspended), the focused field is readable, the caret is collapsed
+  (`FocusedTextField::selection_present()` is false) and the code point immediately before the caret
+  is `.`, `!`, `?` or `…`, the delivered text MUST start with exactly one space. A non-empty
+  selection is the case that MUST NOT get the space: the delivery replaces it, so the characters
+  before the selection are not the text being continued (Alexander, 2026-10-20). The space belongs
+  to the delivered string once — the direct insertion, the clipboard content and the paste
+  confirmation all see the same text — while the transcript itself (`TextReady`, the logged
+  character count) MUST stay unchanged. An unreadable field or selection, a missing caret tail, a
+  tail that already ends in whitespace or a transcript that already starts with whitespace MUST NOT
+  add anything: silence over a guess. `OutputReport.leading_space` MUST report whether the space was
+  added.
 - **G-2.** `clipboard_busy` is declared but never produced; `paste_failed` is only a default.
   Which reasons are contractual is not pinned by a test.
 

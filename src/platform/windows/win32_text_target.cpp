@@ -30,11 +30,9 @@ namespace voicetyper::platform {
 
 namespace {
 
-/// How long the delivery check waits between two reads of the field. The target processes posted
-/// messages on its own thread, so the text appears a moment after the last message: measured
-/// 2026-10-16, Chromium and Notepad showed it within the first two reads, while a console window
-/// never showed it at all (which is exactly what the check is for).
-constexpr std::chrono::milliseconds kDeliveryCheckInterval{20};
+// The delivery check's window and poll intervals live in the header
+// (kDirectDeliveryConfirmationWindow, kDirectDeliveryFastPhase, ...) because the
+// live platform contract measures them.
 
 template <typename T>
 class ComPtr {
@@ -430,8 +428,8 @@ std::wstring_view window_class_name(HWND window, wchar_t* buffer, std::size_t ca
 /// True for the shapes measured to ignore a posted character: a console takes every
 /// message and changes nothing (2026-10-16, legacy conhost) and Windows Terminal does
 /// the same with its `TermControl` element (2026-10-19). Skipping the post there saves
-/// the whole verification budget - twelve reads over about 240 ms - because no burst
-/// can ever pass that check, and the clipboard path takes over anyway (VT-PLT-517).
+/// the whole confirmation window (VT-PLT-519) - no burst can ever pass that check, and
+/// the clipboard path takes over anyway (VT-PLT-517).
 bool is_console_target(HWND control) noexcept
 {
     wchar_t buffer[64] {};
@@ -623,10 +621,15 @@ InsertResult Win32DirectTextInjector::insert(std::string_view utf8,
     // Posting is only as good as the target's willingness to read its queue, and a control can take
     // every message and show nothing: measured the same day, a console window accepted all 49
     // messages and its buffer never changed. The check therefore decides the outcome: the characters
-    // the caret sits after must be the characters that were posted. When the field cannot be read, or
-    // the check does not pass, the attempt fails without having delivered anything, and the caller's
-    // own fallback - the clipboard and a paste - takes over. A silently swallowed transcript would be
-    // the worst outcome, so nothing here pretends to have succeeded.
+    // the caret sits after must be the characters that were posted.
+    //
+    // The check is a deadline, not a fixed number of attempts (VT-PLT-519). A target exposes the
+    // posted text asynchronously: measured 2026-10-20 on the target machine, genuine confirmations
+    // arrived 13-360 ms after the post, while the old 12 x 20 ms budget ended at ~350 ms - just
+    // before the field caught up. Those bursts were reported as "delivered nothing", the caller took
+    // its clipboard fallback (buffer + Ctrl+V) and inserted the transcript twice. A burst that was
+    // posted is therefore never reported as "delivered nothing": it is a possible partial delivery
+    // (`via == InsertVia::unconfirmed`), and the caller must not paste over it.
     const HWND target = focused_control();
     if (target == nullptr) {
         result.status =
@@ -647,7 +650,8 @@ InsertResult Win32DirectTextInjector::insert(std::string_view utf8,
 
     // Two readable shapes can carry a check: a text pattern with a caret (documents, Chromium fields,
     // consoles) or a value (classic edits). Without either there is no way to tell a delivery from a
-    // silent ignore, and the caller's clipboard path is the honest answer.
+    // silent ignore, and the caller's clipboard path is the honest answer. This refusal happens
+    // before anything is posted, so it is safe for that path to run.
     std::wstring probe;
     const bool caret_readable = read_caret_tail_wide(0, &probe);
     std::wstring value_before;
@@ -662,12 +666,17 @@ InsertResult Win32DirectTextInjector::insert(std::string_view utf8,
     for (const wchar_t unit : wide) {
         if (cancellation.is_cancellation_requested()) {
             result.typed = typed_units;
-            result.via = InsertVia::none;
+            result.via = typed_units > 0 ? InsertVia::posted : InsertVia::none;
             result.status = Status::failure(ErrorCode::cancelled, "direct insertion was cancelled");
             return result;
         }
         if (::PostMessageW(target, WM_CHAR, static_cast<WPARAM>(unit), 0) == 0) {
             last_error_ = ::GetLastError();
+            // The prefix is already in the target's queue. Reporting `typed = 0` here made the
+            // caller paste the whole transcript over it; the partial result keeps that from
+            // happening (VT-PLT-515).
+            result.typed = typed_units;
+            result.via = typed_units > 0 ? InsertVia::posted : InsertVia::none;
             result.status = Status::failure(ErrorCode::unavailable,
                 "the focused control refused a posted character (error "
                     + std::to_string(last_error_) + ")");
@@ -676,31 +685,60 @@ InsertResult Win32DirectTextInjector::insert(std::string_view utf8,
         ++typed_units;
     }
 
-    // The target reads its queue on its own thread, so the check waits for the field to catch up - but
-    // only briefly: a target that has not shown the text within this budget is treated as one that
-    // will not show it at all.
-    for (int attempt = 0; attempt < 12; ++attempt) {
+    // The target reads its queue on its own thread and republishes its accessible text on its own
+    // schedule, so the check waits for the field to catch up. A healthy target answers on the first
+    // reads; after kDirectDeliveryFastPhase the polling turns sparse so it does not steal the time
+    // the target needs to update its tree.
+    const auto check_started = std::chrono::steady_clock::now();
+    const auto check_deadline = check_started + kDirectDeliveryConfirmationWindow;
+    for (;;) {
+        if (cancellation.is_cancellation_requested()) {
+            // The whole burst may already be posted, so this is a partial delivery: the
+            // caller keeps the clipboard path but sends no paste (VT-PLT-515).
+            result.typed = typed_units;
+            result.via = InsertVia::posted;
+            result.status = Status::failure(ErrorCode::cancelled, "direct insertion was cancelled");
+            return result;
+        }
         bool delivered = false;
         if (caret_readable) {
             std::wstring tail;
-            delivered = read_caret_tail_wide(tail_units, &tail) && tail == expected_tail;
+            delivered = read_caret_tail_wide(tail_units, &tail)
+                && verification_tail_matches(expected_tail, tail);
         } else {
             std::wstring now;
             delivered = read_focused_value_wide(&now) && now != value_before
-                && now.find(wide) != std::wstring::npos;
+                && verification_value_contains(now, wide);
         }
         if (delivered) {
             result.typed = typed_units;
             result.via = InsertVia::posted;
             return result;
         }
-        if (attempt + 1 < 12) {
-            std::this_thread::sleep_for(kDeliveryCheckInterval);
+        const auto checked = std::chrono::steady_clock::now();
+        if (checked >= check_deadline) {
+            break;
+        }
+        auto interval = checked - check_started < kDirectDeliveryFastPhase
+            ? kDirectDeliveryFastInterval
+            : kDirectDeliverySlowInterval;
+        const auto remaining = check_deadline - checked;
+        if (remaining < interval) {
+            interval = std::chrono::duration_cast<std::chrono::milliseconds>(remaining);
+        }
+        if (interval > std::chrono::milliseconds::zero()) {
+            std::this_thread::sleep_for(interval);
         }
     }
 
+    // Every unit was posted, so the text may well be in the field: the caller MUST NOT paste over
+    // it (that fallback is exactly the 2026-10-20 duplicate). The transcript stays recoverable
+    // through the clipboard path the caller runs instead.
+    result.typed = typed_units;
+    result.via = InsertVia::unconfirmed;
     result.status = Status::failure(ErrorCode::unavailable,
-        "the posted text never appeared in the focused field, so the delivery is not confirmed");
+        "the posted text was not confirmed by the focused field in time, so the delivery may already "
+        "have happened");
     return result;
 }
 
@@ -729,6 +767,47 @@ bool Win32FocusedTextField::read_value(std::string* utf8)
     }
     *utf8 = utf16_to_utf8(wide);
     return true;
+}
+
+bool Win32FocusedTextField::selection_present()
+{
+    // VT-DOM-620. A delivery replaces a non-empty selection, so the characters before
+    // the caret's end are not the characters the transcript continues. Only a selection
+    // this reader can compare is answered with false; every "cannot tell" is true.
+    IUIAutomation* automation = verification_automation();
+    if (automation == nullptr) {
+        return true;
+    }
+    ComPtr<IUIAutomationElement> element;
+    if (FAILED(automation->GetFocusedElement(element.put())) || !element) {
+        return true;
+    }
+    ComPtr<IUIAutomationTextPattern> pattern;
+    if (FAILED(element->GetCurrentPatternAs(UIA_TextPatternId, IID_IUIAutomationTextPattern,
+            reinterpret_cast<void**>(pattern.put())))
+        || !pattern) {
+        // A classic EDIT exposes no text pattern: whether one of its characters is
+        // selected cannot be read here, and the caller must not guess.
+        return true;
+    }
+    ComPtr<IUIAutomationTextRangeArray> selection;
+    if (FAILED(pattern->GetSelection(selection.put())) || !selection) {
+        return true;
+    }
+    int count = 0;
+    if (FAILED(selection->get_Length(&count)) || count < 1) {
+        return true;
+    }
+    ComPtr<IUIAutomationTextRange> range;
+    if (FAILED(selection->GetElement(0, range.put())) || !range) {
+        return true;
+    }
+    int compared = 0;
+    if (FAILED(range->CompareEndpoints(TextPatternRangeEndpoint_Start, range.get(),
+            TextPatternRangeEndpoint_End, &compared))) {
+        return true;
+    }
+    return compared != 0;
 }
 
 bool Win32FocusedTextField::has_text_input_in_foreground_window()
@@ -862,6 +941,12 @@ bool Win32FocusedTextField::read_caret_tail(std::size_t, std::string*)
 bool Win32FocusedTextField::read_value(std::string*)
 {
     return false;
+}
+
+bool Win32FocusedTextField::selection_present()
+{
+    // No reader here: the conservative answer, so no caller guesses at a caret text.
+    return true;
 }
 
 bool Win32FocusedTextField::has_text_input_in_foreground_window()

@@ -31,6 +31,10 @@
 //     state the caller turns into a fallback, never an error the user cannot act
 //     on. A refusal after some characters were typed MUST be reported as a
 //     partial result, so the caller can decide not to duplicate the prefix.
+//   * A burst that was fully posted but could not be confirmed MUST also be
+//     reported as a partial result (`via == InsertVia::unconfirmed`), never as
+//     "nothing was delivered": the fallback paste would duplicate a delivery the
+//     target had simply not exposed yet (measured 2026-10-20, VT-PLT-519).
 //
 // Thread affinity: probe() may run on a worker thread (a backend MUST bound every
 // platform query by kTextTargetProbeTimeout); insert() takes the keyboard, so it
@@ -154,13 +158,20 @@ protected:
 };
 
 /// Which delivery path actually carried the text. Observability only: the caller may log it and
-/// must not branch on it, because a path that works for a target today may not be the one that works
-/// after an update of that target.
+/// must not branch on it beyond the "no confirmation" case below, because a path that works for a
+/// target today may not be the one that works after an update of that target.
 enum class InsertVia : std::uint8_t {
     /// Nothing was delivered.
     none = 0,
     /// Posted `WM_CHAR` messages, confirmed by reading the field back (VT-PLT-515).
     posted = 1,
+    /// The whole burst was posted, but the field never confirmed it inside the
+    /// confirmation window (VT-PLT-519). The text MAY be in the field: the target
+    /// updates its accessible text asynchronously, and a measurement on the target
+    /// machine (2026-10-20) showed confirmations arriving 300-450 ms after the post.
+    /// The caller MUST NOT paste over such a delivery, because a fallback paste is
+    /// exactly what inserts the transcript twice.
+    unconfirmed = 2,
 };
 
 [[nodiscard]] inline constexpr std::string_view insert_via_name(InsertVia value) noexcept
@@ -170,6 +181,8 @@ enum class InsertVia : std::uint8_t {
         return "none";
     case InsertVia::posted:
         return "posted";
+    case InsertVia::unconfirmed:
+        return "unconfirmed";
     }
     return "unknown";
 }
@@ -182,15 +195,19 @@ struct InsertResult {
     /// caller stopped the delivery).
     Status status = Status::success();
 
-    /// How many units reached the target (Windows: UTF-16 code units). Only the
-    /// zero/non-zero distinction is contractual: `status.is_error() && typed > 0`
-    /// is the partial delivery that a fallback paste would duplicate.
+    /// How many units may have reached the target (Windows: UTF-16 code units).
+    /// Only the zero/non-zero distinction is contractual: `status.is_error() &&
+    /// typed > 0` is a delivery that a fallback paste would duplicate. A burst
+    /// that was fully posted and then not confirmed is therefore reported with
+    /// `typed > 0` and `via == InsertVia::unconfirmed`, never as `typed == 0` - an
+    /// "honest" zero there is what produced the 2026-10-20 duplicate (VT-PLT-519).
     std::size_t typed = 0;
 
     /// Which path carried the text, for the diagnostic (VT-PLT-515).
     InsertVia via = InsertVia::none;
 
-    /// True when the attempt failed after part of the text had been typed.
+    /// True when the attempt failed after part of the text had been typed, or
+    /// after the whole text was posted but could not be confirmed.
     [[nodiscard]] bool is_partial() const noexcept { return status.is_error() && typed > 0; }
 };
 
@@ -249,11 +266,24 @@ public:
     /// False when the focused element exposes no text pattern, no selection, or
     /// nothing to anchor the read at: the caller must treat that as "cannot tell",
     /// never as "empty field".
+    ///
+    /// A non-empty selection is a trap for this read (VT-DOM-620): the text is
+    /// anchored at the selection's end, but a delivery replaces the whole
+    /// selection, so the characters before a selection are not the characters the
+    /// transcript will continue. A caller that wants the text a delivery appends to
+    /// MUST consult `selection_present()` first.
     [[nodiscard]] virtual bool read_caret_tail(std::size_t units, std::string* utf8) = 0;
 
     /// The whole value of the focused element, as UTF-8. False when it has no value
     /// pattern (documents and consoles have none).
     [[nodiscard]] virtual bool read_value(std::string* utf8) = 0;
+
+    /// True when the focused element holds a non-empty text selection, i.e. the next
+    /// inserted text replaces it instead of being appended at a caret (VT-DOM-620).
+    /// False only when the caret is known to be collapsed; a backend that cannot read
+    /// the selection MUST report true, because a caller must not guess at the text a
+    /// selection is about to replace.
+    [[nodiscard]] virtual bool selection_present() = 0;
 
     /// True when the foreground window holds at least one text-capable element,
     /// whether or not it is the focused one.

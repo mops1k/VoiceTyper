@@ -545,7 +545,8 @@ int run(int argc, char** argv)
             + " probe_ms=" + std::to_string(report.probe_ms)
             + " insert_ms=" + std::to_string(report.insert_ms)
             + " paste_ms=" + std::to_string(report.paste_ms)
-            + " confirm_ms=" + std::to_string(report.confirm_ms);
+            + " confirm_ms=" + std::to_string(report.confirm_ms)
+            + " leading_space=" + (report.leading_space ? "true" : "false");
         platform::LogLevel level = platform::LogLevel::info;
         if (report.outcome == platform::TextOutputOutcome::clipboard_failed) {
             level = platform::LogLevel::error;

@@ -1,7 +1,8 @@
 #pragma once
 
 // Win32 backends behind platform/api/text_target.hpp: the UI Automation probe
-// (VT-PLT-506..509) and the SendInput Unicode typer (VT-PLT-510..511).
+// (VT-PLT-506..509) and the posted-WM_CHAR injector with its field check
+// (VT-PLT-510..515, VT-PLT-519).
 //
 // This header stays standard C++20 (no <windows.h>), like the other Win32
 // backend headers, so it can be included and linked on any host: everything that
@@ -25,9 +26,90 @@
 
 #include "platform/api/text_target.hpp"
 
+#include <chrono>
 #include <cstdint>
+#include <string>
+#include <string_view>
 
 namespace voicetyper::platform {
+
+/// How long the delivery check waits for the field to expose the posted text
+/// (VT-PLT-519). Measured 2026-10-20 on the target machine: confirmed deliveries
+/// landed 13-360 ms after the post, while the ones that ended in a fallback paste
+/// (and duplicated the transcript) stopped at 357-421 ms - the field exposed the
+/// text just after the old 12 x 20 ms budget. The window is a ceiling, not a
+/// cost: a fast target is confirmed on the first reads.
+inline constexpr std::chrono::milliseconds kDirectDeliveryConfirmationWindow{1500};
+
+/// The fast phase of the check, where a healthy target is confirmed. After it the
+/// check keeps polling sparsely: every UI Automation read occupies the target's
+/// UI thread, so a dense poll on a busy target competes with the very tree update
+/// it is waiting for.
+inline constexpr std::chrono::milliseconds kDirectDeliveryFastPhase{400};
+inline constexpr std::chrono::milliseconds kDirectDeliveryFastInterval{20};
+inline constexpr std::chrono::milliseconds kDirectDeliverySlowInterval{100};
+
+/// The characters that the delivery check ignores when comparing, so a target
+/// that re-indents a line, stores CRLF where the transcript had LF or pads a
+/// console line still counts as having received the text. The raw comparison is
+/// always tried first: this is the tolerance, not the rule.
+[[nodiscard]] inline std::wstring verification_without_whitespace(std::wstring_view text)
+{
+    std::wstring out;
+    out.reserve(text.size());
+    for (const wchar_t unit : text) {
+        switch (unit) {
+        case L' ':
+        case L'\t':
+        case L'\r':
+        case L'\n':
+        case L'\u00a0':
+        case L'\u3000':
+            break;
+        default:
+            out.push_back(unit);
+        }
+    }
+    return out;
+}
+
+/// True when the caret tail observed after the post ends with the expected tail
+/// of the transcript. Pure on purpose: this is the predicate a contract test can
+/// pin without a live desktop (VT-PLT-519).
+[[nodiscard]] inline bool verification_tail_matches(
+    std::wstring_view expected_tail, std::wstring_view observed_tail)
+{
+    if (expected_tail.empty()) {
+        return observed_tail.empty();
+    }
+    if (observed_tail == expected_tail) {
+        return true;
+    }
+    const std::wstring expected = verification_without_whitespace(expected_tail);
+    if (expected.empty()) {
+        return false;
+    }
+    const std::wstring observed = verification_without_whitespace(observed_tail);
+    return observed.size() >= expected.size()
+        && observed.compare(observed.size() - expected.size(), expected.size(), expected) == 0;
+}
+
+/// True when the field's value contains the posted text, with the same tolerance.
+[[nodiscard]] inline bool verification_value_contains(
+    std::wstring_view value, std::wstring_view text)
+{
+    if (text.empty()) {
+        return true;
+    }
+    if (value.find(text) != std::wstring_view::npos) {
+        return true;
+    }
+    const std::wstring expected = verification_without_whitespace(text);
+    if (expected.empty()) {
+        return false;
+    }
+    return verification_without_whitespace(value).find(expected) != std::wstring::npos;
+}
 
 /// UIA control type identifiers the predicate uses: `UIA_EditControlTypeId`,
 /// `UIA_DocumentControlTypeId`, `UIA_TextControlTypeId` (uiautomationclient.h).
@@ -147,8 +229,14 @@ private:
     unsigned long last_error_ = 0;
 };
 
-/// Types text into the focused window with `SendInput`/`KEYEVENTF_UNICODE`.
-/// Takes the keyboard, so it MUST run on the input-owning thread (VT-PLT-510).
+/// Posts the transcript into the focused control as `WM_CHAR` messages and
+/// confirms it by reading the field back (VT-PLT-510, VT-PLT-514). Takes the
+/// keyboard path, so it runs on the input-owning thread (VT-PLT-511).
+///
+/// Confirmation is bounded by kDirectDeliveryConfirmationWindow. A burst that
+/// was fully posted but not confirmed reports `via == InsertVia::unconfirmed`
+/// with `typed` set to the posted units: the text may well be in the field, so
+/// the caller MUST NOT paste over it (VT-PLT-519).
 class Win32DirectTextInjector final : public DirectTextInjector {
 public:
     Win32DirectTextInjector() = default;
@@ -192,6 +280,10 @@ public:
 
     [[nodiscard]] bool read_caret_tail(std::size_t units, std::string* utf8) override;
     [[nodiscard]] bool read_value(std::string* utf8) override;
+    /// VT-DOM-620: true when the focused element holds a non-empty selection. A
+    /// field whose selection cannot be read reports true, so a caller never guesses
+    /// at the text a selection is about to replace.
+    [[nodiscard]] bool selection_present() override;
     [[nodiscard]] bool has_text_input_in_foreground_window() override;
 
     /// UI Automation is part of the OS: the reader is always present here. A

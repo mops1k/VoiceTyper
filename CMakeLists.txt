@@ -65,6 +65,11 @@ if(VOICETYPER_BUILD_GUI)
     find_package(Qt6 6.9 REQUIRED COMPONENTS Core Gui Widgets Network)
 endif()
 
+# Threads::Threads is linked by the Linux platform layer, and the ffmpeg-free ASR
+# subprojects only find it inside their own directory scope. Ask for it here, at the
+# top level, so a GUI-off configure (no Qt to pull it in transitively) also works.
+find_package(Threads REQUIRED)
+
 # Python is optional for C++ compilation but required for fixture verification
 # and the differential harness. Do not hide its absence: a local Windows box
 # without Python will print this status and omit those two CTest entries.
@@ -303,7 +308,7 @@ if(VOICETYPER_BUILD_ASR)
     # whisper.cpp and ggml are C/C++ projects, so the C language is enabled only
     # when they are actually part of the build.
     enable_language(C)
-    # The fetched subproject must not contribute install rules: whisper.cpp 1.9.4
+    # The fetched subproject must not contribute install rules: whisper.cpp 1.9.5
     # declares install(TARGETS parakeet ...) for a target this build never makes
     # part of the graph, so `cmake --install` fails on a missing libparakeet.a.
     # Nothing of it belongs in the installed tree anyway - the code is linked into
@@ -2044,7 +2049,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
                 # ggml is linked statically INTO libparakeet.so on purpose: both
                 # engine libraries would otherwise depend on a "libggml*.so.0"
                 # with the same soname but a different version (parakeet.cpp pins
-                # ggml 0.13, transcribe.cpp pins 0.25), and the dynamic loader
+                # ggml 0.13, transcribe.cpp pins 0.26), and the dynamic loader
                 # would resolve the second one to the first one's symbols.
                 -DBUILD_SHARED_LIBS=OFF
                 # The statically linked ggml has to be position independent to be
@@ -2053,6 +2058,11 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
                 -DPARAKEET_BUILD_CLI=OFF
                 -DPARAKEET_BUILD_SERVER=OFF
                 -DPARAKEET_BUILD_TESTS=OFF
+                # parakeet.cpp v0.6.1 adds CED and speaker-id submodules that default
+                # ON; VoiceTyper binds only the six ASR symbols, so the Linux build
+                # leaves them out instead of cloning two more submodules.
+                -DPARAKEET_WITH_CED=OFF
+                -DPARAKEET_WITH_VOICEDETECT=OFF
                 -DGGML_NATIVE=OFF
                 -DGGML_OPENMP=OFF
                 -DGGML_BACKEND_DL=OFF
@@ -2067,7 +2077,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
 
         ExternalProject_Add(voicetyper_transcribe_cpp
             URL https://codeload.github.com/handy-computer/transcribe.cpp/tar.gz/${transcribe_pin}
-            URL_HASH SHA256=aab406e988dc2b3e58f6ba7cb4badfd735ff4cb15a966c4e157dcde7d7b302ee
+            URL_HASH SHA256=77bfafa35bd7eee447ec37b832e99c342c62b7db0c6cb18c36e763563b586b1f
             PREFIX ${CMAKE_BINARY_DIR}/transcribe-cpp
             CMAKE_ARGS
                 -DCMAKE_BUILD_TYPE=Release

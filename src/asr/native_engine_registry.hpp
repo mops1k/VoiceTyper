@@ -25,7 +25,7 @@ using WhisperEngineFactory = std::function<
     domain::Result<std::unique_ptr<platform::Transcriber>>(const std::filesystem::path& model_path)>;
 
 /// Creates a Parakeet engine from `dll_path` + `model_path`. The factory is
-/// responsible for the ABI 6 assertion; the registry only reports what the probe
+/// responsible for the ABI 10 assertion; the registry only reports what the probe
 /// said before it was called.
 using ParakeetEngineFactory = std::function<
     domain::Result<std::unique_ptr<platform::Transcriber>>(

@@ -36,9 +36,9 @@ using domain::Status;
 /// Exact library version the shipped runtime must report (TRANSCRIBE_VERSION of
 /// the pinned build). The ABI is explicitly not stable below 1.0, so an exact
 /// match is the guard; a mismatch is an error, never a silent downgrade.
-inline constexpr std::string_view kTranscribeExpectedVersion = "0.3.1";
-/// Pinned upstream commit of the shipped build (tag v0.3.1).
-inline constexpr std::string_view kTranscribePinnedCommit = "3f32fbcc7bb3246851a0234263438bc3c0fa1cac";
+inline constexpr std::string_view kTranscribeExpectedVersion = "0.4.1";
+/// Pinned upstream commit of the shipped build (tag v0.4.1).
+inline constexpr std::string_view kTranscribePinnedCommit = "4d7c1ccefd39e5a9ea36cca5f8fefc6dcc14b99b";
 /// The shipped runtime lives in its OWN directory beside the executable, not in
 /// the executable's directory: it is built with a different MinGW generation than
 /// the application, so its libstdc++/libgcc/ggml siblings must not be confused

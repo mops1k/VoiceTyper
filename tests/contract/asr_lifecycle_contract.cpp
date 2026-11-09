@@ -255,8 +255,11 @@ void check_load_and_transcribe()
 
     const auto result = host.transcribe(short_audio(), audio::SessionOptions{}, {});
     check(result.is_ok() && result.value() == "текст engine1", "a ready engine returns its transcript");
-    check(probe->last_wav_bytes.load() == 44 + 4000 * 2,
-        "the engine received a canonical WAV of the captured audio");
+    // 4000 captured samples of continuous sound: EngineHost prepends its 0.2 s onset
+    // lead (kOnsetLeadSeconds, 3200 samples at 16 kHz) before the WAV is written,
+    // because the audio starts with sound instead of silence.
+    check(probe->last_wav_bytes.load() == 44 + (4000 + 3200) * 2,
+        "the engine received a canonical WAV of the captured audio (with the 0.2 s onset lead)");
     check(probe->last_best_of.load() == 3, "the final result asks for 3 candidates");
     static_cast<void>(host.shutdown(std::chrono::seconds(2)));
     check(probe->destroyed.load() == 1, "shutdown frees the engine exactly once");

@@ -20,13 +20,13 @@
       "role": "asr-whisper",
       "kind": "source-build",
       "repository": "https://github.com/ggml-org/whisper.cpp",
-      "pinnedCommit": "d09f61a708f3487afa956ff578e60eae5e7a233c",
+      "pinnedCommit": "d1be6fde11ac6e0407606b4e42fe72d34add8037",
       "pinnedTag": null,
-      "upstreamVersion": "1.9.4",
-      "commitDate": "2026-09-24T10:29:15+02:00",
+      "upstreamVersion": "1.9.5",
+      "commitDate": "2026-10-06T16:10:35+02:00",
       "license": "MIT",
       "licenseHolder": "Copyright (c) 2023-2026 The ggml authors",
-      "licenseFile": "https://github.com/ggml-org/whisper.cpp/blob/d09f61a708f3487afa956ff578e60eae5e7a233c/LICENSE",
+      "licenseFile": "https://github.com/ggml-org/whisper.cpp/blob/d1be6fde11ac6e0407606b4e42fe72d34add8037/LICENSE",
       "abiVersion": null,
       "abiNote": "whisper.cpp has no C ABI version. The pin is the contract: FetchContent re-verifies the fetched HEAD against pinnedCommit and fails configure on mismatch.",
       "linkage": "static",
@@ -41,10 +41,10 @@
         ],
         "publicHeader": "whisper.h (upstream, from the pinned archive)",
         "archive": {
-          "url": "https://github.com/ggml-org/whisper.cpp/archive/d09f61a708f3487afa956ff578e60eae5e7a233c.tar.gz",
-          "bytes": 9519792,
-          "sha256": "750655899a32d5bb5b04bbde9afa430f851d46718f53812a4ec086537fee3ef8",
-          "topLevelDirectory": "whisper.cpp-d09f61a708f3487afa956ff578e60eae5e7a233c",
+          "url": "https://github.com/ggml-org/whisper.cpp/archive/d1be6fde11ac6e0407606b4e42fe72d34add8037.tar.gz",
+          "bytes": 9631456,
+          "sha256": "645445da884df6dbd52b30f82d7be7c01d1767c938714e477e786b88d529e9f4",
+          "topLevelDirectory": "whisper.cpp-d1be6fde11ac6e0407606b4e42fe72d34add8037",
           "fetchMethodRationale": "GIT_SHALLOW is documented by CMake as incompatible with a commit hash as GIT_TAG ('works only with branch names and tags'), and a full 48 MB history clone is 2m34s on the Arch/WSL side and much slower on NTFS. The commit archive is 9.5 MB, its URL embeds the commit, and URL_HASH pins the bytes exactly, so the build is content-addressed and needs no git on PATH."
         },
         "offlineEscapeHatch": {
@@ -63,10 +63,10 @@
           }
         },
         "contentPins": {
-          "comment": "SHA-256 of files inside the archive, taken from an independent `git fetch --depth 1 origin d09f61a708f3487afa956ff578e60eae5e7a233c` checkout of the same commit. cmake/NativeAsr.cmake re-hashes them after extraction, so the archive is proven to be that commit's tree and not a re-cut tag.",
+          "comment": "SHA-256 of files inside the archive, taken from an independent `git fetch --depth 1 origin d1be6fde11ac6e0407606b4e42fe72d34add8037` checkout of the same commit. cmake/NativeAsr.cmake re-hashes them after extraction, so the archive is proven to be that commit's tree and not a re-cut tag.",
           "include/whisper.h": "a7d19f7feb5be52426628ff07e0602de28a30dc4312d0d0603e1e536753f76dd",
-          "src/whisper.cpp": "c5a519d618d3084b4a6c904930df78cf16f1069ebfa7431294776c90d7bc2f8b",
-          "ggml/CMakeLists.txt": "c118116572c8e5bc8d9302d44cc6806ce69a31face60f2cefdb36801fdf72fd3"
+          "src/whisper.cpp": "891168a838301bd2baa5e8b87422a854dafeeb7da914d40a2e4c6bf33ff448ed",
+          "ggml/CMakeLists.txt": "c1d1d55416664981ea61e33b28a0dfdd36064659f15661d3a500b0de98d59ce4"
         },
         "cmakeOptions": {
           "BUILD_SHARED_LIBS": "OFF",
@@ -92,9 +92,9 @@
           "GGML_WASM_SINGLE_FILE": "OFF"
         },
         "optionsNotPresentAtPin": {
-          "GGML_WASM": "not an option at d09f61a7; the WASM backend is only added under EMSCRIPTEN, which VoiceTyper never enables",
+          "GGML_WASM": "not an option at d1be6fde; the WASM backend is only added under EMSCRIPTEN, which VoiceTyper never enables",
           "GGML_SPEECHD": "no speech-dispatcher target exists anywhere in the tree at d09f61a7 (the last espeak/speechd integration was removed upstream long before this pin)",
-          "WHISPER_BUILD_TOOLS": "not an option at d09f61a7; every command-line tool of that era lives under examples/, which is switched off by WHISPER_BUILD_EXAMPLES=OFF",
+          "WHISPER_BUILD_TOOLS": "not an option at d1be6fde; every command-line tool of that era lives under examples/, which is switched off by WHISPER_BUILD_EXAMPLES=OFF",
           "parakeet target": "src/CMakeLists.txt at d09f61a7 also declares an unconditional C++ target named parakeet (include/parakeet.h, no ABI versioning). VoiceTyper must never bind it: the supported Parakeet surface is the shipped parakeet.dll C API below."
         }
       },
@@ -111,16 +111,16 @@
       "role": "asr-parakeet",
       "kind": "prebuilt-dll",
       "repository": "https://github.com/mudler/parakeet.cpp",
-      "pinnedCommit": "e75de9b6b9b688fd293aa22f7e27aa724ea286f8",
-      "pinnedTag": "v0.5.0-1-ge75de9b",
-      "pinnedDate": "2026-09-10",
+      "pinnedCommit": "5c9b0fbbd8e611d88e47d7e1ebae9bca9b447e8f",
+      "pinnedTag": "v0.6.1",
+      "pinnedDate": "2026-10-07",
       "license": "MIT",
       "licenseHolder": "Copyright (c) 2026 the parakeet.cpp authors",
       "licenseFile": "native/parakeet/LICENSE",
-      "abiVersion": 6,
+      "abiVersion": 10,
       "abiSource": "native/parakeet/include/parakeet_capi.h",
-      "abiConstant": "src/platform/api/engine_registry.hpp kParakeetAbiVersion = 6",
-      "toolchain": "gcc.exe (MinGW-W64 x86_64-ucrt-mcf-seh, Brecht Sanders r1) 16.1.0, cmake 4.3.2, PARAKEET_SHARED=ON, GGML_NATIVE=OFF, GGML_LLAMAFILE=ON, GGML_OPENMP=OFF, CMAKE_SHARED_LINKER_FLAGS=-static -static-libgcc -static-libstdc++",
+      "abiConstant": "src/platform/api/engine_registry.hpp kParakeetAbiVersion = 10",
+      "toolchain": "gcc.exe (MinGW-W64 x86_64-ucrt-posix-seh, Brecht Sanders r1) 16.2.0, cmake 4.4.2, ninja 1.13.2, PARAKEET_SHARED=ON, GGML_NATIVE=OFF, GGML_LLAMAFILE=ON, GGML_OPENMP=OFF, CMAKE_SHARED_LINKER_FLAGS=-static -static-libgcc -static-libstdc++",
       "buildNotes": "native/parakeet/BUILD.txt",
       "integration": {
         "module": "src/platform/windows/parakeet_runtime.hpp + .cpp",
@@ -134,13 +134,13 @@
           "parakeet_capi_last_error"
         ],
         "symbolPolicy": "Only the six symbols above are resolved. A missing or differently-ABI'd library is an explicit error (engine_unavailable / abi_mismatch), never a silent Whisper fallback. The context handle is an opaque void*: no parakeet_capi type crosses into portable code.",
-        "assertion": "parakeet_capi_abi_version() must equal 6; any other value fails the open with EngineAvailabilityReason::abi_mismatch."
+        "assertion": "parakeet_capi_abi_version() must equal 10; any other value fails the open with EngineAvailabilityReason::abi_mismatch."
       },
       "artifacts": [
         {
           "path": "native/parakeet.dll",
-          "bytes": 5682591,
-          "sha256": "85c7c65bfd8d467799d6cb43bd3cfac884e27dce27680189b56edc5594ec932b"
+          "bytes": 7132322,
+          "sha256": "3185b90132f5efe533efef35403ffc3e01fa1b280537514dce6fdfd801336f1a"
         }
       ]
     },
@@ -170,18 +170,18 @@
       "role": "asr-gigaam",
       "kind": "prebuilt-dll",
       "repository": "https://github.com/handy-computer/transcribe.cpp",
-      "pinnedCommit": "3f32fbcc7bb3246851a0234263438bc3c0fa1cac",
-      "pinnedTag": "v0.3.1",
-      "pinnedDate": "2026-10-07",
+      "pinnedCommit": "4d7c1ccefd39e5a9ea36cca5f8fefc6dcc14b99b",
+      "pinnedTag": "v0.4.1",
+      "pinnedDate": "2026-10-22",
       "license": "MIT",
       "licenseHolder": "Copyright (c) 2026 the transcribe.cpp authors",
-      "licenseFile": "https://github.com/handy-computer/transcribe.cpp/blob/3f32fbcc7bb3246851a0234263438bc3c0fa1cac/LICENSE",
+      "licenseFile": "https://github.com/handy-computer/transcribe.cpp/blob/4d7c1ccefd39e5a9ea36cca5f8fefc6dcc14b99b/LICENSE",
       "abiVersion": null,
-      "abiNote": "transcribe.cpp has no numeric ABI constant below 1.0. The binding asserts the exact library version (transcribe_version() == 0.3.1) AND re-checks the public struct sizes the binding passes across the ABI (transcribe_abi_struct_size() for model_load_params, session_params, run_params, capabilities) against the vendored header; a mismatch is an error, never a fallback.",
+      "abiNote": "transcribe.cpp has no numeric ABI constant below 1.0. The binding asserts the exact library version (transcribe_version() == 0.4.1) AND re-checks the public struct sizes the binding passes across the ABI (transcribe_abi_struct_size() for model_load_params, session_params, run_params, capabilities) against the vendored header; a mismatch is an error, never a fallback.",
       "sourceArchive": {
-        "url": "https://github.com/handy-computer/transcribe.cpp/archive/3f32fbcc7bb3246851a0234263438bc3c0fa1cac.tar.gz",
-        "bytes": 43842201,
-        "sha256": "aab406e988dc2b3e58f6ba7cb4badfd735ff4cb15a966c4e157dcde7d7b302ee"
+        "url": "https://github.com/handy-computer/transcribe.cpp/archive/4d7c1ccefd39e5a9ea36cca5f8fefc6dcc14b99b.tar.gz",
+        "bytes": 46097287,
+        "sha256": "77bfafa35bd7eee447ec37b832e99c342c62b7db0c6cb18c36e763563b586b1f"
       },
       "toolchain": "MinGW-W64 x86_64-ucrt-posix-seh (Brecht Sanders r1) 13.1.0 from the Qt toolchain (C:\\Users\\Kvintilyanov\\tools\\Qt\\Tools\\Tools\\mingw1310_64) with cmake/ninja from WinLibs; TRANSCRIBE_BUILD_SHARED=ON, TRANSCRIBE_VULKAN=OFF, TRANSCRIBE_GGML_BACKEND_DL=OFF, TRANSCRIBE_USE_SYSTEM_BLAS=OFF, -D_WIN32_WINNT=0x0601. The MinGW generation MUST match the application: a GCC 16 build dies with 0xC0000139 / error 127 in-process (measured 2026-10-07).",
       "buildNotes": "native/transcribe/BUILD.txt",
@@ -205,29 +205,29 @@
           "transcribe_full_text"
         ],
         "symbolPolicy": "Only the fourteen symbols above are resolved. A missing or differently-versioned library is an explicit error (engine_unavailable / unsupported), never a silent substitution of another engine.",
-        "assertion": "transcribe_version() must equal 0.3.1 and the four struct sizes must match the vendored header (native/transcribe/transcribe.h, sha256 d3617a0638387157af4f99596322d4c6bade2463aae88e0e76506fcd2130a082).",
-        "modelWindow": "transcribe_capabilities::max_audio_ms is read at load time (25.0 s for GigaAM-v3) and used to cut a longer dictation at a pause instead of degrading silently."
+        "assertion": "transcribe_version() must equal 0.4.1 and the four struct sizes must match the vendored header (native/transcribe/transcribe.h, sha256 6eeff40fa7d9d3b17eb021170fda4046b5f54794ddfe4295bcf62bbc6015f652).",
+        "modelWindow": "transcribe_capabilities::max_audio_ms is read at load time (25.0 s for GigaAM-v3) and used to cut a longer dictation at a pause instead of degrading silently. Since 0.4.1 the library also windows audio past the training window internally, so the pause cut is a product choice (shorter chunks, predictable latency), not an ABI requirement."
       },
       "artifacts": [
         {
           "path": "native/transcribe/libtranscribe.dll",
-          "bytes": 2679873,
-          "sha256": "e1f74843382e2a36398c22a82d46d208eca2ac34ea49b372121ee3cac1e8e4e0"
+          "bytes": 2955237,
+          "sha256": "48fee10cffa21a8654f10ddef22ef32ff4da1bc5de385a18f4016b4cc2c86414"
         },
         {
           "path": "native/transcribe/ggml.dll",
           "bytes": 112861,
-          "sha256": "da0989f0cbe0d144e9ca5f8d89b7ed623db31a116bc3416fb9783d3c952e2b64"
+          "sha256": "56c037d41dcd990b20057cfa6997a4c3cbb0613a3db088f1d5f6f36938c69d40"
         },
         {
           "path": "native/transcribe/ggml-base.dll",
-          "bytes": 1010572,
-          "sha256": "d51879f16e423fecdde3441dd325f91a6a32a6c25ab5be031c018609e3ef3807"
+          "bytes": 1022890,
+          "sha256": "adb6a584737460eb057d3286174a99ebffb8c7c791a89f95c5d1dc6cc879e7ad"
         },
         {
           "path": "native/transcribe/ggml-cpu.dll",
-          "bytes": 1489298,
-          "sha256": "ea49b1ca3e89787158fa619ab4bea32464db62b225eb4f6b2fb0fa929440b913"
+          "bytes": 1670998,
+          "sha256": "6d5c9d4129bd8c0830bfe1c673b255634bf960522a2d1d4c8d2e79cb8504ec97"
         }
       ]
     }

@@ -85,13 +85,13 @@ private:
 [[nodiscard]] domain::Result<std::unique_ptr<platform::Transcriber>> make_whisper_engine(
     const std::filesystem::path& model_path, int requested_threads = 0);
 
-/// Factory used by NativeEngineRegistry: opens parakeet.dll (ABI 6 asserted by
+/// Factory used by NativeEngineRegistry: opens parakeet.dll (ABI 10 asserted by
 /// the runtime) and wraps it. The model is loaded by warmup(), not here.
 [[nodiscard]] domain::Result<std::unique_ptr<platform::Transcriber>> make_parakeet_engine(
     const std::filesystem::path& dll_path, const std::filesystem::path& model_path);
 
 /// Availability probe used by NativeEngineRegistry. Loads the DLL, resolves the
-/// six frozen symbols, checks ABI 6 and the model file — without loading a model.
+/// six frozen symbols, checks ABI 10 and the model file — without loading a model.
 [[nodiscard]] platform::EngineAvailability probe_parakeet_for_registry(
     domain::TranscriptionEngine engine, const std::filesystem::path& model_path);
 

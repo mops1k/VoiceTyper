@@ -8,8 +8,8 @@
 //     version 6, flat C entry points, malloc'd UTF-8 strings owned by the
 //     caller, last-error string owned by the context.
 //   * VoiceTyper.Core/Interop/ParakeetNative.cs - the .NET P/Invoke surface.
-//   * src/platform/api/engine_registry.hpp - ABI 6 and the pinned commit
-//     e75de9b6b9b688fd293aa22f7e27aa724ea286f8 are frozen there; the loader
+//   * src/platform/api/engine_registry.hpp - ABI 10 and the pinned commit
+//     5c9b0fbbd8e611d88e47d7e1ebae9bca9b447e8f are frozen there; the loader
 //     asserts the same values.
 //   * docs/migration/cpp/native-dependencies.json - repository, pin, license,
 //     SHA-256 and the exact list of symbols that may be bound.

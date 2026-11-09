@@ -2,11 +2,11 @@ transcribe.cpp runtime for the GigaAM-v3 engine (VoiceTyper, C++/Qt build)
 =========================================================================
 
 Repo:    https://github.com/handy-computer/transcribe.cpp
-Pin:     3f32fbcc7bb3246851a0234263438bc3c0fa1cac (tag v0.3.1)
-Source:  https://github.com/handy-computer/transcribe.cpp/archive/3f32fbcc7bb3246851a0234263438bc3c0fa1cac.tar.gz
-         archive 43,842,201 bytes, sha256 aab406e988dc2b3e58f6ba7cb4badfd735ff4cb15a966c4e157dcde7d7b302ee
-License: MIT (vendored ggml and miniz are MIT as well; see THIRD_PARTY_NOTICES.md)
-Date:    2026-10-07
+Pin:     4d7c1ccefd39e5a9ea36cca5f8fefc6dcc14b99b (tag v0.4.1)
+Source:  https://github.com/handy-computer/transcribe.cpp/archive/4d7c1ccefd39e5a9ea36cca5f8fefc6dcc14b99b.tar.gz
+         archive 46,097,287 bytes, sha256 77bfafa35bd7eee447ec37b832e99c342c62b7db0c6cb18c36e763563b586b1f
+License: MIT (vendored ggml 0.26.0 and miniz are MIT as well; see THIRD_PARTY_NOTICES.md)
+Date:    2026-10-22
 
 WHY THIS TOOLCHAIN, NOT ANOTHER (measured, do not "simplify" this away)
 ----------------------------------------------------------------------
@@ -54,12 +54,17 @@ inside "#if _WIN32_WINNT >= 0x0602".
 
 ARTIFACTS (all four DLLs are needed; ggml-cpu.dll is loaded dynamically)
 -----------------------------------------------------------------------
-  libtranscribe.dll  2,679,873 bytes  sha256 e1f74843382e2a36398c22a82d46d208eca2ac34ea49b372121ee3cac1e8e4e0
-  ggml.dll             112,861 bytes  sha256 da0989f0cbe0d144e9ca5f8d89b7ed623db31a116bc3416fb9783d3c952e2b64
-  ggml-base.dll      1,010,572 bytes  sha256 d51879f16e423fecdde3441dd325f91a6a32a6c25ab5be031c018609e3ef3807
-  ggml-cpu.dll       1,489,298 bytes  sha256 ea49b1ca3e89787158fa619ab4bea32464db62b225eb4f6b2fb0fa929440b913
-  transcribe.h         141,687 bytes  sha256 d3617a0638387157af4f99596322d4c6bade2463aae88e0e76506fcd2130a082
+  libtranscribe.dll  2,955,237 bytes  sha256 48fee10cffa21a8654f10ddef22ef32ff4da1bc5de385a18f4016b4cc2c86414
+  ggml.dll             112,861 bytes  sha256 56c037d41dcd990b20057cfa6997a4c3cbb0613a3db088f1d5f6f36938c69d40
+  ggml-base.dll      1,022,890 bytes  sha256 adb6a584737460eb057d3286174a99ebffb8c7c791a89f95c5d1dc6cc879e7ad
+  ggml-cpu.dll       1,670,998 bytes  sha256 6d5c9d4129bd8c0830bfe1c673b255634bf960522a2d1d4c8d2e79cb8504ec97
+  transcribe.h         146,584 bytes  sha256 6eeff40fa7d9d3b17eb021170fda4046b5f54794ddfe4295bcf62bbc6015f652
                                       (the public header this build ships, vendored for the binding)
+
+Dependencies of libtranscribe.dll: ggml.dll, ggml-base.dll, KERNEL32.dll,
+msvcrt.dll, libstdc++-6.dll, libgcc_s_seh-1.dll, libwinpthread-1.dll. The three
+MinGW runtime DLLs come from the application's own MinGW 13 tree (that is the
+whole point of the shared generation).
 
 DEPLOYMENT
 ----------
@@ -74,10 +79,21 @@ GGML_ASSERT(prev != ggml_uncaught_exception) (observed: exit code 3).
 BOUND SYMBOLS
 -------------
 The binding resolves a closed list of 14 symbols (see
-src/asr/transcribe_engine.hpp). The library version must report exactly 0.3.1 and
+src/asr/transcribe_engine.hpp). The library version must report exactly 0.4.1 and
 transcribe_abi_struct_size() must agree with the vendored header for
 transcribe_model_load_params, transcribe_session_params, transcribe_run_params and
 transcribe_capabilities; a mismatch is an error, never a fallback.
+
+WHAT 0.4.1 CHANGES FOR GIGAAM (measured contract, not a guess)
+--------------------------------------------------------------
+* transcribe_model_load_params gained `bool no_mmap`; the other three public
+  structs are byte-identical to 0.3.1, and no exported function disappeared.
+* Audio longer than the 25 s training window is now encoded by the library itself
+  in overlapping windows (0.3.1 only logged a WARN and decoded the whole clip in
+  one pass). VoiceTyper still cuts a long dictation at a pause using
+  transcribe_capabilities::max_audio_ms, so the library-side windowing only ever
+  sees chunks that already fit. Whether to hand long input to the library instead
+  is a separate, measurement-backed decision.
 
 MODEL
 -----

@@ -328,7 +328,7 @@ function(voicetyper_fetch_whisper_cpp)
         # EXCLUDE_FROM_ALL (CMake 3.28+, which this project requires) does two things
         # that matter here: the subdirectory's install rules are ignored when the
         # parent is installed, and the parent's install script does not include the
-        # subdirectory's one. whisper.cpp 1.9.4 declares install(TARGETS parakeet ...)
+        # subdirectory's one. whisper.cpp 1.9.5 declares install(TARGETS parakeet ...)
         # for a target that is not part of our build graph, so a full
         # `cmake --install` otherwise fails on the missing libparakeet.a. The targets
         # we do use (whisper, ggml) are still built: inter-target dependencies

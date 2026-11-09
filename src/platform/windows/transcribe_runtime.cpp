@@ -1,7 +1,7 @@
 #include "asr/transcribe_engine.hpp"
 
 // The vendored public header of the pin
-// (native/transcribe/transcribe.h, v0.3.1 - versioned next to the DLLs it describes). It is the only
+// (native/transcribe/transcribe.h, v0.4.1 - versioned next to the DLLs it describes). It is the only
 // place in the product that includes it, exactly like whisper.h in
 // whisper_native.cpp: the seam stays portable, the ABI stays in one file.
 

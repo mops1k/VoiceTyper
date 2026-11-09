@@ -475,7 +475,7 @@ Current download behavior:
 - Atomic-intended move to target; no fsync, checksum, expected-size enforcement, or format validation.
 - Error/cancel best-effort deletes `.download`; stale temp files are not cleaned at startup.
 - Startup deletes exact legacy fp16/q5 names; a locked legacy file can abort startup.
-- Parakeet pinned build commit: `e75de9b6b9b688fd293aa22f7e27aa724ea286f8`; C header ABI version is 6.
+- Parakeet pinned build commit: `5c9b0fbbd8e611d88e47d7e1ebae9bca9b447e8f` (tag v0.6.1); C header ABI version is 10.
 
 C++ must preserve filenames and existing cache locations. Resume/checksum/validation are stability improvements that require explicit policy for old unverified files.
 
@@ -659,9 +659,9 @@ product; it is the dependency boundary the later Phase C tasks build on.
 
 | Item | Frozen value |
 |---|---|
-| whisper.cpp | `ggml-org/whisper.cpp` @ `d09f61a708f3487afa956ff578e60eae5e7a233c` (upstream 1.9.4, ggml 0.25.1), MIT, compiled from source, **static** |
-| parakeet.cpp | `mudler/parakeet.cpp` @ `e75de9b6b9b688fd293aa22f7e27aa724ea286f8` (`v0.5.0-1-ge75de9b`), MIT, shipped `parakeet.dll`, C ABI **6** |
-| `native/parakeet.dll` | 5,682,591 bytes, SHA-256 `85c7c65bfd8d467799d6cb43bd3cfac884e27dce27680189b56edc5594ec932b` |
+| whisper.cpp | `ggml-org/whisper.cpp` @ `d1be6fde11ac6e0407606b4e42fe72d34add8037` (upstream 1.9.5, ggml 0.26.0), MIT, compiled from source, **static** |
+| parakeet.cpp | `mudler/parakeet.cpp` @ `5c9b0fbbd8e611d88e47d7e1ebae9bca9b447e8f` (`v0.6.1`), MIT, shipped `parakeet.dll`, C ABI **10** |
+| `native/parakeet.dll` | 7,132,322 bytes, SHA-256 `3185b90132f5efe533efef35403ffc3e01fa1b280537514dce6fdfd801336f1a` |
 | `native/mc_wasapi.dll` | 114,213 bytes, SHA-256 `4f97ea7fed7670e91a99cc7ba233efc86f04de9e8cfb9e8f8da5bc08d16944e0` (Phase D, no ABI contract yet) |
 
 Rules:
@@ -677,7 +677,7 @@ Rules:
   empty locale is the language-agnostic path, exactly as `parakeet_capi_transcribe_pcm`
   is, so the language-agnostic case is not a second entry point. No
   `parakeet_capi.h` type crosses into portable code; the handle is `void*`.
-- **ABI 6 is asserted**, and the manifest and
+- **ABI 10 is asserted**, and the manifest and
   `src/platform/api/engine_registry.hpp` (`kParakeetAbiVersion`,
   `kParakeetPinnedCommit`) are cross-checked at every configure.
 - **No silent fallback, on any platform.** A missing DLL, an unloadable DLL, a

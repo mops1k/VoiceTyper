@@ -45,7 +45,7 @@ platform::EngineAvailability NativeEngineRegistry::availability(domain::Transcri
             return result;
         }
         // The probe loads the DLL, resolves the six frozen symbols and asserts
-        // ABI 6. Its verdict is authoritative: the registry never guesses.
+        // ABI 10. Its verdict is authoritative: the registry never guesses.
         return options_.parakeet_probe(engine, *registered);
 
     case domain::TranscriptionEngine::gigaam:

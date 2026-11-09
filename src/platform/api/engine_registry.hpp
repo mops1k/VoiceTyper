@@ -46,10 +46,10 @@ using domain::Status;
 using domain::TranscriptionEngine;
 
 /// C header ABI version of the pinned parakeet.cpp build this project targets.
-inline constexpr int kParakeetAbiVersion = 6;
+inline constexpr int kParakeetAbiVersion = 10;
 
 /// Pinned upstream commit of the parakeet.cpp build, for diagnostics.
-inline constexpr std::string_view kParakeetPinnedCommit = "e75de9b6b9b688fd293aa22f7e27aa724ea286f8";
+inline constexpr std::string_view kParakeetPinnedCommit = "5c9b0fbbd8e611d88e47d7e1ebae9bca9b447e8f";
 
 /// Native library filename that must sit beside the executable for Parakeet.
 inline constexpr std::string_view kParakeetLibraryName = "parakeet.dll";

@@ -18,8 +18,8 @@
 //      src/platform/windows/*.hpp may include parakeet_capi.h, whisper.h or
 //      windows.h. The binding stays in the two .cpp files.
 //   5. The Parakeet loader reports a clear, explicit "unavailable" with the
-//      missing path when the DLL is absent, and - on Windows - reports ABI 6
-//      with all six symbols bound when the shipped DLL is present. Off Windows
+//      missing path when the DLL is absent, and - on Windows - reports the pinned ABI
+//      version with all six symbols bound when the shipped DLL is present. Off Windows
 //      the same present file yields platform_unsupported, never a fallback.
 //
 // Printed greppable line: "native-dependency-contract: OK".
@@ -506,7 +506,7 @@ void check_parakeet_entry(const std::string& manifest, const fs::path& source_di
     if (abi) {
         check(std::stoi(*abi) == kParakeetAbiVersion,
             "manifest ABI version matches kParakeetAbiVersion (" + std::to_string(kParakeetAbiVersion) + ")");
-        check(std::stoi(*abi) == 6, "Parakeet ABI version is 6");
+        check(std::stoi(*abi) == kParakeetAbiVersion, "Parakeet ABI version matches the registry constant");
     }
     const auto pinned = json_field(manifest, span->first, span->second, "pinnedCommit");
     check(pinned && *pinned == std::string(kParakeetPinnedCommit),
@@ -621,7 +621,7 @@ void check_parakeet_entry(const std::string& manifest, const fs::path& source_di
             "ParakeetRuntime::open explains why the engine is unavailable");
     }
 
-    // ...and ABI 6 with all six symbols bound when the shipped DLL is present.
+    // ...and the pinned ABI version with all six symbols bound when the shipped DLL is present.
     const fs::path shipped = source_dir / "native/parakeet.dll";
     if (!fs::is_regular_file(shipped)) {
         skip("shipped parakeet.dll is not in this checkout; ABI probe not executed");
@@ -631,7 +631,7 @@ void check_parakeet_entry(const std::string& manifest, const fs::path& source_di
 #if defined(_WIN32)
     check(probe.library_loaded, "shipped parakeet.dll loads on Windows");
     check(probe.usable, "shipped parakeet.dll is usable on Windows");
-    check(probe.abi_version == 6, "shipped parakeet.dll reports ABI 6");
+    check(probe.abi_version == voicetyper::platform::kParakeetAbiVersion, "shipped parakeet.dll reports the pinned ABI version");
     check(probe.reason == EngineAvailabilityReason::available, "shipped parakeet.dll reason is available");
     check(probe.missing_symbols.empty(), "all six pinned Parakeet symbols resolve");
 #elif defined(__linux__)
@@ -661,7 +661,7 @@ void check_parakeet_entry(const std::string& manifest, const fs::path& source_di
         auto& runtime = *open_present.value();
         check(runtime.is_open(), "opened runtime reports is_open");
         check(!runtime.is_ready(), "opened runtime has no model loaded yet");
-        check(runtime.abi_version() == 6, "opened runtime exposes ABI 6");
+        check(runtime.abi_version() == voicetyper::platform::kParakeetAbiVersion, "opened runtime exposes the pinned ABI version");
         check(runtime.last_error().empty(), "last_error of a fresh runtime is empty");
         const auto not_ready = runtime.transcribe_pcm(nullptr, 0, 16000, 0, "", {});
         check(not_ready.is_error(), "transcribing without a model fails instead of guessing");

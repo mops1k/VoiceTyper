@@ -121,8 +121,8 @@ test `native-engine-registry-contract`.
   pass the DLL path and the model path to the factory.
 - **VT-ASR-304.** `set_model_path()` / `model_path()` MUST be guarded by one mutex and keyed by
   `TranscriptionEngine`.
-- **VT-ASR-305.** The registry constants `kParakeetAbiVersion = 6` and
-  `kParakeetPinnedCommit = e75de9b6b9b688fd293aa22f7e27aa724ea286f8` MUST agree with the
+- **VT-ASR-305.** The registry constants `kParakeetAbiVersion = 10` and
+  `kParakeetPinnedCommit = 5c9b0fbbd8e611d88e47d7e1ebae9bca9b447e8f` MUST agree with the
   dependency manifest and the vendored header; the agreement is checked at every configure and
   by `native-dependency-contract`.
 
@@ -134,8 +134,8 @@ Contract: [src/asr/whisper_native.hpp](../../src/asr/whisper_native.hpp); tests
 `whisper-native-contract`, `asr-native-smoke`.
 
 - **VT-ASR-401.** Whisper MUST be compiled from the pinned source
-  `ggml-org/whisper.cpp` @ `d09f61a708f3487afa956ff578e60eae5e7a233c` (upstream 1.9.4,
-  ggml 0.25.1, MIT) and linked **statically**; `whisper.h` MUST be included by exactly one
+  `ggml-org/whisper.cpp` @ `d1be6fde11ac6e0407606b4e42fe72d34add8037` (upstream 1.9.5,
+  ggml 0.26.0, MIT) and linked **statically**; `whisper.h` MUST be included by exactly one
   translation unit.
 - **VT-ASR-402.** Threads MUST be clamped to `1..16`; `0` means "unspecified" and resolves to
   `1`. The physical-core derivation is not wired for Whisper, and the honest default is
@@ -171,12 +171,12 @@ Contract: [src/asr/whisper_native.hpp](../../src/asr/whisper_native.hpp); tests
 Contract: [src/platform/windows/parakeet_runtime.hpp](../../src/platform/windows/parakeet_runtime.hpp).
 See also [platform.spec.md](platform.spec.md) §VT-PLT-1xx for the port.
 
-- **VT-ASR-501.** Parakeet MUST be loaded from the shipped `parakeet.dll` (5,682,591 bytes,
-  SHA-256 `85c7c65bfd8d467799d6cb43bd3cfac884e27dce27680189b56edc5594ec932b`, ABI **6**) via
+- **VT-ASR-501.** Parakeet MUST be loaded from the shipped `parakeet.dll` (7,132,322 bytes,
+  SHA-256 `3185b90132f5efe533efef35403ffc3e01fa1b280537514dce6fdfd801336f1a`, ABI **10**) via
   `LoadLibraryW` + `GetProcAddress`, binding **exactly six** symbols: `parakeet_capi_abi_version`,
   `parakeet_capi_load`, `parakeet_capi_free`, `parakeet_capi_transcribe_pcm_lang`,
   `parakeet_capi_free_string`, `parakeet_capi_last_error`.
-- **VT-ASR-502.** An ABI other than 6, a missing symbol, or a missing library MUST produce a
+- **VT-ASR-502.** An ABI other than 10, a missing symbol, or a missing library MUST produce a
   specific `EngineAvailabilityReason` (`abi_mismatch`, `abi_mismatch`/`native_library_missing`,
   `native_library_missing`) with the observed and required values and the path — never a
   fallback. Off Windows the reason MUST be `platform_unsupported`.
@@ -212,8 +212,8 @@ Contract: [src/asr/transcribe_engine.hpp](../../src/asr/transcribe_engine.hpp),
 tests `gigaam-engine-contract`, `native-dependency-contract`.
 
 - **VT-ASR-601.** GigaAM MUST be loaded from the pinned `transcribe.cpp` build: version exactly
-  `"0.3.1"` (commit `3f32fbcc7bb3246851a0234263438bc3c0fa1cac`), library
-  `transcribe/libtranscribe.dll` (2,679,873 bytes) in its **own directory** beside the
+  `"0.4.1"` (commit `4d7c1ccefd39e5a9ea36cca5f8fefc6dcc14b99b`), library
+  `transcribe/libtranscribe.dll` (2,955,237 bytes) in its **own directory** beside the
   executable, together with `ggml.dll`, `ggml-base.dll`, `ggml-cpu.dll` (different MinGW
   generation from the application, so its runtime siblings must not be confused with the app's).
 - **VT-ASR-602.** The loader MUST bind exactly the 14 frozen symbols and MUST
@@ -321,14 +321,14 @@ Machine-readable source of truth: `docs/migration/cpp/native-dependencies.json`,
 
 | Dependency | Kind | Pin | ABI | License | Bytes | SHA-256 |
 |---|---|---|---|---|---|---|
-| whisper.cpp + ggml | source-built, static | `d09f61a708f3487afa956ff578e60eae5e7a233c` (1.9.4 / ggml 0.25.1) | pin is the contract | MIT | archive 9,519,792 | archive `750655899a32d5bb5b04bbde9afa430f851d46718f53812a4ec086537fee3ef8` |
-| `native/parakeet.dll` | prebuilt, LoadLibraryW | `e75de9b6b9b688fd293aa22f7e27aa724ea286f8` (v0.5.0-1) | **6** | MIT | 5,682,591 | `85c7c65bfd8d467799d6cb43bd3cfac884e27dce27680189b56edc5594ec932b` |
-| `native/transcribe/libtranscribe.dll` | prebuilt, LoadLibraryExW | commit `3f32fbcc…`, tag v0.3.1 | version string `0.3.1` | MIT | 2,679,873 | `e1f74843382e2a36398c22a82d46d208eca2ac34ea49b372121ee3cac1e8e4e0` |
-| `native/transcribe/ggml.dll` | dependency | same build | — | MIT | 112,861 | `da0989f0cbe0d144e9ca5f8d89b7ed623db31a116bc3416fb9783d3c952e2b64` |
-| `native/transcribe/ggml-base.dll` | dependency | same build | — | MIT | 1,010,572 | `d51879f16e423fecdde3441dd325f91a6a32a6c25ab5be031c018609e3ef3807` |
-| `native/transcribe/ggml-cpu.dll` | dependency (dynamically loaded) | same build | — | MIT | 1,489,298 | `ea49b1ca3e89787158fa619ab4bea32464db62b225eb4f6b2fb0fa929440b913` |
+| whisper.cpp + ggml | source-built, static | `d1be6fde11ac6e0407606b4e42fe72d34add8037` (1.9.5 / ggml 0.26.0) | pin is the contract | MIT | archive 9,631,456 | archive `645445da884df6dbd52b30f82d7be7c01d1767c938714e477e786b88d529e9f4` |
+| `native/parakeet.dll` | prebuilt, LoadLibraryW | `5c9b0fbbd8e611d88e47d7e1ebae9bca9b447e8f` (v0.6.1) | **10** | MIT | 7,132,322 | `3185b90132f5efe533efef35403ffc3e01fa1b280537514dce6fdfd801336f1a` |
+| `native/transcribe/libtranscribe.dll` | prebuilt, LoadLibraryExW | commit `4d7c1cce…`, tag v0.4.1 | version string `0.4.1` | MIT | 2,955,237 | `48fee10cffa21a8654f10ddef22ef32ff4da1bc5de385a18f4016b4cc2c86414` |
+| `native/transcribe/ggml.dll` | dependency | same build | — | MIT | 112,861 | `56c037d41dcd990b20057cfa6997a4c3cbb0613a3db088f1d5f6f36938c69d40` |
+| `native/transcribe/ggml-base.dll` | dependency | same build | — | MIT | 1,022,890 | `adb6a584737460eb057d3286174a99ebffb8c7c791a89f95c5d1dc6cc879e7ad` |
+| `native/transcribe/ggml-cpu.dll` | dependency (dynamically loaded) | same build | — | MIT | 1,670,998 | `6d5c9d4129bd8c0830bfe1c673b255634bf960522a2d1d4c8d2e79cb8504ec97` |
 | `native/mc_wasapi.dll` | prebuilt, not bound | no ABI contract | — | — | 114,213 | `4f97ea7fed7670e91a99cc7ba233efc86f04de9e8cfb9e8f8da5bc08d16944e0` |
-| `native/transcribe/transcribe.h` | vendored header | v0.3.1 | — | MIT | 141,687 | `d3617a0638387157af4f99596322d4c6bade2463aae88e0e76506fcd2130a082` |
+| `native/transcribe/transcribe.h` | vendored header | v0.4.1 | — | MIT | 146,584 | `6eeff40fa7d9d3b17eb021170fda4046b5f54794ddfe4295bcf62bbc6015f652` |
 
 - **VT-ASR-801.** Dependencies MUST be **pinned, not "latest"**: the pin lives in the manifest,
   `FetchContent` downloads a `URL_HASH`-verified archive of exactly that commit, and three files
@@ -366,9 +366,9 @@ same three engines; Parakeet and GigaAM are shared libraries loaded with
 
 | Dependency | Kind | Pin | ABI | License |
 |---|---|---|---|---|
-| whisper.cpp + ggml | source-built, static | `d09f61a708f3487afa956ff578e60eae5e7a233c` (1.9.4 / ggml 0.25.1) | pin is the contract | MIT |
-| `libparakeet.so` | built from source, `dlopen` | `e75de9b6b9b688fd293aa22f7e27aa724ea286f8` (v0.5.0-1), ggml **static** | **6** | MIT |
-| `libtranscribe.so` + `libggml*.so` (0.25.3) | built from source, `dlopen` | commit `3f32fbcc…`, tag v0.3.1 | version string `0.3.1` | MIT |
+| whisper.cpp + ggml | source-built, static | `d1be6fde11ac6e0407606b4e42fe72d34add8037` (1.9.5 / ggml 0.26.0) | pin is the contract | MIT |
+| `libparakeet.so` | built from source, `dlopen` | `5c9b0fbbd8e611d88e47d7e1ebae9bca9b447e8f` (v0.6.1), ggml **static** | **10** | MIT |
+| `libtranscribe.so` + `libggml*.so` (0.26.0) | built from source, `dlopen` | commit `4d7c1cce…`, tag v0.4.1 | version string `0.4.1` | MIT |
 
 - **VT-ASR-820.** Parakeet and GigaAM MUST bind exactly the symbol lists and ABI of
   VT-ASR-5xx/6xx through `dlopen`/`dlsym` with `RTLD_NOW | RTLD_GLOBAL | RTLD_NODELETE`

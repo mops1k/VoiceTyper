@@ -8,8 +8,8 @@
 
 | Engine | Mechanism | Pin | ABI | License |
 |---|---|---|---|---|
-| Whisper | compiled from source into the binary, **static** | `ggml-org/whisper.cpp` @ `d09f61a708f3487afa956ff578e60eae5e7a233c` (upstream 1.9.4, ggml 0.25.1) | no C ABI version; the pin is the contract | MIT |
-| Parakeet | prebuilt `parakeet.dll`, loaded at runtime with `LoadLibraryW`/`GetProcAddress` | `mudler/parakeet.cpp` @ `e75de9b6b9b688fd293aa22f7e27aa724ea286f8` (`v0.5.0-1-ge75de9b`) | **6**, asserted at load time | MIT |
+| Whisper | compiled from source into the binary, **static** | `ggml-org/whisper.cpp` @ `d1be6fde11ac6e0407606b4e42fe72d34add8037` (upstream 1.9.5, ggml 0.26.0) | no C ABI version; the pin is the contract | MIT |
+| Parakeet | prebuilt `parakeet.dll`, loaded at runtime with `LoadLibraryW`/`GetProcAddress` | `mudler/parakeet.cpp` @ `5c9b0fbbd8e611d88e47d7e1ebae9bca9b447e8f` (`v0.6.1`) | **10**, asserted at load time | MIT |
 
 `mc_wasapi.dll` is recorded in the manifest with its size and SHA-256 as a Phase D
 artifact, but has no C ABI contract in the repository yet and is not bound by
@@ -172,8 +172,9 @@ cmake -S . -B build/x -DVOICETYPER_BUILD_ASR=ON -DVOICETYPER_WHISPER_PREFETCHED_
 `--target voicetyper-llm-native` fetches the pinned llama.cpp archive, verifies
 its SHA-256 and the six content pins, and builds `voicetyper_llm.so`/`.dll` with
 llama.cpp and ggml linked statically inside it. It is a separate CMake tree on
-purpose: whisper.cpp carries ggml 0.25.1 and llama.cpp carries ggml 0.26.0, and
-one set of `ggml_*` symbols cannot serve both.
+purpose: whisper.cpp and llama.cpp each link their own ggml copy into the same
+process (whisper.cpp 1.9.5 carries ggml 0.26.0, llama.cpp v0.6.0 its own build of
+the same 0.26.0), and one set of `ggml_*` symbols cannot serve both copies.
 
 `VOICETYPER_LLM_PREFETCHED_DIR=<path>` is the same kind of hatch as the whisper
 one, and the tree is still verified by its six content pins, so only the pinned

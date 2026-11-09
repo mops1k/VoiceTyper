@@ -99,7 +99,7 @@ License, только исследования), что для продукта 
 спутники `ggml.dll`, `ggml-base.dll`, `ggml-cpu.dll`; сборка описана в
 `native/transcribe/BUILD.txt`, репозиторий:
 https://github.com/handy-computer/transcribe.cpp, pin коммита
-`3f32fbcc7bb3246851a0234263438bc3c0fa1cac`, тег v0.3.1).
+`4d7c1ccefd39e5a9ea36cca5f8fefc6dcc14b99b`, тег v0.4.1).
 
 Сборка VoiceTyper включает производные файлы лицензии MIT:
 

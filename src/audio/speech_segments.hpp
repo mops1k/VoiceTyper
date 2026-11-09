@@ -54,6 +54,23 @@ inline constexpr double kSilenceTrimMarginSeconds = 0.5;
 inline constexpr double kSilenceTrimMaxSilenceSeconds = 0.6;
 inline constexpr double kSilenceTrimGapSeconds = 0.3;
 
+/// A trim never removes more than this from either end of a recording, whatever the
+/// detector believes about it.
+///
+/// Evidence (Alexander, 09.11.2026): a push-to-talk recording of 11.27 s had its whole
+/// five-second tail cut because the VAD called continuous speech silence at the quiet
+/// level this microphone delivers. Keeping a second of room noise costs a few hundred
+/// milliseconds of decoding; losing the end of a phrase costs the user's words, and no
+/// detector's mistake may cost more than a second.
+inline constexpr double kMaxTrimLeadingSeconds = 1.0;
+inline constexpr double kMaxTrimTrailingSeconds = 1.0;
+
+/// Any frame at or above this RMS is sound, no matter what the recording's own noise
+/// floor says. -55 dBFS: above the -58 dBFS floor measured on the target machine's
+/// microphone array, below a normally spoken voice. It is the second half of the same
+/// rule: a relative floor alone cannot protect a speaker who is quiet throughout.
+inline constexpr double kAbsoluteSpeechFrameRms = 0.0018;
+
 /// Window a single decode may see when the engine has a bounded input window
 /// (GigaAM v3 is trained on ~25 s). Used as the default chunk budget.
 inline constexpr double kDefaultMaxChunkSeconds = 25.0;
@@ -108,6 +125,10 @@ struct TrimReport {
 /// beyond `margin_seconds` is dropped, and every silence run longer than
 /// `max_silence_seconds` is compressed to `gap_silence_seconds`.
 ///
+/// The removal on each side is capped at `max_removed_leading_seconds` /
+/// `max_removed_trailing_seconds`, so an over-eager detector can never cost more
+/// than that regardless of what it reports.
+///
 /// Segment times are seconds on the same timeline as `samples`. Unsorted,
 /// overlapping or out-of-range segments are normalized (clamped, sorted, merged)
 /// rather than rejected, because a VAD that pads or slightly overshoots must not
@@ -118,7 +139,9 @@ struct TrimReport {
     std::size_t sample_rate = 16000,
     double margin_seconds = kSilenceTrimMarginSeconds,
     double max_silence_seconds = kSilenceTrimMaxSilenceSeconds,
-    double gap_silence_seconds = kSilenceTrimGapSeconds);
+    double gap_silence_seconds = kSilenceTrimGapSeconds,
+    double max_removed_leading_seconds = kMaxTrimLeadingSeconds,
+    double max_removed_trailing_seconds = kMaxTrimTrailingSeconds);
 
 /// Grows every speech span outwards while the audio next to it carries energy.
 ///
@@ -127,11 +150,37 @@ struct TrimReport {
 /// can look like silence to a VAD while still carrying energy. A region is dropped
 /// only where the detector sees no speech AND the frame energy is at the noise
 /// floor of the recording. Cost is one pass over the samples - no model, no VAD.
+///
+/// Two properties the caller relies on, both verified by the contract:
+///   * a single sub-threshold frame (a breath, a plosive closure, a syllabic
+///     pause) does not stop the growth - it is stepped over while the frames on
+///     both sides still carry energy;
+///   * the first frame of the recording with energy above the floor is inside
+///     the protected span, so the beginning of a phrase can never be dropped no
+///     matter where the detector placed its first boundary.
 [[nodiscard]] std::vector<SpeechSegment> extend_segments_with_energy(
     const std::vector<float>& samples,
     const std::vector<SpeechSegment>& segments,
     std::size_t sample_rate = 16000,
-    double frame_seconds = 0.03);
+    double frame_seconds = 0.03,
+    /// Absolute level that counts as sound in the SAME scale as `samples`. A caller
+    /// that amplified the recording before asking passes the amplified value, or the
+    /// rule would protect the amplified noise instead of the voice.
+    double absolute_speech_frame_rms = kAbsoluteSpeechFrameRms);
+
+/// Seconds at which the recording first carries energy clearly above its own
+/// noise floor, or -1 when the whole clip sits at the floor.
+///
+/// This is the number that separates "the beginning of the phrase was never
+/// recorded" from "the beginning was recorded and the trimming cut it": a value
+/// near 0 means the audio starts inside a word, i.e. the phrase began before the
+/// capture did. The floor is the median of the quietest third of the frames, so a
+/// loud or a quiet microphone answers the same question.
+[[nodiscard]] double leading_onset_seconds(
+    const std::vector<float>& samples,
+    std::size_t sample_rate = 16000,
+    double frame_seconds = 0.1,
+    double floor_ratio = 3.0);
 
 /// Rewrites a speech map into the timeline of the trimmed audio described by
 /// `kept_spans`. Segments are mapped endpoint by endpoint, and every output frame

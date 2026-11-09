@@ -188,6 +188,10 @@ void WindowsAudioCapture::append_packet(const WasapiPacket& packet)
     if (!recording_ || overflowed_) {
         return;
     }
+    if (first_packet_ms_ < 0 && session_.empty()) {
+        first_packet_ms_ = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - start_requested_).count();
+    }
     // The packet carries its own format, so the first packet of a session is
     // parsed with the format the device really delivers even when it arrives
     // before start() has returned to the application thread.
@@ -249,6 +253,12 @@ Status WindowsAudioCapture::start(const domain::CancellationToken& cancellation)
         backend_.clear();
         device_format_ = audio::AudioFormat();
         end_reason_ = WasapiEndReason::completed;
+        // The wake-up budget of this session is measured from here: the press that
+        // triggered it is at most a couple of milliseconds earlier (the app logs its
+        // own capture-start cost), so "time to the first packet" is exactly the part
+        // of the beginning a dictation cannot capture.
+        start_requested_ = std::chrono::steady_clock::now();
+        first_packet_ms_ = -1;
         // Opened before the device is: a packet can arrive before start()
         // returns, and dropping it would lose the first few milliseconds of
         // every recording. Each packet carries its own format, so the buffer is
@@ -402,6 +412,14 @@ Result<audio::SampleBuffer> WindowsAudioCapture::stop()
     }
 
     std::lock_guard<std::mutex> lock(mutex_);
+    // How long the device took to deliver its first packet. A dictation that starts
+    // speaking right at the press loses exactly this much of its beginning, and
+    // without the number "the words were never recorded" and "the trimmer cut them"
+    // look the same from the log.
+    if (!backend_.empty()) {
+        backend_ += first_packet_ms_ >= 0 ? " first_packet_ms=" + std::to_string(first_packet_ms_)
+                                          : std::string(" first_packet_ms=none");
+    }
     if (overflowed_) {
         const std::size_t dropped = session_.size();
         session_.clear();

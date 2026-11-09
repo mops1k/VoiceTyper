@@ -911,7 +911,32 @@ int run(int argc, char** argv)
                 + " removed_leading=" + std::to_string(trimming.removed_leading)
                 + " removed_trailing=" + std::to_string(trimming.removed_trailing)
                 + " compressed_pause=" + std::to_string(trimming.compressed_pause_samples)
+                // The onset pair answers "was the beginning of the phrase ever in the
+                // recording": onset_ms near 0 means the clip starts inside a word, and
+                // onset_trimmed=yes would mean the trimmer dropped audible audio.
+                + (trimming.onset_seconds >= 0.0
+                        ? " onset_ms="
+                            + std::to_string(static_cast<long long>(trimming.onset_seconds * 1000.0))
+                        : std::string(" onset_ms=none"))
+                + (trimming.onset_trimmed ? " onset_trimmed=yes" : " onset_trimmed=no")
+                // Level and what the cut regions actually contained: "the end of the
+                // phrase disappeared" is answered by the energy of the removed tail,
+                // not by its length.
+                + " gain=" + std::to_string(trimming.gain)
+                + " peak=" + std::to_string(trimming.peak_after)
+                + " zeros=" + std::to_string(trimming.zero_fraction)
+                + " tail_ms=" + std::to_string(trimming.removed_trailing / 16)
+                + " tail_rms=" + std::to_string(trimming.trailing_rms)
+                + " tail_peak=" + std::to_string(trimming.trailing_peak)
+                + " tail_zero=" + std::to_string(trimming.trailing_zero_fraction)
                 + " detect_ms=" + std::to_string(trimming.detect_ms)));
+        if (!trimming.profile.empty()) {
+            // Only when VOICETYPER_PROFILE_AUDIO is set: one RMS value per 0.25 s,
+            // scaled by 10000, so a cut tail can be judged from numbers instead of
+            // storing the user's audio.
+            static_cast<void>(logger.write(
+                platform::LogLevel::info, "audio profile", trimming.profile));
+        }
         // The split that makes a slow dictation diagnosable: how long the engine
         // itself took over how much audio, and how many sequential decodes it
         // needed (more than one means the dictation was cut to the model window).

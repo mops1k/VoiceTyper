@@ -41,6 +41,7 @@
 #include "platform/windows/wasapi_capture.hpp"
 
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <thread>
 #include <cstdint>
@@ -167,6 +168,13 @@ private:
     /// whether its callback fired at all, and these numbers answer that from the log.
     std::atomic<std::size_t> native_buffers_{0};
     std::atomic<std::size_t> native_bytes_{0};
+    /// Milliseconds from start() to the first delivered packet: the device's own
+    /// wake-up, which a dictation that begins right after the press loses from its
+    /// beginning. -1 when the session delivered nothing. Published through
+    /// backend_description() so every session carries it in the log without a
+    /// second log line.
+    long long first_packet_ms_ = -1;
+    std::chrono::steady_clock::time_point start_requested_{};
     [[nodiscard]] std::vector<float> to_16k_mono_locked(std::size_t from, std::size_t to) const;
 
     const Options options_;

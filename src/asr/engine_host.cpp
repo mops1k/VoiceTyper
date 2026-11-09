@@ -2,6 +2,7 @@
 
 #include "asr/engine_parameters.hpp"
 #include "audio/audio_wav.hpp"
+#include "audio/speech_segments.hpp"
 
 #include <algorithm>
 #include <vector>
@@ -357,6 +358,24 @@ domain::Result<std::string> EngineHost::transcribe(
     std::vector<float> samples = audio.samples();
     if (options.noise_suppression) {
         audio::suppress_noise(samples, audio::kTargetSampleRate);
+    }
+    // A dictation whose first sound is already there at sample 0 began BEFORE the
+    // capture did (reported 09.11.2026: two words missing from the start of a
+    // push-to-talk recording, and the trimmer had removed nothing at all). The
+    // beginning itself is unrecoverable, but an encoder that was trained with a
+    // lead-in answers a mid-word start by dropping the first tokens - the same
+    // complaint - so the part that IS in the recording is given the context it was
+    // trained for. Silence can never delete audio; it only removes the abrupt edge.
+    constexpr double kOnsetLeadSeconds = 0.2;
+    constexpr double kOnsetLeadOnlyBelowSeconds = 0.05;
+    const double onset = audio::leading_onset_seconds(samples, audio::kTargetSampleRate);
+    if (onset >= 0.0 && onset <= kOnsetLeadOnlyBelowSeconds) {
+        const auto lead = static_cast<std::size_t>(kOnsetLeadSeconds * static_cast<double>(audio::kTargetSampleRate));
+        std::vector<float> padded;
+        padded.reserve(samples.size() + lead);
+        padded.insert(padded.end(), lead, 0.0F);
+        padded.insert(padded.end(), samples.begin(), samples.end());
+        samples = std::move(padded);
     }
     const auto written = audio::write_wav_pcm16(samples, wav_bytes);
     if (written.is_error()) {

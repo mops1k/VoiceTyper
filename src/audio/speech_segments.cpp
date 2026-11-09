@@ -108,6 +108,44 @@ std::size_t lowest_probability_sample(
     return sample >= hi ? hi : sample;
 }
 
+/// RMS of every whole frame of `frame_samples`; the fractional tail is ignored.
+std::vector<double> frame_energies(const std::vector<float>& samples, std::size_t frame_samples)
+{
+    if (frame_samples == 0) {
+        return {};
+    }
+    const std::size_t frames = samples.size() / frame_samples;
+    std::vector<double> energy(frames, 0.0);
+    for (std::size_t frame = 0; frame < frames; ++frame) {
+        double sum = 0.0;
+        const auto begin = frame * frame_samples;
+        for (std::size_t index = begin; index < begin + frame_samples; ++index) {
+            sum += static_cast<double>(samples[index]) * static_cast<double>(samples[index]);
+        }
+        energy[frame] = std::sqrt(sum / static_cast<double>(frame_samples));
+    }
+    return energy;
+}
+
+/// The noise floor of a recording, from the recording itself: the median of the
+/// quietest third of its frames. A fixed threshold would break on a loud or a
+/// quiet microphone; every caller that decides "this region is silence" derives
+/// its floor here so the two answers cannot disagree.
+///
+/// It is capped at a tenth of the loudest frame, because a clip with almost no
+/// room noise - a dictation that is speech from its first sample, the very case
+/// "the beginning of the phrase is missing" is about - would otherwise report a
+/// floor equal to the speech level and find no sound at all.
+double noise_floor_of(std::vector<double> energy)
+{
+    if (energy.empty()) {
+        return 0.0;
+    }
+    const double loudest = *std::max_element(energy.begin(), energy.end());
+    std::sort(energy.begin(), energy.end());
+    return std::min(energy[energy.size() / 3], loudest * 0.1);
+}
+
 } // namespace
 
 TrimReport trim_silence_to_segments(
@@ -116,7 +154,9 @@ TrimReport trim_silence_to_segments(
     std::size_t sample_rate,
     double margin_seconds,
     double max_silence_seconds,
-    double gap_silence_seconds)
+    double gap_silence_seconds,
+    double max_removed_leading_seconds,
+    double max_removed_trailing_seconds)
 {
     TrimReport report;
     if (samples.empty() || sample_rate == 0) {
@@ -140,8 +180,21 @@ TrimReport trim_silence_to_segments(
 
     const auto first_speech = sample_at(spans.front().start_seconds, sample_rate);
     const auto last_speech = sample_at(spans.back().end_seconds, sample_rate);
-    const auto begin = first_speech > margin ? first_speech - margin : 0;
-    const auto end = std::min(samples.size(), last_speech + margin);
+    auto begin = first_speech > margin ? first_speech - margin : 0;
+    auto end = std::min(samples.size(), last_speech + margin);
+    // The cap comes before anything else: however wrong the detector is, a trim may
+    // not remove more than the policy allows from either side. Keep-more is always the
+    // safer direction - the engine ignores silence, the user cannot ignore a lost word.
+    const auto leading_cap = static_cast<std::size_t>(
+        std::max(0.0, max_removed_leading_seconds) * static_cast<double>(sample_rate));
+    const auto trailing_cap = static_cast<std::size_t>(
+        std::max(0.0, max_removed_trailing_seconds) * static_cast<double>(sample_rate));
+    if (begin > leading_cap) {
+        begin = leading_cap;
+    }
+    if (samples.size() > trailing_cap && end < samples.size() - trailing_cap) {
+        end = samples.size() - trailing_cap;
+    }
     if (end <= begin) {
         report.samples = samples;
         return report;
@@ -153,11 +206,25 @@ TrimReport trim_silence_to_segments(
     std::vector<float> out;
     out.reserve(end - begin);
     std::size_t cursor = begin;
+    bool first_span = true;
     for (const auto& span : spans) {
         const auto span_begin = std::max(cursor, std::min(end, sample_at(span.start_seconds, sample_rate)));
         const auto span_end = std::max(span_begin, std::min(end, sample_at(span.end_seconds, sample_rate)));
-        append_silence(out, samples, cursor, span_begin, max_silence, gap,
-            report.compressed_pause_samples, report.kept_spans);
+        if (first_span) {
+            // The leading edge is copied WHOLE, not compressed: it is the protective
+            // margin the policy promises, and compressing it would quietly undo the
+            // removal cap - the audio the cap deliberately kept would be squeezed out
+            // again, which is exactly how a mistimed detector cost a user his phrase.
+            if (span_begin > cursor) {
+                report.kept_spans.push_back(KeptSpan{cursor, span_begin, out.size()});
+                out.insert(out.end(), samples.begin() + static_cast<std::ptrdiff_t>(cursor),
+                    samples.begin() + static_cast<std::ptrdiff_t>(span_begin));
+            }
+            first_span = false;
+        } else {
+            append_silence(out, samples, cursor, span_begin, max_silence, gap,
+                report.compressed_pause_samples, report.kept_spans);
+        }
         if (span_end > span_begin) {
             report.kept_spans.push_back(KeptSpan{span_begin, span_end, out.size()});
             out.insert(out.end(), samples.begin() + static_cast<std::ptrdiff_t>(span_begin),
@@ -165,8 +232,13 @@ TrimReport trim_silence_to_segments(
         }
         cursor = span_end;
     }
-    append_silence(out, samples, cursor, end, max_silence, gap,
-        report.compressed_pause_samples, report.kept_spans);
+    // The trailing edge is copied whole for the same reason as the leading one; only
+    // the pauses BETWEEN phrases are compressed.
+    if (end > cursor) {
+        report.kept_spans.push_back(KeptSpan{cursor, end, out.size()});
+        out.insert(out.end(), samples.begin() + static_cast<std::ptrdiff_t>(cursor),
+                   samples.begin() + static_cast<std::ptrdiff_t>(end));
+    }
 
     report.samples = std::move(out);
     return report;
@@ -174,7 +246,7 @@ TrimReport trim_silence_to_segments(
 
 std::vector<SpeechSegment> extend_segments_with_energy(
     const std::vector<float>& samples, const std::vector<SpeechSegment>& segments,
-    std::size_t sample_rate, double frame_seconds)
+    std::size_t sample_rate, double frame_seconds, double absolute_speech_frame_rms)
 {
     if (samples.empty() || segments.empty() || sample_rate == 0 || frame_seconds <= 0.0) {
         return segments;
@@ -183,50 +255,107 @@ std::vector<SpeechSegment> extend_segments_with_energy(
     if (frame_samples == 0) {
         return segments;
     }
-    const std::size_t frames = samples.size() / frame_samples;
+    const std::vector<double> energy = frame_energies(samples, frame_samples);
+    const std::size_t frames = energy.size();
     if (frames == 0) {
         return segments;
-    }
-
-    std::vector<double> energy(frames, 0.0);
-    for (std::size_t frame = 0; frame < frames; ++frame) {
-        double sum = 0.0;
-        const auto begin = frame * frame_samples;
-        for (std::size_t index = begin; index < begin + frame_samples; ++index) {
-            sum += static_cast<double>(samples[index]) * static_cast<double>(samples[index]);
-        }
-        energy[frame] = std::sqrt(sum / static_cast<double>(frame_samples));
     }
 
     // The noise floor is the median of the quietest third of the frames: a floor
     // derived from the recording itself, not a fixed threshold that a loud or a
     // quiet microphone would break.
-    std::vector<double> sorted = energy;
-    std::sort(sorted.begin(), sorted.end());
-    const double floor = sorted[sorted.size() / 3];
-    // 3x the floor is "still silence"; anything above it is protected.
-    const double threshold = floor * 3.0 + 1e-6;
+    const double floor = noise_floor_of(energy);
+    // 2x the floor is "still silence"; anything above it is protected. The ratio is
+    // deliberately generous: keeping half a second of room noise costs nothing,
+    // dropping the first word of a phrase costs the user's trust (measured
+    // 09.11.2026 on a -40 dBFS microphone array, where 3x the floor let a soft
+    // onset look like silence).
+    const double relative = floor * 2.0 + 1e-6;
+    // A relative rule alone cannot protect a speaker who is quiet ALL the time: when
+    // the voice itself is only a few dB above the room, the proportional threshold
+    // lands inside the speech and the end of the phrase is dropped. Anything at or
+    // above the absolute level is sound whatever the floor says - in the scale of
+    // these samples, which is why the caller passes it instead of assuming 16 kHz
+    // recording level.
+    const double threshold = std::min(relative, std::max(0.0, absolute_speech_frame_rms));
 
     const auto frame_of = [frame_samples, frames](double seconds, std::size_t sample_rate_for) {
         const auto sample = static_cast<std::size_t>(std::max(0.0, seconds) * static_cast<double>(sample_rate_for));
         return std::min(frames - 1, sample / frame_samples);
     };
 
+    // The first frame of the recording that carries sound. It is protected wherever a
+    // detector placed its first boundary: a phrase that starts within the first few
+    // hundred milliseconds is exactly the case "one or two words are missing" was
+    // reported for.
+    std::size_t first_energy = frames;
+    for (std::size_t frame = 0; frame < frames; ++frame) {
+        if (energy[frame] > threshold) {
+            first_energy = frame;
+            break;
+        }
+    }
+
     std::vector<SpeechSegment> grown;
     grown.reserve(segments.size());
     for (const auto& segment : segments) {
         std::size_t begin = frame_of(segment.start_seconds, sample_rate);
         std::size_t end = frame_of(segment.end_seconds, sample_rate);
-        while (begin > 0 && energy[begin - 1] > threshold) {
-            --begin;
+        // Walk outwards over the frames that carry sound. One sub-threshold frame is
+        // stepped over when the frame beyond it is loud again: a breath or a plosive
+        // closure inside a word must not end the protected span.
+        while (begin > 0) {
+            if (energy[begin - 1] > threshold) {
+                --begin;
+                continue;
+            }
+            if (begin >= 2 && energy[begin - 2] > threshold) {
+                begin -= 2;
+                continue;
+            }
+            break;
         }
-        while (end + 1 < frames && energy[end + 1] > threshold) {
-            ++end;
+        while (end + 1 < frames) {
+            if (energy[end + 1] > threshold) {
+                ++end;
+                continue;
+            }
+            if (end + 2 < frames && energy[end + 2] > threshold) {
+                end += 2;
+                continue;
+            }
+            break;
+        }
+        if (first_energy < begin) {
+            begin = first_energy;
         }
         grown.push_back(SpeechSegment{static_cast<double>(begin * frame_samples) / static_cast<double>(sample_rate),
             static_cast<double>((end + 1) * frame_samples) / static_cast<double>(sample_rate)});
     }
     return grown;
+}
+
+double leading_onset_seconds(const std::vector<float>& samples, std::size_t sample_rate,
+    double frame_seconds, double floor_ratio)
+{
+    if (samples.empty() || sample_rate == 0 || frame_seconds <= 0.0) {
+        return -1.0;
+    }
+    const auto frame_samples = static_cast<std::size_t>(frame_seconds * static_cast<double>(sample_rate));
+    if (frame_samples == 0) {
+        return -1.0;
+    }
+    const std::vector<double> energy = frame_energies(samples, frame_samples);
+    if (energy.empty()) {
+        return -1.0;
+    }
+    const double threshold = noise_floor_of(energy) * std::max(0.0, floor_ratio) + 1e-6;
+    for (std::size_t frame = 0; frame < energy.size(); ++frame) {
+        if (energy[frame] > threshold) {
+            return static_cast<double>(frame) * frame_seconds;
+        }
+    }
+    return -1.0;
 }
 
 SpeechMap map_speech_map(const SpeechMap& source, const std::vector<KeptSpan>& kept_spans,

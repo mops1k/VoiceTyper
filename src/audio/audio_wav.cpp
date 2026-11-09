@@ -342,4 +342,32 @@ std::vector<float> trim_silence(
     return result;
 }
 
+double normalise_peak(std::vector<float>& samples, double target_peak, double max_gain)
+{
+    if (samples.empty() || target_peak <= 0.0 || max_gain <= 0.0) {
+        return 1.0;
+    }
+    double peak = 0.0;
+    for (const float sample : samples) {
+        const double magnitude = sample < 0.0F ? -static_cast<double>(sample) : static_cast<double>(sample);
+        if (magnitude > peak) {
+            peak = magnitude;
+        }
+    }
+    if (peak <= 0.0) {
+        return 1.0; // digital silence stays digital silence
+    }
+    double gain = target_peak / peak;
+    if (gain < 1.0) {
+        return 1.0; // already at or above the target: never attenuate a dictation
+    }
+    if (gain > max_gain) {
+        gain = max_gain;
+    }
+    for (float& sample : samples) {
+        sample = static_cast<float>(static_cast<double>(sample) * gain);
+    }
+    return gain;
+}
+
 } // namespace voicetyper::audio

@@ -128,24 +128,29 @@ void check_surrounding_silence_is_dropped()
     const auto result = trimming.transcribe(buffer_of(audio), SessionOptions{}, CancellationToken{});
     check(result.is_ok(), "trimming: a successful transcription stays successful");
     check(segmenter.resets == 1, "trimming: the segmenter is reset once per call");
-    // 0.5 s kept before the speech and 0.5 s after it: about 4 s out of 7 s. The
-    // energy guard works on 30 ms frames, so every boundary carries up to one frame
-    // of quantisation - asserting an exact sample would be asserting the rounding.
+    // The margins stay 0.5 s, but the removal on each side is capped at 1 s (measured
+    // 09.11.2026: a detector that calls continuous speech silence must not cost more
+    // than that). The kept edge audio is NEVER compressed - only the pauses between
+    // phrases are - so the engine receives 1 s + speech + 1 s: about 5 s out of 7 s.
     constexpr std::size_t kFrame = 480;
     const auto near = [](std::size_t actual, std::size_t expected) {
         // Two boundaries quantise, so two frames of slack - not an exact sample.
         return actual + 2 * kFrame >= expected && actual <= expected + 2 * kFrame;
     };
-    check(near(engine.received.size(), static_cast<std::size_t>(4.0 * kRate)),
-        "trimming: the engine receives speech plus the documented margins");
+    check(near(engine.received.size(), static_cast<std::size_t>(5.0 * kRate)),
+        "trimming: the engine receives the speech and the capped margins");
     const auto& report = trimming.last_report();
-    check(near(report.removed_leading, static_cast<std::size_t>(1.5 * kRate)),
-        "trimming: the leading silence is reported");
-    check(near(report.removed_trailing, static_cast<std::size_t>(1.5 * kRate)),
-        "trimming: the trailing silence is reported");
+    check(near(report.removed_leading, static_cast<std::size_t>(1.0 * kRate)),
+        "trimming: at most one second of the leading silence is removed");
+    check(near(report.removed_trailing, static_cast<std::size_t>(1.0 * kRate)),
+        "trimming: at most one second of the trailing silence is removed");
     check(report.speech_segments == 1, "trimming: the speech segment count is reported");
     check(!report.unchanged, "trimming: the report says the audio was changed");
     check(!report.skipped_short, "trimming: a long recording is not skipped");
+    // The level of the dictation is the other half of the report: a quiet microphone
+    // must be brought up, never attenuated.
+    check(report.peak_after >= report.peak_before, "trimming: levelling never attenuates");
+    check(report.gain >= 1.0, "trimming: the reported gain is at least one");
 }
 
 /// A detector that finds nothing must not cost the user a dictation.
@@ -271,13 +276,14 @@ void check_the_speech_map_is_forwarded()
     const auto& map = engine.received_map;
     check(!map.empty(), "map: the engine receives the detector's answer");
     check(map.segments.size() == 1, "map: one speech segment is forwarded");
-    // 1.5 s of the leading silence is dropped, so the speech now starts at 0.5 s
-    // and ends at 3.5 s of the 4 s the engine received.
-    check(map.segments.size() == 1 && map.segments.front().start_seconds > 0.45
-              && map.segments.front().start_seconds < 0.55,
+    // 1 s of the leading silence is removed (the cap) and the kept edge is not
+    // compressed, so the speech starts at about 1 s of what the engine received and
+    // ends about 3 s later.
+    check(map.segments.size() == 1 && map.segments.front().start_seconds > 0.9
+              && map.segments.front().start_seconds < 1.06,
         "map: the segment is mapped into the trimmed timeline");
-    check(map.segments.size() == 1 && map.segments.front().end_seconds > 3.45
-              && map.segments.front().end_seconds < 3.55,
+    check(map.segments.size() == 1 && map.segments.front().end_seconds > 3.95
+              && map.segments.front().end_seconds < 4.1,
         "map: the segment end is mapped as well");
 }
 

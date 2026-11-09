@@ -79,4 +79,17 @@ void suppress_noise(std::vector<float>& samples, std::size_t sample_rate = kTarg
     double max_silence_seconds = 0.6,
     double gap_silence_seconds = 0.3);
 
+/// Peak-normalises a recording in place and returns the gain that was applied.
+///
+/// Evidence (Alexander, 09.11.2026): his microphone delivers speech with a peak of
+/// about 0.01 (-40 dBFS) and an RMS of about 0.0012 (-58 dBFS). At that level a
+/// recogniser has almost nothing to work with and every energy-based decision sits
+/// next to the noise floor, so the recording is brought up to a level the models
+/// expect BEFORE the detector and the engine see it. The gain is capped, because
+/// amplifying a silent recording only amplifies its noise; a clip whose peak is
+/// already above `target_peak` is left untouched and reports a gain of 1.0.
+[[nodiscard]] double normalise_peak(std::vector<float>& samples,
+    double target_peak = 0.3,
+    double max_gain = 8.0);
+
 } // namespace voicetyper::audio

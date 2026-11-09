@@ -926,7 +926,27 @@ int run(int argc, char** argv)
             "segments=" + std::to_string(trimming.speech_segments)
                 + " removed_leading=" + std::to_string(trimming.removed_leading)
                 + " removed_trailing=" + std::to_string(trimming.removed_trailing)
-                + " compressed_pause=" + std::to_string(trimming.compressed_pause_samples)));
+                + " compressed_pause=" + std::to_string(trimming.compressed_pause_samples)
+                // Same meaning as on Windows: onset_ms near 0 means the clip starts
+                // inside a word, onset_trimmed=yes means the trimmer cut audible audio.
+                + (trimming.onset_seconds >= 0.0
+                        ? " onset_ms="
+                            + std::to_string(static_cast<long long>(trimming.onset_seconds * 1000.0))
+                        : std::string(" onset_ms=none"))
+                + (trimming.onset_trimmed ? " onset_trimmed=yes" : " onset_trimmed=no")
+                // Level and the content of the cut regions, identical to Windows.
+                + " gain=" + std::to_string(trimming.gain)
+                + " peak=" + std::to_string(trimming.peak_after)
+                + " zeros=" + std::to_string(trimming.zero_fraction)
+                + " tail_ms=" + std::to_string(trimming.removed_trailing / 16)
+                + " tail_rms=" + std::to_string(trimming.trailing_rms)
+                + " tail_peak=" + std::to_string(trimming.trailing_peak)
+                + " tail_zero=" + std::to_string(trimming.trailing_zero_fraction)
+                + " detect_ms=" + std::to_string(trimming.detect_ms)));
+        if (!trimming.profile.empty()) {
+            static_cast<void>(logger.write(
+                platform::LogLevel::info, "audio profile", trimming.profile));
+        }
         static_cast<void>(logger.write(
             platform::LogLevel::info,
             "text delivered",

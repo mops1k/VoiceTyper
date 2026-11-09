@@ -174,6 +174,87 @@ void check_chunks_without_speech_cover_everything()
     check(zero.empty(), "an empty recording yields no chunk");
 }
 
+void check_onset_protection()
+{
+    // Reported 09.11.2026: one or two words missing from the start of a dictation.
+    // The shape that matters is a phrase that begins right after the recording starts,
+    // with a breath (one sub-threshold frame) inside it, and a VAD that placed its
+    // first boundary late inside the first word.
+    const std::size_t lead = 13 * 480;      // 0.39 s of room silence
+    const std::size_t speech1 = 20 * 480;   // 0.6 s of speech
+    const std::size_t dip = 480;            // one quiet frame inside the phrase
+    const std::size_t speech2 = 20 * 480;   // 0.6 s of speech
+    const std::size_t tail = 33 * 480;
+    std::vector<float> samples;
+    append(samples, tone(lead, 0.0f));
+    append(samples, tone(speech1, 0.25f));
+    append(samples, tone(dip, 0.001f));
+    append(samples, tone(speech2, 0.25f));
+    append(samples, tone(tail, 0.0f));
+
+    const std::vector<SpeechSegment> late_boundary{{1.02, 1.20}};
+    const auto grown = extend_segments_with_energy(samples, late_boundary, kRate, 0.03);
+    check(grown.size() == 1, "the guard answers one span per segment");
+    check(grown.front().start_seconds <= 0.45, "a late VAD boundary cannot cut the phrase onset");
+    check(grown.front().end_seconds >= 1.60, "one quiet frame inside a phrase does not end the span");
+
+    // Whatever the detector says, the first sound of the recording stays protected:
+    // this is the property "the beginning of the phrase is never dropped" rests on.
+    const std::vector<SpeechSegment> wrong_boundary{{2.10, 2.40}};
+    const auto rescued = extend_segments_with_energy(samples, wrong_boundary, kRate, 0.03);
+    check(!rescued.empty() && rescued.front().start_seconds <= 0.45,
+        "the first frame carrying energy is inside the protected span");
+}
+
+void check_trim_caps()
+{
+    // 10 s of room, 1 s of speech, 10 s of room. Reported 09.11.2026: a quiet
+    // microphone plus an unsure detector cost the user five seconds of a phrase. The
+    // policy cap means no detector's mistake can cost more than a second per side.
+    std::vector<float> samples;
+    append(samples, tone(10 * kRate, 0.0f));
+    append(samples, tone(kRate, 0.25f));
+    append(samples, tone(10 * kRate, 0.0f));
+    const auto report = trim_silence_to_segments(samples, {SpeechSegment{10.0, 11.0}}, kRate);
+    const std::size_t cap = static_cast<std::size_t>(kMaxTrimLeadingSeconds * static_cast<double>(kRate)) + 2 * 480;
+    check(report.removed_leading <= cap, "the leading removal is capped");
+    check(report.removed_trailing <= cap, "the trailing removal is capped");
+    // The caps bound what a wrong detector can take; the long kept room still
+    // compresses to the documented gap, so the result is speech plus that gap.
+    check(report.samples.size() > static_cast<std::size_t>(1.0 * static_cast<double>(kRate)),
+        "the speech survives the caps");
+}
+
+void check_quiet_speech_is_protected()
+{
+    // The speaker is quiet throughout and the room is not silent: the relative floor
+    // lands inside the voice, so without the absolute rule the span would end at the
+    // VAD's boundary and the rest of the phrase would be dropped.
+    std::vector<float> samples;
+    append(samples, tone(2 * kRate, 0.0035f)); // quiet voice, about -49 dBFS
+    append(samples, tone(2 * kRate, 0.0020f)); // room noise loud enough to fool a ratio
+    const auto grown = extend_segments_with_energy(samples, {SpeechSegment{0.2, 0.6}}, kRate, 0.03);
+    check(!grown.empty() && grown.front().end_seconds >= 3.9,
+        "a quiet phrase is not cut where a relative floor would stop");
+}
+
+void check_leading_onset()
+{
+    // A clip that starts inside a word: onset 0 is the signature of "the phrase began
+    // before the capture did", the case no post-processing can repair.
+    const auto starts_with_speech = tone(kRate, 0.25f);
+    check(std::abs(leading_onset_seconds(starts_with_speech, kRate) - 0.0) < 1e-6,
+        "audio that starts inside a word reports onset 0");
+
+    const auto after_a_second = speech_in_silence(kRate, kRate / 2, kRate / 2);
+    check(std::abs(leading_onset_seconds(after_a_second, kRate) - 1.0) < 1e-6,
+        "the onset is the first block above the floor");
+
+    const auto room_only = tone(2 * kRate, 0.0f);
+    check(leading_onset_seconds(room_only, kRate) < 0.0, "silence alone reports no onset");
+    check(leading_onset_seconds({}, kRate) < 0.0, "an empty recording reports no onset");
+}
+
 void check_join()
 {
     check(join_transcripts({"привет", "мир"}) == "привет мир", "two parts join with one space");
@@ -198,6 +279,10 @@ int main()
     check_chunks_split_at_a_pause();
     check_chunks_cut_one_long_utterance_at_the_quietest_frame();
     check_chunks_without_speech_cover_everything();
+    check_onset_protection();
+    check_leading_onset();
+    check_trim_caps();
+    check_quiet_speech_is_protected();
     check_join();
 
     if (failures != 0) {

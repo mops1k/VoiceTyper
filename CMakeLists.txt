@@ -29,7 +29,7 @@ option(VOICETYPER_BUILD_LLM "Build the pinned llama.cpp cleanup runtime (require
 # The product version. It is what the About page shows and what the update check
 # compares against the release tag, so it must be a real version, not the spike
 # default. CI overrides it with the tag being released.
-set(VOICETYPER_VERSION "3.4.3" CACHE STRING "Product version, compared with the release tag")
+set(VOICETYPER_VERSION "3.4.4" CACHE STRING "Product version, compared with the release tag")
 
 # Native dependency contract (task t_c6a6b0ce9685). The manifest is read on
 # every configuration, the Parakeet pin/ABI are cross-checked against the
@@ -661,6 +661,26 @@ if(VOICETYPER_BUILD_TESTS)
     add_test(NAME microphone-probe-contract COMMAND voicetyper-microphone-probe-contract)
     set_tests_properties(microphone-probe-contract PROPERTIES
         PASS_REGULAR_EXPRESSION "microphone-probe-contract: OK"
+    )
+
+    # The capture-path policy (app/capture_path_resolver.hpp and
+    # app/capture_switcher.hpp): the AR-glasses case - an OS default endpoint that
+    # accepts no format, a native backend that reports success and never delivers, and
+    # a second endpoint that does work - is pinned with fake captures, so the order,
+    # the fallback and the mid-dictation swap are proven without a microphone or
+    # Windows (Alexander, 2026-11-23).
+    add_executable(voicetyper-capture-path-contract EXCLUDE_FROM_ALL
+        tests/contract/capture_path_contract.cpp
+    )
+    target_link_libraries(voicetyper-capture-path-contract
+        PRIVATE
+            voicetyper_audio
+            voicetyper_domain
+    )
+    voicetyper_set_warnings(voicetyper-capture-path-contract)
+    add_test(NAME capture-path-contract COMMAND voicetyper-capture-path-contract)
+    set_tests_properties(capture-path-contract PROPERTIES
+        PASS_REGULAR_EXPRESSION "capture-path-contract: OK"
     )
 
     add_executable(voicetyper-model-download-contract EXCLUDE_FROM_ALL
@@ -1683,6 +1703,7 @@ add_custom_target(voicetyper-tests
     DEPENDS voicetyper-llm-cleanup-contract
     DEPENDS voicetyper-noise-suppression-contract
     DEPENDS voicetyper-microphone-probe-contract
+    DEPENDS voicetyper-capture-path-contract
     DEPENDS voicetyper-model-download-contract)
 
 # The Windows-only suites cannot be listed in the target above: this project builds

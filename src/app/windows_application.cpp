@@ -38,6 +38,8 @@
 #include "domain/file_logger.hpp"
 #include "domain/recording_state_machine.hpp"
 #include "audio/silence_trimming_port.hpp"
+#include "app/capture_path_resolver.hpp"
+#include "app/capture_switcher.hpp"
 #include "domain/terms_dictionary.hpp"
 #include "domain/filler_words_port.hpp"
 #include "domain/llm_cleanup_port.hpp"
@@ -208,12 +210,13 @@ class LoggedRecordingPort final : public domain::RecordingPort {
 public:
     LoggedRecordingPort(domain::RecordingPort& inner, platform::Logger& logger,
         std::string requested_device, std::function<std::string()> backend_name = {},
-        platform::CaptureGuard* guard = nullptr)
+        platform::CaptureGuard* guard = nullptr, std::function<void()> on_empty_session = {})
         : inner_(inner)
         , logger_(logger)
         , requested_device_(std::move(requested_device))
         , backend_name_(std::move(backend_name))
         , guard_(guard)
+        , on_empty_session_(std::move(on_empty_session))
     {
     }
 
@@ -269,6 +272,13 @@ public:
                 + std::to_string(static_cast<double>(samples.size()) / 16000.0) + " peak=" + std::to_string(peak)
                 + " rms=" + std::to_string(rms) + " backend="
                 + (backend_name_ ? backend_name_() : std::string("unknown"))));
+        // A session that saw no device audio at all is not "the user said nothing":
+        // the microphone delivered nothing, and the status line has to say so instead
+        // of leaving the user with a hotkey that appeared to do nothing (the
+        // 2026-11-23 AR-glasses case looked exactly like that).
+        if (samples.empty() && on_empty_session_) {
+            on_empty_session_();
+        }
         return result;
     }
 
@@ -292,6 +302,9 @@ private:
     /// The fuse for the session this wrapper is running; null when the composition does
     /// not install one (tests).
     platform::CaptureGuard* guard_ = nullptr;
+    /// Called when a finished session delivered no samples at all, so the window can
+    /// say "the microphone gave no audio" instead of staying silent.
+    std::function<void()> on_empty_session_;
 };
 
 
@@ -569,6 +582,10 @@ int run(int argc, char** argv)
 
     // --- capture -------------------------------------------------------------
     platform::WindowsMicrophone microphone;
+    // Every enumeration of capture endpoints goes through this mutex: the settings
+    // page lists them on the interface thread while the capture route is resolved on
+    // the capture worker, and the backend keeps per-instance diagnostics.
+    auto microphone_mutex = std::make_shared<std::mutex>();
     auto devices = microphone.list_devices();
     if (devices.empty()) {
         // "devices=0" alone is not diagnosable: the backend knows whether COM was
@@ -593,24 +610,150 @@ int run(int argc, char** argv)
         }
     }
     const auto selected = presenter.settings().microphone_device_id;
+    // What the device list looked like at startup. The settings page asks for the
+    // list as soon as the window exists; without this seed that first answer looked
+    // like "the devices changed", and the route was re-resolved for nothing (the
+    // re-probe then collided with the port's own warmed-up session, 2026-11-23).
+    const auto device_signature = [](const std::vector<platform::MicrophoneDevice>& listed) {
+        std::string signature;
+        for (const auto& device : listed) {
+            signature += device.id + (device.is_default ? "*" : "") + "|";
+        }
+        return signature;
+    };
+    auto devices_signature = std::make_shared<std::string>(device_signature(devices));
     // The microphone release fuse (platform/api/capture_guard.hpp): armed while a
     // device is open, released by the crash hook if this process dies unexpectedly.
     platform::CaptureGuard capture_guard;
     platform::install_crash_release_hook(capture_guard);
 
-    platform::WindowsAudioCapture::Options capture_options;
-    if (selected.has_value()) {
-        capture_options.device_id = *selected;
-    }
-    platform::WindowsAudioCapture capture(capture_options);
+    // --- capture route -------------------------------------------------------
+    // Which endpoint the machine opens is decided by asking the devices, not by
+    // trusting the OS default: plugging the AR glasses in makes Windows present a
+    // capture terminal that accepts no format at all, and following that default is
+    // what made every dictation silent on 2026-11-23. app/capture_path_resolver.hpp
+    // holds the order and the "did audio actually arrive" rule.
+    struct CaptureRoute {
+        platform::WindowsAudioCapture::Options options;
+        /// Human-readable device name for the journal and the status line.
+        std::string label = "the default endpoint";
+        /// The backend that delivered during resolution, empty before the first one.
+        std::string backend;
+        /// The settings value the route was resolved for, so a later change of the
+        /// microphone dropdown can be told from an unrelated settings save.
+        std::optional<std::string> selected;
+        /// The OS default endpoint at the moment of the resolution. Only meaningful
+        /// while the route itself is "the default endpoint" (empty device id).
+        std::string default_device_id;
+    };
+    auto capture_route = std::make_shared<CaptureRoute>();
+    // The factory reads the route each time the port builds a capture, so a
+    // re-resolution replaces the endpoint without recreating the long-lived objects
+    // (machine, logged decorator, settings test) that hold the port.
+    const auto capture_factory = [capture_route] {
+        return std::make_unique<platform::WindowsAudioCapture>(capture_route->options);
+    };
+    SwitchingCapture<platform::WindowsAudioCapture> capture(capture_factory);
 
-    // Warm the capture endpoint once, before any dictation. The first WASAPI
-    // start on this machine costs about a second - the microphone array wakes out
-    // of a low-power state and the format is negotiated - so the first press of
-    // the record hotkey lost the beginning of the speech: measured 2026-10-01, a
-    // 4 s push-to-talk hold delivered only 3.01 s of audio, and the user reported
-    // "the microphone does not start right after I press the hotkey". Warming it
-    // here pays that cost once at startup instead of at the start of a dictation.
+    /// Probes the endpoints and points the port at the first that delivers audio.
+    /// Returns false when nothing delivered; the route then falls back to the system
+    /// default with the native backend, which is the behaviour before this change.
+    auto first_resolution = std::make_shared<bool>(true);
+    const auto resolve_capture_route = [&, microphone_mutex, first_resolution](
+                                           std::optional<std::string> preferred, std::string reason) {
+        if (capture.is_recording()) {
+            // A running dictation owns the device: probing now would either fail on
+            // a busy endpoint or cut the user's recording. The next start() after the
+            // device list changes resolves again.
+            return false;
+        }
+        // Release the warmed-up client first: it keeps an exclusive endpoint allocated
+        // for this process, and probing it would answer DEVICE_IN_USE for our own mic.
+        capture.release_idle_capture();
+        std::vector<platform::MicrophoneDevice> devices_now;
+        {
+            const std::lock_guard<std::mutex> lock(*microphone_mutex);
+            devices_now = microphone.list_devices();
+        }
+        std::string default_now;
+        for (const auto& device : devices_now) {
+            if (device.is_default) {
+                default_now = device.id;
+                break;
+            }
+        }
+        // A route that names a device explicitly does not care that Windows moved its
+        // default: re-probing it on every device-list change is how a working capture
+        // was replaced by a failed probe (the port's own exclusive session answered
+        // DEVICE_IN_USE for its device, 2026-11-23). Probe only when the answer can
+        // actually change: the selection changed, the chosen device disappeared, or
+        // the route is the default endpoint and the default moved.
+        if (!*first_resolution && preferred == capture_route->selected) {
+            const bool names_device = !capture_route->options.device_id.empty();
+            bool device_present = false;
+            for (const auto& device : devices_now) {
+                device_present = device_present || device.id == capture_route->options.device_id;
+            }
+            if (names_device ? device_present : default_now == capture_route->default_device_id) {
+                static_cast<void>(logger.write(platform::LogLevel::info, "capture route kept",
+                    "source=" + reason + " device=\"" + capture_route->label + "\""));
+                return true;
+            }
+        }
+        auto choice = resolve_capture_path<platform::WindowsAudioCapture>(devices_now, preferred,
+            [](const CapturePathCandidate& candidate) {
+                platform::WindowsAudioCapture::Options options;
+                options.device_id = candidate.device_id;
+                options.allow_native_backend = candidate.allow_native_backend;
+                return std::make_unique<platform::WindowsAudioCapture>(options);
+            });
+        std::string attempts;
+        for (const auto& attempt : choice.attempts) {
+            attempts += (attempts.empty() ? "" : "; ") + attempt;
+        }
+        capture_route->selected = std::move(preferred);
+        if (!choice.found) {
+            // A failed probe must never clobber a route that may still work: a device
+            // can be busy with another application for a moment, and dropping the
+            // working endpoint would turn a temporary failure into a lasting one.
+            static_cast<void>(logger.write(platform::LogLevel::warn, "no microphone delivered audio",
+                "source=" + reason + " "
+                    + (attempts.empty() ? std::string("no active capture endpoint") : attempts)
+                    + "; keeping the current route \"" + capture_route->label + "\""));
+            return false;
+        }
+        platform::WindowsAudioCapture::Options options;
+        options.device_id = choice.candidate.device_id;
+        options.allow_native_backend = choice.candidate.allow_native_backend;
+        capture_route->options = options;
+        capture_route->label = choice.candidate.label;
+        capture_route->backend = choice.backend;
+        capture_route->default_device_id = default_now;
+        capture.reconfigure(capture_factory);
+        static_cast<void>(logger.write(platform::LogLevel::info, "capture route selected",
+            "source=" + reason + " device=\"" + choice.candidate.label + "\" backend=" + choice.backend
+                + (attempts.empty() ? std::string() : " rejected: " + attempts)));
+        if (!*first_resolution) {
+            // A route resolved after startup warms its endpoint here: the next hotkey
+            // must not pay the ~1 s negotiation, and the warm-up proves the port can
+            // open what the resolver just measured.
+            const auto warm_status = capture.start(domain::CancellationToken{});
+            if (warm_status.is_ok()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(150));
+                static_cast<void>(capture.stop());
+            }
+        }
+        *first_resolution = false;
+        return true;
+    };
+    resolve_capture_route(selected, "startup");
+
+    // Warm the chosen endpoint once, before any dictation. The first start on this
+    // machine costs about a second - the microphone array wakes out of a low-power
+    // state and the format is negotiated - so the first press of the record hotkey
+    // lost the beginning of the speech: measured 2026-10-01, a 4 s push-to-talk hold
+    // delivered only 3.01 s of audio. Warming it here pays that cost once at startup
+    // instead of at the start of a dictation.
     {
         const auto warm_started = std::chrono::steady_clock::now();
         const auto warm_status = capture.start(domain::CancellationToken{});
@@ -623,8 +766,9 @@ int run(int argc, char** argv)
         static_cast<void>(logger.write(
             warm_status.is_ok() ? platform::LogLevel::info : platform::LogLevel::warn,
             "capture warm-up " + std::to_string(warm_ms) + " ms",
-            warm_status.is_ok() ? std::string("the endpoint is awake before the first hotkey")
-                                : warm_status.error().to_string()));
+            warm_status.is_ok()
+                ? "device=\"" + capture_route->label + "\" backend=" + capture.backend_description()
+                : warm_status.error().to_string()));
     }
 
     // --- engine --------------------------------------------------------------
@@ -781,9 +925,14 @@ int run(int argc, char** argv)
     machine_options.mode = settings.recording_mode;
     machine_options.vad_silence_threshold_seconds =
         static_cast<double>(settings.silence_threshold_ms) / 1000.0;
+    // The window does not exist yet, so the channel is created here and adopted by
+    // the window below. Posting to a null target is a no-op, so an event that fires
+    // during startup is simply not shown instead of crashing. Declared before the
+    // capture decorator because a session that captured nothing reports through it.
+    auto status_channel = std::make_shared<ui::StatusChannel>(nullptr);
     LoggedRecordingPort logged_capture(capture, logger,
-        selected.has_value() ? *selected : std::string("(system default)"),
-        [&capture] { return capture.backend_description(); }, &capture_guard);
+        capture_route->label, [&capture] { return capture.backend_description(); }, &capture_guard,
+        [status_channel] { status_channel->post(localized(ui::UiKey::k190)); });
     // The dictionary is applied to the engine's text by a decorator, not inside an
     // engine: the explicit "as heard=as written" pairs are the only dictionary
     // mechanism that reaches all three engines (measured 2026-10-07 - GigaAM
@@ -854,7 +1003,6 @@ int run(int argc, char** argv)
     // The window does not exist yet, so the channel is created here and adopted
     // by the window below. Posting to a null target is a no-op, so an event that
     // fires during startup is simply not shown instead of crashing.
-    auto status_channel = std::make_shared<ui::StatusChannel>(nullptr);
     machine.set_state_changed_handler(
         [&logger, status_channel, &status_overlay, describe_state](domain::RecordingState state) {
             const std::string name = describe_state(state);
@@ -1118,17 +1266,35 @@ int run(int argc, char** argv)
                 + QString::fromStdString(current.record_hotkey)
             : localized(ui::UiKey::k95);
     };
-    services.microphones = [&microphone] {
+    // One extra worker for hotkey capture: capture_next() blocks until the user
+    // presses a combination, and neither the UI thread nor the recording worker may
+    // ever be parked like that. Declared before the microphone service because a
+    // changed device list re-checks the capture route here (probing endpoints blocks).
+    platform::Win32Executor capture_executor;
+    services.microphones = [&microphone, microphone_mutex, &capture_executor, &resolve_capture_route,
+                               &presenter, devices_signature, device_signature] {
         std::vector<std::pair<std::string, std::string>> result;
-        for (const auto& device : microphone.list_devices()) {
+        std::vector<platform::MicrophoneDevice> listed;
+        {
+            const std::lock_guard<std::mutex> lock(*microphone_mutex);
+            listed = microphone.list_devices();
+        }
+        const std::string signature = device_signature(listed);
+        for (const auto& device : listed) {
             result.emplace_back(device.id, device.name);
+        }
+        // The default endpoint is part of the signature: Windows moves it when a USB
+        // headset or the AR glasses are plugged in, and that is exactly the change the
+        // capture route has to re-check. A re-check runs in the background, so the
+        // interface never waits for the probe.
+        if (signature != *devices_signature) {
+            *devices_signature = signature;
+            static_cast<void>(capture_executor.post([&resolve_capture_route, &presenter] {
+                resolve_capture_route(presenter.settings().microphone_device_id, "device list changed");
+            }));
         }
         return result;
     };
-    // One extra worker for hotkey capture: capture_next() blocks until the user
-    // presses a combination, and neither the UI thread nor the recording worker may
-    // ever be parked like that.
-    platform::Win32Executor capture_executor;
     // A gamepad capture waits for a button press too, and it must not queue behind
     // a hotkey capture that the user left waiting.
     platform::Win32Executor gamepad_capture_executor;
@@ -1321,19 +1487,29 @@ int run(int argc, char** argv)
     auto probe_cancel = std::make_shared<std::atomic<bool>>(false);
     services.microphone_probe_level = [probe_level] { return probe_level->load(); };
     services.microphone_probe_cancel = [probe_cancel] { probe_cancel->store(true); };
-    services.microphone_probe = [&capture_options, &logger, &capture_executor, post_to_ui,
+    services.microphone_probe = [capture_route, &capture, &logger, &capture_executor, post_to_ui,
                                     probe_level, probe_cancel](
                                     std::function<void(ui::WindowServices::MicrophoneProbeOutcome, double, QString)> report) {
         probe_cancel->store(false);
-        static_cast<void>(capture_executor.post([&capture_options, &logger, post_to_ui,
+        static_cast<void>(capture_executor.post([capture_route, &capture, &logger, post_to_ui,
                                                     probe_level, probe_cancel,
                                                     report = std::move(report)] {
-            platform::WindowsAudioCapture probe(capture_options);
-            // The policy lives in app/microphone_probe.hpp: a successful start() is not a
-            // promise of audio (the live build got buffers=0 on the first press), so the
-            // probe waits for the first sample and restarts the session once if it stays
-            // mute. On Linux the same rule runs over the libpulse backend.
-            const auto outcome = run_microphone_probe(probe, *probe_cancel,
+            // The test runs through the SAME port as the dictation machine, not through a
+            // second capture object. The backend opens the endpoint in exclusive mode
+            // (that is the only mode this hardware grants), so a second client on the same
+            // device answers AUDCLNT_E_DEVICE_IN_USE (0x8889000A) - exactly what "the
+            // microphone test failed" showed on 2026-11-23 while the dictation itself
+            // recorded fine. The port reuses its negotiated client, so the test is also
+            // immediate.
+            if (capture.is_recording()) {
+                const auto busy = MicrophoneProbeReport{};
+                static_cast<void>(post_to_ui([report, busy] {
+                    report(ui::WindowServices::MicrophoneProbeOutcome::no_audio, busy.peak,
+                        QStringLiteral("a dictation is running"));
+                }));
+                return;
+            }
+            const auto outcome = run_microphone_probe(capture, *probe_cancel,
                 [probe_level](double peak) { probe_level->store(peak); });
             const bool heard = outcome.verdict == MicrophoneProbeVerdict::heard;
             // The verdict and the numbers behind it go to the journal, so a silent meter can
@@ -1697,6 +1873,16 @@ int run(int argc, char** argv)
             platform::LogLevel::info,
             "settings applied",
             "engine=" + std::string(engine_name(updated.transcription_engine))));
+
+        // A changed microphone takes effect without a restart: the route is resolved
+        // again on the capture worker, because probing endpoints blocks and the
+        // interface must not wait for it.
+        const auto wanted_microphone = updated.microphone_device_id;
+        if (capture_route->selected != wanted_microphone) {
+            static_cast<void>(capture_executor.post([&resolve_capture_route, wanted_microphone] {
+                resolve_capture_route(wanted_microphone, "microphone setting changed");
+            }));
+        }
 
         switch (updated.transcription_engine) {
         case domain::TranscriptionEngine::whisper:

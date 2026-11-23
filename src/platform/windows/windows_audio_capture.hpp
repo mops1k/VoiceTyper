@@ -64,6 +64,12 @@ public:
         /// device may negotiate something else; device_format() is authoritative.
         std::uint32_t sample_rate = 48000;
         std::uint16_t channel_count = 2;
+
+        /// Whether mc_wasapi.dll may be tried first. The library takes no device
+        /// id and always opens the system default endpoint, so it is never tried
+        /// when a device id is selected; this switch also lets the capture-path
+        /// resolver probe the interop backend directly for the default endpoint.
+        bool allow_native_backend = true;
     };
 
     /// The default construction captures the system default endpoint with the

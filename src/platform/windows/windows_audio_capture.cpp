@@ -27,6 +27,13 @@ constexpr float kPcm16Scale = 1.0f / 32768.0f;
 /// audio::SampleBuffer enforces.
 constexpr std::size_t kMaxSessionSamples = audio::kMaxRecordingBytes / sizeof(float);
 
+/// How long a started mc_wasapi.dll session may stay mute before the adapter
+/// gives up on it and tries the interop backend. A live endpoint delivers its
+/// first buffer in a few milliseconds, so this bound only costs time on a device
+/// that is not going to deliver anything at all (XREAL 1S capture terminal,
+/// measured 2026-11-23: mc_start returned 0 and no buffer arrived in 3 s).
+constexpr std::chrono::milliseconds kNativeFirstBufferTimeout{ 800 };
+
 /// An empty id and the legacy "0" both mean "the system default endpoint"
 /// (RawWasapiCapture.ResolveDevice). Repeated here instead of calling
 /// platform::is_default_microphone_id so that this translation unit does not
@@ -270,37 +277,65 @@ Status WindowsAudioCapture::start(const domain::CancellationToken& cancellation)
     // hardware: on the Intel Smart Sound array the interop WASAPI path answers
     // E_INVALIDARG for every format and every endpoint, while mc_wasapi.dll opens
     // the device (EXCLUSIVE PCM16 48 kHz stereo). See platform/mc_wasapi.hpp.
-    if (!mc_api_.available()) {
-        mc_api_ = load_mc_wasapi();
-    }
+    //
+    // Two limits were added after 2026-11-23 (AR glasses XREAL 1S): mc_start takes
+    // no device id, so the library always opens the system default endpoint and a
+    // selected microphone can only be honoured by the interop backend below; and a
+    // successful mc_start is not a promise of audio - on the XREAL capture terminal
+    // it returns 0 and never calls back, which made the whole capture path report
+    // "mc_wasapi.dll" with zero buffers instead of failing over to a working device.
+    const bool device_is_default = selects_default_endpoint(options_.device_id);
     std::string native_failure;
     native_buffers_.store(0, std::memory_order_relaxed);
     native_bytes_.store(0, std::memory_order_relaxed);
-    if (mc_api_.available()) {
-        auto session = std::make_unique<McWasapiSession>(
-            mc_api_, options_.sample_rate, options_.channel_count);
-        const Status native_started = session->start(
-            [this](const void* data, int bytes, int rate, int channels) {
-                native_buffers_.fetch_add(1, std::memory_order_relaxed);
-                native_bytes_.fetch_add(static_cast<std::size_t>(bytes), std::memory_order_relaxed);
-                WasapiPacket packet;
-                packet.data = static_cast<const std::byte*>(data);
-                packet.bytes = static_cast<std::size_t>(bytes);
-                packet.format = audio::AudioFormat(static_cast<std::uint32_t>(rate),
-                    static_cast<std::uint16_t>(channels), audio::SampleFormat::pcm_s16);
-                append_packet(packet);
-            });
-        if (native_started.is_ok()) {
-            std::lock_guard<std::mutex> lock(mutex_);
-            mc_session_ = std::move(session);
-            device_format_ = audio::AudioFormat(
-                options_.sample_rate, options_.channel_count, audio::SampleFormat::pcm_s16);
-            backend_ = "mc_wasapi.dll native " + std::to_string(options_.sample_rate) + "Hz "
-                + std::to_string(options_.channel_count) + "ch PCM16";
-            device_id_ = options_.device_id;
-            return Status::success();
+    if (!device_is_default) {
+        native_failure = "native capture skipped: a device id is selected and mc_wasapi.dll cannot target one; ";
+    } else if (!options_.allow_native_backend) {
+        native_failure = "native capture skipped: disabled for this capture; ";
+    } else {
+        if (!mc_api_.available()) {
+            mc_api_ = load_mc_wasapi();
         }
-        native_failure = native_started.error().to_string();
+        if (mc_api_.available()) {
+            auto session = std::make_unique<McWasapiSession>(
+                mc_api_, options_.sample_rate, options_.channel_count);
+            const Status native_started = session->start(
+                [this](const void* data, int bytes, int rate, int channels) {
+                    native_buffers_.fetch_add(1, std::memory_order_relaxed);
+                    native_bytes_.fetch_add(static_cast<std::size_t>(bytes), std::memory_order_relaxed);
+                    WasapiPacket packet;
+                    packet.data = static_cast<const std::byte*>(data);
+                    packet.bytes = static_cast<std::size_t>(bytes);
+                    packet.format = audio::AudioFormat(static_cast<std::uint32_t>(rate),
+                        static_cast<std::uint16_t>(channels), audio::SampleFormat::pcm_s16);
+                    append_packet(packet);
+                });
+            if (native_started.is_ok()) {
+                // Wait for the first buffer instead of trusting the return code. A
+                // dead endpoint is exactly this case: success, no data, forever.
+                const auto deadline = std::chrono::steady_clock::now() + kNativeFirstBufferTimeout;
+                while (native_buffers_.load(std::memory_order_relaxed) == 0
+                    && std::chrono::steady_clock::now() < deadline
+                    && !cancellation.is_cancellation_requested()) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                }
+                if (native_buffers_.load(std::memory_order_relaxed) > 0) {
+                    std::lock_guard<std::mutex> lock(mutex_);
+                    mc_session_ = std::move(session);
+                    device_format_ = audio::AudioFormat(
+                        options_.sample_rate, options_.channel_count, audio::SampleFormat::pcm_s16);
+                    backend_ = "mc_wasapi.dll native " + std::to_string(options_.sample_rate) + "Hz "
+                        + std::to_string(options_.channel_count) + "ch PCM16";
+                    device_id_ = options_.device_id;
+                    return Status::success();
+                }
+                session->stop();
+                native_failure = "native capture started but delivered no buffers within "
+                    + std::to_string(kNativeFirstBufferTimeout.count()) + " ms; ";
+            } else {
+                native_failure = native_started.error().to_string();
+            }
+        }
     }
 
     // The session object is kept between recordings on purpose: it holds the

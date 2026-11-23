@@ -194,6 +194,24 @@ MainWindow::MainWindow(
     refresh_->setInterval(500);
     connect(refresh_, &QTimer::timeout, this, &MainWindow::on_presentation_refresh);
     refresh_->start();
+
+    // The capture endpoints are re-enumerated while the microphone list is on
+    // screen. Two seconds is the compromise: a USB headset or the AR glasses are
+    // noticed almost immediately, while a hidden settings page costs nothing (the
+    // timer's slot returns at once when the combo is not visible). The device list
+    // used to be filled once in the constructor, so a device plugged in later only
+    // appeared after restarting the application (Alexander, 2026-11-23).
+    devices_refresh_ = new QTimer(this);
+    devices_refresh_->setInterval(2000);
+    connect(devices_refresh_, &QTimer::timeout, this, [this] {
+        // Refilling the combo under an open popup would close it under the user's
+        // hand, so the refresh waits until the list is closed.
+        if (microphone_ != nullptr && microphone_->isVisible()
+            && !microphone_->view()->isVisible()) {
+            refresh_devices();
+        }
+    });
+    devices_refresh_->start();
 }
 
 MainWindow::~MainWindow()

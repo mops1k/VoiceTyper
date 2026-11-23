@@ -580,6 +580,11 @@ private:
     ToggleSwitch* condition_on_previous_text_ = nullptr;
     QTimer* autosave_ = nullptr;
     QTimer* refresh_ = nullptr;
+    /// Re-enumerates capture endpoints while the settings page shows the microphone
+    /// list: a headset plugged in after launch must appear without a restart
+    /// (Alexander, 2026-11-23: the AR glasses' microphone only showed up after
+    /// restarting the app).
+    QTimer* devices_refresh_ = nullptr;
     bool recording_ = false;
     /// Title-bar dragging for the frameless window.
     bool dragging_ = false;

@@ -28,6 +28,7 @@
 
 #include "audio/audio_format.hpp"
 #include "audio/audio_wav.hpp"
+#include "app/capture_path_resolver.hpp"
 #include "domain/cancellation.hpp"
 #include "domain/error.hpp"
 #include "domain/recording_state_machine.hpp"
@@ -36,6 +37,7 @@
 
 #include <chrono>
 #include <iostream>
+#include <memory>
 #include <string>
 #include <thread>
 #include <utility>
@@ -60,6 +62,11 @@ constexpr int kSkipExitCode = 77;
 /// A device id that can never exist, used to prove is_device_available() is a
 /// real probe and not a constant.
 constexpr const char* kBogusDeviceId = "{0.0.0.0-0000-0000-0000-000000000000}";
+
+/// The endpoint the capture-path policy proved to deliver audio. Every session of
+/// this contract opens it explicitly, so the test measures the backend on a usable
+/// endpoint instead of on whatever Windows currently calls the default.
+std::string g_usable_device_id;
 
 int g_failures = 0;
 
@@ -115,6 +122,11 @@ SessionOutcome run_session(WasapiStrategy strategy, std::chrono::milliseconds to
     SessionOutcome outcome;
     WindowsAudioCapture::Options options;
     options.strategy = strategy;
+    // The endpoint that actually delivers audio, chosen by the same policy the
+    // application uses (see g_usable_device_id in main). The OS default is not
+    // trusted: on 2026-11-23 the AR glasses became the default capture endpoint and
+    // that endpoint refuses every format, while the array still recorded fine.
+    options.device_id = g_usable_device_id;
 
     WindowsAudioCapture capture(options);
     CancellationSource cancellation;
@@ -198,6 +210,30 @@ int main()
     check(!microphone.is_device_available(kBogusDeviceId), "a nonsense endpoint id reports as unavailable");
 
     // ---------------------------------------------------------------------
+    // 1b. Choose the endpoint by what it does, not by what Windows calls default.
+    // ---------------------------------------------------------------------
+    {
+        auto choice = voicetyper::app::resolve_capture_path<WindowsAudioCapture>(devices, std::nullopt,
+            [](const voicetyper::app::CapturePathCandidate& candidate) {
+                WindowsAudioCapture::Options options;
+                options.device_id = candidate.device_id;
+                options.allow_native_backend = candidate.allow_native_backend;
+                return std::make_unique<WindowsAudioCapture>(options);
+            });
+        if (!choice.found) {
+            std::string attempts;
+            for (const auto& attempt : choice.attempts) {
+                attempts += (attempts.empty() ? "" : "; ") + attempt;
+            }
+            return skip("no capture endpoint delivered audio", attempts);
+        }
+        g_usable_device_id = choice.candidate.device_id;
+        std::cout << "  capture route: " << choice.candidate.label << " via " << choice.backend
+                  << " (device " << (choice.candidate.device_id.empty() ? "<default>" : choice.candidate.device_id)
+                  << ")\n";
+    }
+
+    // ---------------------------------------------------------------------
     // 2. The default strategy must produce ~300 ms of 16 kHz mono audio.
     // ---------------------------------------------------------------------
     const auto session
@@ -272,11 +308,13 @@ int main()
     //    session cannot be stopped.
     // ---------------------------------------------------------------------
     {
-        WindowsAudioCapture capture;
+        WindowsAudioCapture::Options options;
+        options.device_id = g_usable_device_id;
+        WindowsAudioCapture capture(options);
         CancellationSource cancellation;
         const Status started = capture.start(cancellation.token());
         if (started.is_error()) {
-            return skip("the default endpoint became unavailable mid-test", capture.diagnostics());
+            return skip("the chosen endpoint became unavailable mid-test", capture.diagnostics());
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
         const Status first = capture.cancel();
@@ -309,7 +347,9 @@ int main()
     //    abstract interface the recording state machine uses.
     // ---------------------------------------------------------------------
     {
-        WindowsAudioCapture capture;
+        WindowsAudioCapture::Options options;
+        options.device_id = g_usable_device_id;
+        WindowsAudioCapture capture(options);
         voicetyper::domain::RecordingPort& port = capture;
         CancellationSource cancellation;
         check(port.start(cancellation.token()).is_ok(), "start() through the RecordingPort interface succeeds");

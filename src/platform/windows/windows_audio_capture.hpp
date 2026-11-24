@@ -66,10 +66,22 @@ public:
         std::uint16_t channel_count = 2;
 
         /// Whether mc_wasapi.dll may be tried first. The library takes no device
-        /// id and always opens the system default endpoint, so it is never tried
-        /// when a device id is selected; this switch also lets the capture-path
-        /// resolver probe the interop backend directly for the default endpoint.
+        /// id and always opens the system default endpoint, so this is set only for a
+        /// capture that targets that endpoint - the capture-path resolver decides, and
+        /// the first-buffer check rejects a default endpoint that delivers nothing.
+        /// `device_id` may still name the default endpoint explicitly, which keeps a
+        /// dictation pinned to a device that works after Windows moves its default.
         bool allow_native_backend = true;
+
+        /// Whether start() waits for the first delivered buffer before it returns.
+        /// The resolver and the hardware contracts want that (it is how a dead
+        /// endpoint that reports success is caught). A dictation does not: the wait is
+        /// the device's own wake-up time, and paying it inside start() delays the
+        /// recording by exactly the audio it is waiting for (measured 2026-11-24:
+        /// 76 ms cold, while mc_start itself returns in about 2 ms). A session that
+        /// then delivers nothing is reported honestly at stop() instead
+        /// ("микрофон не отдал звук").
+        bool verify_first_buffer = true;
     };
 
     /// The default construction captures the system default endpoint with the

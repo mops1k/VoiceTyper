@@ -131,16 +131,17 @@ int main()
     {
         std::printf("capture-path-candidates\n");
         const auto unselected = ids_of(app::capture_path_candidates(devices, std::nullopt));
-        check(join(unselected) == "xreal|interop, |native, intel|interop",
-            "the default endpoint comes first, the native default second, the rest last");
+        check(join(unselected) == "xreal|native, xreal|interop, intel|interop",
+            "the default endpoint is tried through the native backend first (fast start), "
+            "then interop, then the rest");
 
         const auto selected_intel = ids_of(app::capture_path_candidates(devices, std::string("intel")));
-        check(join(selected_intel) == "intel|interop, xreal|interop, |native",
+        check(join(selected_intel) == "intel|interop, xreal|native, xreal|interop",
             "the selected microphone is first and is not duplicated");
 
         const auto selected_default = ids_of(app::capture_path_candidates(devices, std::string("xreal")));
-        check(join(selected_default) == "xreal|interop, |native, intel|interop",
-            "a selected endpoint that is already the default does not repeat");
+        check(join(selected_default) == "xreal|native, xreal|interop, intel|interop",
+            "a selected endpoint that is already the default may use the native backend");
     }
 
     // --- the resolver picks the first candidate that delivers audio ---------
@@ -170,8 +171,8 @@ int main()
         // The AR glasses case: the default endpoint refuses to start, the native
         // backend on it starts and stays mute, and the other endpoint works.
         Script script;
+        script["xreal|native"] = { true, false };
         script["xreal|interop"] = { false, false };
-        script["|native"] = { true, false };
         script["intel|interop"] = { true, true };
         const auto choice = app::resolve_capture_path<FakeCapture>(devices, std::nullopt,
             [&script](const app::CapturePathCandidate& candidate) {
@@ -187,10 +188,10 @@ int main()
         check(choice.found, "a dead default endpoint does not leave the app without audio");
         check(choice.candidate.device_id == "intel", "the other active endpoint is chosen");
         check(choice.attempts.size() == 2, "both rejected candidates are recorded");
-        check(choice.attempts.size() == 2 && choice.attempts[0].find("start refused") != std::string::npos,
-            "a start failure keeps its own reason");
-        check(choice.attempts.size() == 2 && choice.attempts[1].find("did not deliver audio") != std::string::npos,
+        check(choice.attempts.size() == 2 && choice.attempts[0].find("did not deliver audio") != std::string::npos,
             "a mute endpoint is reported as no audio, not as a quiet microphone");
+        check(choice.attempts.size() == 2 && choice.attempts[1].find("start refused") != std::string::npos,
+            "a start failure keeps its own reason");
     }
 
     {

@@ -125,8 +125,11 @@ SessionOutcome run_session(WasapiStrategy strategy, std::chrono::milliseconds to
     // The endpoint that actually delivers audio, chosen by the same policy the
     // application uses (see g_usable_device_id in main). The OS default is not
     // trusted: on 2026-11-23 the AR glasses became the default capture endpoint and
-    // that endpoint refuses every format, while the array still recorded fine.
+    // that endpoint refuses every format, while the array still recorded fine. The
+    // native backend is only allowed when the id really is the default endpoint,
+    // because mc_wasapi.dll cannot target a device.
     options.device_id = g_usable_device_id;
+    options.allow_native_backend = g_usable_device_id.empty();
 
     WindowsAudioCapture capture(options);
     CancellationSource cancellation;
@@ -310,6 +313,7 @@ int main()
     {
         WindowsAudioCapture::Options options;
         options.device_id = g_usable_device_id;
+        options.allow_native_backend = g_usable_device_id.empty();
         WindowsAudioCapture capture(options);
         CancellationSource cancellation;
         const Status started = capture.start(cancellation.token());
@@ -349,6 +353,7 @@ int main()
     {
         WindowsAudioCapture::Options options;
         options.device_id = g_usable_device_id;
+        options.allow_native_backend = g_usable_device_id.empty();
         WindowsAudioCapture capture(options);
         voicetyper::domain::RecordingPort& port = capture;
         CancellationSource cancellation;

@@ -276,22 +276,22 @@ Status WindowsAudioCapture::start(const domain::CancellationToken& cancellation)
     // The native library first. This is the path the .NET build proved on this
     // hardware: on the Intel Smart Sound array the interop WASAPI path answers
     // E_INVALIDARG for every format and every endpoint, while mc_wasapi.dll opens
-    // the device (EXCLUSIVE PCM16 48 kHz stereo). See platform/mc_wasapi.hpp.
+    // the device (EXCLUSIVE PCM16 48 kHz stereo) and starts in milliseconds - the
+    // interop path pays about 0.9 s when the array has gone back to sleep, which is
+    // what "capture starts a couple of seconds after the hotkey" turned out to be
+    // (measured 2026-11-24: 892-956 ms cold, 18-42 ms warm).
     //
-    // Two limits were added after 2026-11-23 (AR glasses XREAL 1S): mc_start takes
-    // no device id, so the library always opens the system default endpoint and a
-    // selected microphone can only be honoured by the interop backend below; and a
-    // successful mc_start is not a promise of audio - on the XREAL capture terminal
-    // it returns 0 and never calls back, which made the whole capture path report
-    // "mc_wasapi.dll" with zero buffers instead of failing over to a working device.
-    const bool device_is_default = selects_default_endpoint(options_.device_id);
+    // Two limits, both from 2026-11-23 (AR glasses XREAL 1S): mc_start takes no
+    // device id, so the library always opens the system default endpoint - the caller
+    // therefore sets allow_native_backend only for a capture that targets that
+    // endpoint (capture_path_resolver.hpp does); and a successful mc_start is not a
+    // promise of audio - on the XREAL capture terminal it returns 0 and never calls
+    // back, which is why the first buffer is awaited below instead of trusted.
     std::string native_failure;
     native_buffers_.store(0, std::memory_order_relaxed);
     native_bytes_.store(0, std::memory_order_relaxed);
-    if (!device_is_default) {
-        native_failure = "native capture skipped: a device id is selected and mc_wasapi.dll cannot target one; ";
-    } else if (!options_.allow_native_backend) {
-        native_failure = "native capture skipped: disabled for this capture; ";
+    if (!options_.allow_native_backend) {
+        native_failure = "native capture skipped: the route does not name the default endpoint; ";
     } else {
         if (!mc_api_.available()) {
             mc_api_ = load_mc_wasapi();
@@ -313,13 +313,16 @@ Status WindowsAudioCapture::start(const domain::CancellationToken& cancellation)
             if (native_started.is_ok()) {
                 // Wait for the first buffer instead of trusting the return code. A
                 // dead endpoint is exactly this case: success, no data, forever.
-                const auto deadline = std::chrono::steady_clock::now() + kNativeFirstBufferTimeout;
-                while (native_buffers_.load(std::memory_order_relaxed) == 0
-                    && std::chrono::steady_clock::now() < deadline
-                    && !cancellation.is_cancellation_requested()) {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                if (options_.verify_first_buffer) {
+                    const auto deadline = std::chrono::steady_clock::now() + kNativeFirstBufferTimeout;
+                    while (native_buffers_.load(std::memory_order_relaxed) == 0
+                        && std::chrono::steady_clock::now() < deadline
+                        && !cancellation.is_cancellation_requested()) {
+                        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                    }
                 }
-                if (native_buffers_.load(std::memory_order_relaxed) > 0) {
+                if (!options_.verify_first_buffer
+                    || native_buffers_.load(std::memory_order_relaxed) > 0) {
                     std::lock_guard<std::mutex> lock(mutex_);
                     mc_session_ = std::move(session);
                     device_format_ = audio::AudioFormat(

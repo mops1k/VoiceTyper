@@ -651,7 +651,13 @@ int run(int argc, char** argv)
     // re-resolution replaces the endpoint without recreating the long-lived objects
     // (machine, logged decorator, settings test) that hold the port.
     const auto capture_factory = [capture_route] {
-        return std::make_unique<platform::WindowsAudioCapture>(capture_route->options);
+        platform::WindowsAudioCapture::Options options = capture_route->options;
+        // The dictation path must not block in start(): the route was already proven
+        // by the resolver, and waiting for the first buffer here delayed every
+        // recording by the device's wake-up time (measured 2026-11-24: 76 ms, while
+        // mc_start itself returned in about 2 ms).
+        options.verify_first_buffer = false;
+        return std::make_unique<platform::WindowsAudioCapture>(options);
     };
     SwitchingCapture<platform::WindowsAudioCapture> capture(capture_factory);
 

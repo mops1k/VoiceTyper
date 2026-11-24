@@ -14,10 +14,17 @@
 //
 // Order (the first candidate that delivers wins):
 //   1. the microphone the user picked in the settings, if any;
-//   2. the current default endpoint, opened by id through the interop backend;
-//   3. the default endpoint through the native backend (mc_wasapi.dll) - the
-//      legacy path for machines where the interop backend cannot open it;
-//   4. every other active endpoint, so a dead default never leaves the app mute.
+//   2. the current default endpoint through the native backend (mc_wasapi.dll),
+//      which starts in milliseconds and therefore keeps the dictation latency at
+//      the level it had before this change;
+//   3. the same default endpoint through the interop backend;
+//   4. every other active endpoint through the interop backend, so a dead default
+//      never leaves the app mute.
+//
+// `allow_native_backend` on a candidate means "this candidate is the system default
+// endpoint", because mc_wasapi.dll takes no device id at all: the platform adapter
+// only uses it when the resolver said so, and the first-buffer check still rejects a
+// default endpoint that reports success and delivers nothing (the XREAL case).
 //
 // The policy is duck-typed on purpose: the contract test supplies a fake capture,
 // and the composition supplies platform::WindowsAudioCapture, so no microphone and
@@ -77,37 +84,58 @@ inline constexpr std::chrono::milliseconds kCapturePathPollInterval{ 25 };
         ? *selected_device_id
         : std::string();
 
-    if (!selected.empty()) {
-        std::string name = selected;
-        for (const auto& device : devices) {
-            if (device.id == selected) {
-                name = device.name;
-                break;
-            }
-        }
-        candidates.push_back(CapturePathCandidate{ selected, false, name });
-    }
-
     std::string default_id;
+    std::string default_name = "the default endpoint";
     for (const auto& device : devices) {
-        if (device.is_default && device.id != selected) {
+        if (device.is_default) {
             default_id = device.id;
+            default_name = device.name;
             break;
         }
     }
-    if (!default_id.empty()) {
-        candidates.push_back(CapturePathCandidate{ default_id, false, "the default endpoint" });
+    const auto name_of = [&devices](const std::string& id) {
+        for (const auto& device : devices) {
+            if (device.id == id) {
+                return device.name;
+            }
+        }
+        return id;
+    };
+    // The native backend takes no device id, so both the empty id and the id of the
+    // current default endpoint mean "the default endpoint" to it.
+    const auto add = [&candidates](const std::string& id, bool native, const std::string& label) {
+        for (const auto& candidate : candidates) {
+            if (candidate.device_id == id && candidate.allow_native_backend == native) {
+                return;
+            }
+        }
+        candidates.push_back(CapturePathCandidate{ id, native, label });
+    };
+
+    if (!selected.empty()) {
+        const bool selected_is_default = selected == default_id;
+        add(selected, selected_is_default, selected_is_default ? default_name : name_of(selected));
+        if (selected_is_default) {
+            // The same endpoint through the interop backend, for a native backend that
+            // cannot open it.
+            add(selected, false, default_name);
+        }
     }
-    // The native backend takes no device id, so it is always "the system default".
-    if (default_id != selected) {
-        candidates.push_back(CapturePathCandidate{ std::string(), true, "the default endpoint (native)" });
+    if (!default_id.empty() && default_id != selected) {
+        add(default_id, true, default_name);
+        add(default_id, false, default_name);
+    } else if (default_id.empty() && selected.empty()) {
+        // No endpoint reports itself as the default: the id stays empty and the
+        // adapter asks Windows for whichever endpoint the role resolves to.
+        add(std::string(), true, default_name);
+        add(std::string(), false, default_name);
     }
 
     for (const auto& device : devices) {
         if (device.id == selected || device.id == default_id) {
             continue;
         }
-        candidates.push_back(CapturePathCandidate{ device.id, false, device.name });
+        add(device.id, false, device.name);
     }
     return candidates;
 }

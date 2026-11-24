@@ -5502,13 +5502,18 @@ void MainWindow::refresh_devices()
 
 void MainWindow::refresh_status()
 {
+    // The summary is always refreshed: the engine state and the registered hotkey
+    // change while the application runs, and they used to freeze the moment a service
+    // message was on screen. That is how the footer kept showing the hotkey and the
+    // engine state from the launch ("Хоткей: Ctrl+Alt+F9" after the hotkey had been
+    // changed in the settings, "прогрев модели…" after the engine was ready) -
+    // reported by Alexander, 24.11.2026.
+    refresh_status_summary();
     // A message from a running service wins over the settings summary until the
     // next state change, because it is the one carrying the reason.
     if (!status_message_.isEmpty()) {
         status_->setText(status_message_);
-        return;
     }
-    refresh_status_summary();
 }
 
 void MainWindow::on_presentation_refresh()
